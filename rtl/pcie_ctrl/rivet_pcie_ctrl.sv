@@ -1,0 +1,145 @@
+// Copyright 2026 Rivet contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Rivet PCIe soft controller — multi-mode (EP / RC / USP / DSP), PIPE boundary.
+// User application IF: AXI-ST CQ/CC/RQ/RC (PG213-style) + AXI-Lite.
+// Phase 0: synthesizable stub; development focus MODE=EP, GEN=2.
+
+module rivet_pcie_ctrl #(
+  parameter int unsigned MODE            = 0,  // rivet_pkg::RIVET_MODE_EP
+  parameter int unsigned GEN             = 2,
+  parameter int unsigned LANES           = 1,
+  parameter int unsigned AXI_DATA_WIDTH  = 64,
+  parameter int unsigned AXI_KEEP_WIDTH  = AXI_DATA_WIDTH / 8,
+  parameter int unsigned AXI_CQ_USER_W   = 88,
+  parameter int unsigned AXI_CC_USER_W   = 33,
+  parameter int unsigned AXI_RQ_USER_W   = 62,
+  parameter int unsigned AXI_RC_USER_W   = 75,
+  parameter int unsigned PIPE_DATA_WIDTH = 16,
+  parameter int unsigned AXIL_ADDR_WIDTH = 32,
+  parameter int unsigned AXIL_DATA_WIDTH = 32
+) (
+  input  logic user_clk,
+  input  logic user_resetn,
+  input  logic pclk,
+  input  logic preset_n,
+
+  // AXI-ST CQ (Completer Request): controller -> user
+  output logic [AXI_DATA_WIDTH-1:0]  m_axis_cq_tdata,
+  output logic [AXI_KEEP_WIDTH-1:0]  m_axis_cq_tkeep,
+  output logic                       m_axis_cq_tlast,
+  output logic                       m_axis_cq_tvalid,
+  input  logic                       m_axis_cq_tready,
+  output logic [AXI_CQ_USER_W-1:0]   m_axis_cq_tuser,
+
+  // AXI-ST CC (Completer Completion): user -> controller
+  input  logic [AXI_DATA_WIDTH-1:0]  s_axis_cc_tdata,
+  input  logic [AXI_KEEP_WIDTH-1:0]  s_axis_cc_tkeep,
+  input  logic                       s_axis_cc_tlast,
+  input  logic                       s_axis_cc_tvalid,
+  output logic                       s_axis_cc_tready,
+  input  logic [AXI_CC_USER_W-1:0]   s_axis_cc_tuser,
+
+  // AXI-ST RQ (Requester Request): user -> controller
+  input  logic [AXI_DATA_WIDTH-1:0]  s_axis_rq_tdata,
+  input  logic [AXI_KEEP_WIDTH-1:0]  s_axis_rq_tkeep,
+  input  logic                       s_axis_rq_tlast,
+  input  logic                       s_axis_rq_tvalid,
+  output logic                       s_axis_rq_tready,
+  input  logic [AXI_RQ_USER_W-1:0]   s_axis_rq_tuser,
+
+  // AXI-ST RC (Requester Completion): controller -> user
+  output logic [AXI_DATA_WIDTH-1:0]  m_axis_rc_tdata,
+  output logic [AXI_KEEP_WIDTH-1:0]  m_axis_rc_tkeep,
+  output logic                       m_axis_rc_tlast,
+  output logic                       m_axis_rc_tvalid,
+  input  logic                       m_axis_rc_tready,
+  output logic [AXI_RC_USER_W-1:0]   m_axis_rc_tuser,
+
+  // AXI-Lite config (CSR Phase 1+)
+  input  logic [AXIL_ADDR_WIDTH-1:0] s_axil_awaddr,
+  input  logic                       s_axil_awvalid,
+  output logic                       s_axil_awready,
+  input  logic [AXIL_DATA_WIDTH-1:0] s_axil_wdata,
+  input  logic [AXIL_DATA_WIDTH/8-1:0] s_axil_wstrb,
+  input  logic                       s_axil_wvalid,
+  output logic                       s_axil_wready,
+  output logic [1:0]                 s_axil_bresp,
+  output logic                       s_axil_bvalid,
+  input  logic                       s_axil_bready,
+  input  logic [AXIL_ADDR_WIDTH-1:0] s_axil_araddr,
+  input  logic                       s_axil_arvalid,
+  output logic                       s_axil_arready,
+  output logic [AXIL_DATA_WIDTH-1:0] s_axil_rdata,
+  output logic [1:0]                 s_axil_rresp,
+  output logic                       s_axil_rvalid,
+  input  logic                       s_axil_rready,
+
+  // PIPE (controller / MAC view)
+  output logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_txdata,
+  output logic [LANES-1:0]                 pipe_txdatak,
+  output logic                             pipe_txdetectrx,
+  output logic                             pipe_txelecidle,
+  output logic [LANES-1:0]                 pipe_txcompliance,
+  output logic                             pipe_txdatavalid,
+  input  logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_rxdata,
+  input  logic [LANES-1:0]                 pipe_rxdatak,
+  input  logic                             pipe_rxvalid,
+  input  logic                             pipe_rxelecidle,
+  input  logic [2:0]                       pipe_rxstatus,
+  input  logic                             pipe_phystatus,
+  output logic [1:0]                       pipe_powerdown,
+  output logic [2:0]                       pipe_rate,
+  output logic                             pipe_rxpolarity,
+
+  output logic link_up
+);
+
+`ifndef SYNTHESIS
+  initial begin
+    if (MODE != 0)
+      $error("rivet_pcie_ctrl Phase 0 stub only exercises MODE=EP (0)");
+    if (GEN != 2)
+      $error("rivet_pcie_ctrl Phase 0 supports GEN=2 only");
+    if (!(LANES == 1 || LANES == 2 || LANES == 4))
+      $error("rivet_pcie_ctrl LANES must be 1, 2, or 4");
+  end
+`endif
+
+  assign m_axis_cq_tdata  = '0;
+  assign m_axis_cq_tkeep  = '0;
+  assign m_axis_cq_tlast  = 1'b0;
+  assign m_axis_cq_tvalid = 1'b0;
+  assign m_axis_cq_tuser  = '0;
+
+  assign m_axis_rc_tdata  = '0;
+  assign m_axis_rc_tkeep  = '0;
+  assign m_axis_rc_tlast  = 1'b0;
+  assign m_axis_rc_tvalid = 1'b0;
+  assign m_axis_rc_tuser  = '0;
+
+  assign s_axis_cc_tready = 1'b1;
+  assign s_axis_rq_tready = 1'b1;
+
+  assign s_axil_awready = 1'b1;
+  assign s_axil_wready  = 1'b1;
+  assign s_axil_bresp   = 2'b00;
+  assign s_axil_bvalid  = s_axil_awvalid && s_axil_wvalid;
+  assign s_axil_arready = 1'b1;
+  assign s_axil_rdata   = '0;
+  assign s_axil_rresp   = 2'b00;
+  assign s_axil_rvalid  = s_axil_arvalid;
+
+  assign pipe_txdata       = '0;
+  assign pipe_txdatak      = '0;
+  assign pipe_txdetectrx   = 1'b0;
+  assign pipe_txelecidle   = 1'b1;
+  assign pipe_txcompliance = '0;
+  assign pipe_txdatavalid  = 1'b0;
+  assign pipe_powerdown    = 2'b10;
+  assign pipe_rate         = 3'd1;
+  assign pipe_rxpolarity   = 1'b0;
+
+  assign link_up = 1'b0;
+
+endmodule : rivet_pcie_ctrl

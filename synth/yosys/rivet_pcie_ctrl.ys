@@ -1,0 +1,9 @@
+# Yosys synthesis sanity for rivet_pcie_ctrl (not FPGA timing-accurate)
+
+read_verilog -sv rtl/pcie_ctrl/rivet_pkg.sv
+read_verilog -sv rtl/pcie_ctrl/rivet_pcie_ctrl.sv
+hierarchy -check -top rivet_pcie_ctrl
+proc; opt; fsm; opt; memory; opt
+techmap; opt
+write_json synth/yosys/rivet_pcie_ctrl.json
+stat

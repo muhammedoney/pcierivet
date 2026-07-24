@@ -1,0 +1,76 @@
+# Build / sim artifacts
+*.log
+*.jou
+*.pb
+*.wlf
+*.vcd
+*.fst
+*.fsdb
+*.ucdb
+*.cov
+*.ucdb.bak
+work/
+transcript
+vsim.wlf
+wlft*
+obj_dir/
+build/
+out/
+sim_build/
+*.o
+*.a
+*.so
+*.dll
+*.exe
+__pycache__/
+*.pyc
+
+# Questa / ModelSim
+questa_lib/
+modelsim.ini
+*.mti
+*.mpf
+
+# Verilator / Yosys
+*.ys.out
+synth/yosys/*.json
+synth/yosys/*.blif
+synth/yosys/*.dot
+
+# Xilinx / Vivado (local only)
+*.xpr
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.srcs/
+*.gen/
+*.str
+vivado*.str
+.Xil/
+*.ltx
+
+# Vendor / proprietary third-party (never commit binaries)
+third_party/bfm/**
+!third_party/bfm/README.md
+third_party/xilinx_ip/**
+!third_party/xilinx_ip/README.md
+
+# IDE / OS
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Secrets / local env
+.env
+.env.*
+*.pem
+*.key
+local.mk
+scripts/local_paths.*
+!scripts/local_paths.example.*
