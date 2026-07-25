@@ -57,6 +57,9 @@ third_party/bfm/**
 third_party/xilinx_ip/**
 !third_party/xilinx_ip/README.md
 
+# Local proprietary specifications (never commit)
+specs/
+
 # IDE / OS
 .vscode/
 !.vscode/extensions.json

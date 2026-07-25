@@ -46,7 +46,7 @@ Generation roadmap: **Gen2** → Gen4 → Gen5.
 | `MODE` | EP first | RC/USP/DSP compile-gated later |
 | `GEN` | `2` first | 4, then 5 on roadmap |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
-| `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only |
+| `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only; primary bring-up **VCU128 / VU37P** (US+) |
 
 ## References (not redistributed)
 

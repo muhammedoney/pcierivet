@@ -19,6 +19,7 @@
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
 | Generation | Gen2 now → Gen4 → Gen5 |
 | Lanes | Parametric ×1 / ×2 / ×4 |
+| Target FPGA | **VCU128** (VU37P, UltraScale+ HBM) — primary bring-up |
 | Verification | UVM on controller @ PIPE; Verilator CI; Vivado BFM side-path |
 
 Phase 0: stubs, interfaces, UVM skeleton, tool hooks — not full protocol RTL yet.
@@ -34,6 +35,15 @@ tb/uvm/          Primary UVM (DUT = rivet_pcie_ctrl)
 tb/bfm/          Vivado RP/EP BFM side-path
 ```
 
+## Target hardware
+
+| Kit | FPGA | Role |
+|-----|------|------|
+| **AMD Virtex UltraScale+ HBM VCU128** | **VU37P** | **Primary** FPGA evaluation / bring-up |
+| AMD Virtex UltraScale+ 56G PAM4 VCU129-PP | — | Acceptable alternate if VCU128 is unavailable |
+
+PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`). Details: [Hardware](docs/hardware.md).
+
 ## Tools
 
 | Tool | Role |
@@ -41,7 +51,7 @@ tb/bfm/          Vivado RP/EP BFM side-path
 | QuestaSim | UVM regression (local license) |
 | Verilator | Lint / smoke (CI) |
 | Yosys | Open synth sanity |
-| Vivado | PHY IP + optional BFM export |
+| Vivado | PHY IP + optional BFM export + VCU128 flows |
 
 ## Quick start (Verilator)
 
@@ -53,6 +63,7 @@ tb/bfm/          Vivado RP/EP BFM side-path
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Hardware](docs/hardware.md)
 - [Roadmap](docs/roadmap.md)
 - [Verification](docs/verification.md)
 - [Contributing](CONTRIBUTING.md)
@@ -65,10 +76,14 @@ Specifications are not redistributed; obtain PCIe / PIPE / PG213 / PG239 yoursel
 
 ## Support / sponsors / hardware
 
-Early-stage project. Help welcome:
+Early-stage open interconnect IP. **Hardware sponsorship is a real blocker** for FPGA bring-up.
 
-- Spare UltraScale or UltraScale+ PCIe boards
-- Sponsorship for tooling and hardware
+**Most needed:** an **AMD Virtex UltraScale+ HBM VCU128** evaluation kit (**VU37P**), or equivalent board loan / donation. VCU129-PP is a workable alternate; VCU128 is strongly preferred.
+
+Also welcome:
+
+- Sponsorship for simulation tooling (Questa) and related costs
 - Review of UVM methodology and PIPE / AXI-ST fidelity
+- Other UltraScale+ PCIe-capable boards if VCU128 is not available
 
-Thank you for supporting open interconnect IP.
+If you can ship a board, fund a kit, or connect us to AMD/Xilinx university / open-source hardware programs — please open an issue or reach out. Thank you.
