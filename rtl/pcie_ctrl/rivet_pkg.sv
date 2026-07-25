@@ -24,7 +24,8 @@ package rivet_pkg;
 
   // Default AXI-ST data width for Gen2 stub (widens with gen/lanes later).
   localparam int unsigned RIVET_AXI_DATA_WIDTH_DEFAULT = 64;
-  localparam int unsigned RIVET_AXI_KEEP_WIDTH_DEFAULT = RIVET_AXI_DATA_WIDTH_DEFAULT / 8;
+  // PG213 AXI-ST TKEEP marks valid Dwords, not bytes.
+  localparam int unsigned RIVET_AXI_KEEP_WIDTH_DEFAULT = RIVET_AXI_DATA_WIDTH_DEFAULT / 32;
 
   // PIPE per-lane data width (bits). Gen2 default 16; US+ PHY pins up to 64.
   localparam int unsigned RIVET_PIPE_DATA_WIDTH_DEFAULT = 16;

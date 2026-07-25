@@ -52,5 +52,5 @@ Do not commit PCIe / PIPE / PG213 / PG239 PDFs. Keep local copies under `specs/`
 | PG239 | PHY wrapper ports; AMD EQ/assist (authoritative for FPGA PHY) |
 | PIPE **4.4.1** | Classic PIPE Gen1–Gen4 semantics (preferred next add) |
 | PIPE **5.x** (optional) | Gen5 Rate / SerDes notes — PG239 stays classic-oriented |
-| PG213 | User AXI-ST CQ/CC/RQ/RC (not PIPE) |
+| PG213 | User AXI-ST CQ/CC/RQ/RC and companion/config interfaces (not PIPE); see [PG213 interface audit](pg213-interface.md) |
 | PCIe Base (Gen2 chapter focus now) | LTSSM / DLLP / TLP for current phase |

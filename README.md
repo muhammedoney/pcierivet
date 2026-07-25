@@ -54,7 +54,7 @@ Where each layer, interface, and vendor product sits in the stack:
    rivet_pcie = rivet_pcie_ctrl + rivet_pcie_phy_*  (full integrator-facing soft IP)
 ```
 
-- **AXI-ST (PG213-style) + AXI-Lite** — user boundary. Xilinx **PG213** IP is the closest **equivalent to the Rivet soft IP** at this boundary; Rivet is the open counterpart.
+- **AXI-ST (PG213-style) + AXI-Lite** — user boundary. Xilinx **PG213** IP is the closest **functional equivalent to the complete Rivet soft IP**; Rivet is the open counterpart, but is not yet pin-compatible. See the [PG213 interface audit](docs/pg213-interface.md).
 - **PIPE** — MAC ↔ PHY boundary (Intel PIPE spec). Rivet's controller talks PIPE; it does not embed the PHY.
 - **`rivet_pcie_ctrl`** covers **TL + DLL + MAC** (incl. Config Space), ending at PIPE — no vendor primitives.
 - **`rivet_pcie_phy_*`** covers **PCS + PMA** by wrapping Xilinx **PG239** (PIPE ↔ serial).
@@ -116,6 +116,7 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`). Details: [H
 - [Hardware](docs/hardware.md)
 - [Roadmap](docs/roadmap.md)
 - [Gen2 → Gen3/4 evolution](docs/gen-evolution.md)
+- [PG213-style interface audit](docs/pg213-interface.md)
 - [Verification](docs/verification.md)
 - [Contributing](CONTRIBUTING.md)
 

@@ -10,10 +10,10 @@ module rivet_pcie_ctrl #(
   parameter int unsigned GEN             = 2,
   parameter int unsigned LANES           = 1,
   parameter int unsigned AXI_DATA_WIDTH  = 64,
-  parameter int unsigned AXI_KEEP_WIDTH  = AXI_DATA_WIDTH / 8,
+  parameter int unsigned AXI_KEEP_WIDTH  = AXI_DATA_WIDTH / 32,
   parameter int unsigned AXI_CQ_USER_W   = 88,
   parameter int unsigned AXI_CC_USER_W   = 33,
-  parameter int unsigned AXI_RQ_USER_W   = 62,
+  parameter int unsigned AXI_RQ_USER_W   = 85,
   parameter int unsigned AXI_RC_USER_W   = 75,
   parameter int unsigned PIPE_DATA_WIDTH = 16,
   parameter int unsigned AXIL_ADDR_WIDTH = 32,
@@ -37,7 +37,7 @@ module rivet_pcie_ctrl #(
   input  logic [AXI_KEEP_WIDTH-1:0]  s_axis_cc_tkeep,
   input  logic                       s_axis_cc_tlast,
   input  logic                       s_axis_cc_tvalid,
-  output logic                       s_axis_cc_tready,
+  output logic [3:0]                 s_axis_cc_tready,
   input  logic [AXI_CC_USER_W-1:0]   s_axis_cc_tuser,
 
   // AXI-ST RQ (Requester Request): user -> controller
@@ -45,7 +45,7 @@ module rivet_pcie_ctrl #(
   input  logic [AXI_KEEP_WIDTH-1:0]  s_axis_rq_tkeep,
   input  logic                       s_axis_rq_tlast,
   input  logic                       s_axis_rq_tvalid,
-  output logic                       s_axis_rq_tready,
+  output logic [3:0]                 s_axis_rq_tready,
   input  logic [AXI_RQ_USER_W-1:0]   s_axis_rq_tuser,
 
   // AXI-ST RC (Requester Completion): controller -> user
@@ -55,6 +55,19 @@ module rivet_pcie_ctrl #(
   output logic                       m_axis_rc_tvalid,
   input  logic                       m_axis_rc_tready,
   output logic [AXI_RC_USER_W-1:0]   m_axis_rc_tuser,
+
+  // PG213 companion flow-control / tracking ports (single request per cycle)
+  input  logic [1:0]                 pcie_cq_np_req,
+  output logic [5:0]                 pcie_cq_np_req_count,
+  output logic [5:0]                 pcie_rq_seq_num0,
+  output logic                       pcie_rq_seq_num_vld0,
+  output logic [9:0]                 pcie_rq_tag0,
+  output logic                       pcie_rq_tag_vld0,
+  output logic [9:0]                 pcie_rq_tag1,
+  output logic                       pcie_rq_tag_vld1,
+  output logic [3:0]                 pcie_rq_tag_av,
+  output logic [3:0]                 pcie_tfc_nph_av,
+  output logic [3:0]                 pcie_tfc_npd_av,
 
   // AXI-Lite config (CSR Phase 1+)
   input  logic [AXIL_ADDR_WIDTH-1:0] s_axil_awaddr,
@@ -144,8 +157,19 @@ module rivet_pcie_ctrl #(
   assign m_axis_rc_tvalid = 1'b0;
   assign m_axis_rc_tuser  = '0;
 
-  assign s_axis_cc_tready = 1'b1;
-  assign s_axis_rq_tready = 1'b1;
+  assign s_axis_cc_tready = '1;
+  assign s_axis_rq_tready = '1;
+
+  assign pcie_cq_np_req_count = '0;
+  assign pcie_rq_seq_num0     = '0;
+  assign pcie_rq_seq_num_vld0 = 1'b0;
+  assign pcie_rq_tag0         = '0;
+  assign pcie_rq_tag_vld0     = 1'b0;
+  assign pcie_rq_tag1         = '0;
+  assign pcie_rq_tag_vld1     = 1'b0;
+  assign pcie_rq_tag_av       = '0;
+  assign pcie_tfc_nph_av      = '0;
+  assign pcie_tfc_npd_av      = '0;
 
   assign s_axil_awready = 1'b1;
   assign s_axil_wready  = 1'b1;
@@ -181,5 +205,7 @@ module rivet_pcie_ctrl #(
   assign pipe_cfg_rx_pm_state   = 2'b00;
 
   assign link_up = 1'b0;
+
+  wire _unused_user = ^pcie_cq_np_req;
 
 endmodule : rivet_pcie_ctrl

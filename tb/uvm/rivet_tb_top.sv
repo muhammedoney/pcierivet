@@ -15,7 +15,7 @@ module rivet_tb_top;
 
   localparam int unsigned LANES = `RIVET_TB_LANES;
   localparam int unsigned AXI_W = 64;
-  localparam int unsigned KEEP_W = AXI_W / 8;
+  localparam int unsigned KEEP_W = AXI_W / 32; // PG213: one TKEEP bit per Dword
 
   logic user_clk;
   logic user_resetn;
@@ -48,18 +48,27 @@ module rivet_tb_top;
   // CC
   logic [AXI_W-1:0]   s_axis_cc_tdata;
   logic [KEEP_W-1:0]  s_axis_cc_tkeep;
-  logic               s_axis_cc_tlast, s_axis_cc_tvalid, s_axis_cc_tready;
+  logic               s_axis_cc_tlast, s_axis_cc_tvalid;
+  logic [3:0]         s_axis_cc_tready;
   logic [32:0]        s_axis_cc_tuser;
   // RQ
   logic [AXI_W-1:0]   s_axis_rq_tdata;
   logic [KEEP_W-1:0]  s_axis_rq_tkeep;
-  logic               s_axis_rq_tlast, s_axis_rq_tvalid, s_axis_rq_tready;
-  logic [61:0]        s_axis_rq_tuser;
+  logic               s_axis_rq_tlast, s_axis_rq_tvalid;
+  logic [3:0]         s_axis_rq_tready;
+  logic [84:0]        s_axis_rq_tuser;
   // RC
   logic [AXI_W-1:0]   m_axis_rc_tdata;
   logic [KEEP_W-1:0]  m_axis_rc_tkeep;
   logic               m_axis_rc_tlast, m_axis_rc_tvalid, m_axis_rc_tready;
   logic [74:0]        m_axis_rc_tuser;
+  // PG213 companion flow-control / tracking
+  logic [1:0]         pcie_cq_np_req;
+  logic [5:0]         pcie_cq_np_req_count, pcie_rq_seq_num0;
+  logic               pcie_rq_seq_num_vld0;
+  logic [9:0]         pcie_rq_tag0, pcie_rq_tag1;
+  logic               pcie_rq_tag_vld0, pcie_rq_tag_vld1;
+  logic [3:0]         pcie_rq_tag_av, pcie_tfc_nph_av, pcie_tfc_npd_av;
   // AXI-Lite
   logic [31:0] s_axil_awaddr, s_axil_wdata, s_axil_araddr, s_axil_rdata;
   logic [3:0]  s_axil_wstrb;
@@ -108,6 +117,7 @@ module rivet_tb_top;
   assign s_axis_rq_tlast = 1'b0;
   assign s_axis_rq_tvalid = 1'b0;
   assign s_axis_rq_tuser = '0;
+  assign pcie_cq_np_req = 2'b01;
   assign s_axil_awaddr = '0;
   assign s_axil_awvalid = 1'b0;
   assign s_axil_wdata = '0;
@@ -170,6 +180,17 @@ module rivet_tb_top;
     .m_axis_rc_tvalid(m_axis_rc_tvalid),
     .m_axis_rc_tready(m_axis_rc_tready),
     .m_axis_rc_tuser(m_axis_rc_tuser),
+    .pcie_cq_np_req(pcie_cq_np_req),
+    .pcie_cq_np_req_count(pcie_cq_np_req_count),
+    .pcie_rq_seq_num0(pcie_rq_seq_num0),
+    .pcie_rq_seq_num_vld0(pcie_rq_seq_num_vld0),
+    .pcie_rq_tag0(pcie_rq_tag0),
+    .pcie_rq_tag_vld0(pcie_rq_tag_vld0),
+    .pcie_rq_tag1(pcie_rq_tag1),
+    .pcie_rq_tag_vld1(pcie_rq_tag_vld1),
+    .pcie_rq_tag_av(pcie_rq_tag_av),
+    .pcie_tfc_nph_av(pcie_tfc_nph_av),
+    .pcie_tfc_npd_av(pcie_tfc_npd_av),
     .s_axil_awaddr(s_axil_awaddr),
     .s_axil_awvalid(s_axil_awvalid),
     .s_axil_awready(s_axil_awready),

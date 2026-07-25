@@ -18,6 +18,7 @@ Gen3/4/5 are later phases — see [gen-evolution.md](gen-evolution.md) for per-m
 1. **UVM environment** (primary) — make `tb/uvm` the place Gen2 RTL is proven  
    - PIPE agent: driver / monitor / sequencer + items covering Gen2 PIPE fields  
    - AXI-ST agents (CQ/CC/RQ/RC): same  
+   - PG213 companion paths: CQ NP credits, RQ tags/sequence/credits, then config/interrupt agents ([audit](pg213-interface.md))  
    - Virtual sequencer, scoreboard hooks, coverage model stubs → real checks as RTL appears  
    - Runnable Questa smokes: `smoke_gen2_x1`, then ×2 / ×4  
    - Verilator remains lint/elaborate gate; UVM is the functional authority  

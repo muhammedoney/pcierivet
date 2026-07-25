@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // AXI-Stream channel skeleton (PG213-style naming conventions).
-// Used for CQ / CC / RQ / RC. Direction is set by modport at the DUT boundary.
+// Used for CQ / CC / RQ / RC. PG213 TKEEP is Dword-granular, not byte-granular.
+// Direction is set by modport at the DUT boundary.
 
 interface rivet_axi_st_if #(
   parameter int unsigned DATA_WIDTH = 64,
-  parameter int unsigned KEEP_WIDTH = DATA_WIDTH / 8,
-  parameter int unsigned USER_WIDTH = 1
+  parameter int unsigned KEEP_WIDTH = DATA_WIDTH / 32,
+  parameter int unsigned USER_WIDTH = 1,
+  parameter int unsigned READY_WIDTH = 1
 ) (
   input logic aclk,
   input logic aresetn
@@ -17,7 +19,7 @@ interface rivet_axi_st_if #(
   logic [KEEP_WIDTH-1:0] tkeep;
   logic                  tlast;
   logic                  tvalid;
-  logic                  tready;
+  logic [READY_WIDTH-1:0] tready;
   logic [USER_WIDTH-1:0] tuser;
 
   modport master (
