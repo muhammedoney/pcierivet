@@ -24,3 +24,4 @@ Open-source Rivet development needs access to a **VCU128** (or loan/donation of 
 
 - Keep proprietary PDFs under local `specs/` (gitignored; never commit).
 - Generated / encrypted PHY and BFM material stays under `third_party/` per existing ignore rules.
+- Next useful add: Intel **PIPE 4.4.1** (see `docs/architecture.md` / `docs/verification.md`). PG239 never names a PIPE revision.

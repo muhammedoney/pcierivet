@@ -67,13 +67,33 @@ module rivet_tb_top;
   logic        s_axil_bvalid, s_axil_bready, s_axil_arvalid, s_axil_arready;
   logic        s_axil_rvalid, s_axil_rready;
   logic [1:0]  s_axil_bresp, s_axil_rresp;
-  // PIPE
-  logic [16*LANES-1:0] pipe_txdata, pipe_rxdata;
-  logic [LANES-1:0]    pipe_txdatak, pipe_rxdatak, pipe_txcompliance;
-  logic pipe_txdetectrx, pipe_txelecidle, pipe_txdatavalid;
-  logic pipe_rxvalid, pipe_rxelecidle, pipe_phystatus, pipe_rxpolarity;
-  logic [2:0] pipe_rxstatus, pipe_rate;
-  logic [1:0] pipe_powerdown;
+  // PIPE (PG239-aligned widths; Gen2 smoke uses 16-bit datapath)
+  logic [16*LANES-1:0]  pipe_txdata, pipe_rxdata;
+  logic [2*LANES-1:0]   pipe_txdatak, pipe_rxdatak;
+  logic [LANES-1:0]     pipe_txdata_valid, pipe_txstart_block;
+  logic [2*LANES-1:0]   pipe_txsync_header;
+  logic [LANES-1:0]     pipe_rxdata_valid;
+  logic [2*LANES-1:0]   pipe_rxstart_block, pipe_rxsync_header;
+  logic                 pipe_txdetectrx;
+  logic [LANES-1:0]     pipe_txelecidle, pipe_txcompliance, pipe_rxpolarity;
+  logic [1:0]           pipe_powerdown;
+  logic [2:0]           pipe_rate;
+  logic [LANES-1:0]     pipe_rxvalid, pipe_phystatus, pipe_phystatus_rst, pipe_rxelecidle;
+  logic [3*LANES-1:0]   pipe_rxstatus;
+  logic [2:0]           pipe_txmargin;
+  logic                 pipe_txswing, pipe_txdeemph;
+  logic [2*LANES-1:0]   pipe_txeq_ctrl;
+  logic [4*LANES-1:0]   pipe_txeq_preset;
+  logic [6*LANES-1:0]   pipe_txeq_coeff;
+  logic [5:0]           pipe_txeq_fs, pipe_txeq_lf;
+  logic [18*LANES-1:0]  pipe_txeq_new_coeff;
+  logic [LANES-1:0]     pipe_txeq_done;
+  logic [2*LANES-1:0]   pipe_rxeq_ctrl;
+  logic [4*LANES-1:0]   pipe_rxeq_txpreset;
+  logic [LANES-1:0]     pipe_rxeq_preset_sel, pipe_rxeq_adapt_done, pipe_rxeq_done;
+  logic [18*LANES-1:0]  pipe_rxeq_new_txcoeff;
+  logic                 pipe_as_mac_in_detect, pipe_as_cdr_hold_req, pipe_as_mac_in_L0;
+  logic [1:0]           pipe_cfg_rx_pm_state;
   logic link_up;
 
   assign m_axis_cq_tready = 1'b1;
@@ -99,10 +119,22 @@ module rivet_tb_top;
   assign s_axil_rready = 1'b1;
   assign pipe_rxdata = '0;
   assign pipe_rxdatak = '0;
-  assign pipe_rxvalid = 1'b0;
-  assign pipe_rxelecidle = 1'b1;
+  assign pipe_rxdata_valid = '0;
+  assign pipe_rxstart_block = '0;
+  assign pipe_rxsync_header = '0;
+  assign pipe_rxvalid = '0;
+  assign pipe_rxelecidle = '1;
   assign pipe_rxstatus = '0;
-  assign pipe_phystatus = 1'b0;
+  assign pipe_phystatus = '0;
+  assign pipe_phystatus_rst = '0;
+  assign pipe_txeq_fs = '0;
+  assign pipe_txeq_lf = '0;
+  assign pipe_txeq_new_coeff = '0;
+  assign pipe_txeq_done = '0;
+  assign pipe_rxeq_preset_sel = '0;
+  assign pipe_rxeq_new_txcoeff = '0;
+  assign pipe_rxeq_adapt_done = '0;
+  assign pipe_rxeq_done = '0;
 
   rivet_pcie_ctrl #(
     .MODE(0),
@@ -157,19 +189,45 @@ module rivet_tb_top;
     .s_axil_rready(s_axil_rready),
     .pipe_txdata(pipe_txdata),
     .pipe_txdatak(pipe_txdatak),
+    .pipe_txdata_valid(pipe_txdata_valid),
+    .pipe_txstart_block(pipe_txstart_block),
+    .pipe_txsync_header(pipe_txsync_header),
+    .pipe_rxdata(pipe_rxdata),
+    .pipe_rxdatak(pipe_rxdatak),
+    .pipe_rxdata_valid(pipe_rxdata_valid),
+    .pipe_rxstart_block(pipe_rxstart_block),
+    .pipe_rxsync_header(pipe_rxsync_header),
     .pipe_txdetectrx(pipe_txdetectrx),
     .pipe_txelecidle(pipe_txelecidle),
     .pipe_txcompliance(pipe_txcompliance),
-    .pipe_txdatavalid(pipe_txdatavalid),
-    .pipe_rxdata(pipe_rxdata),
-    .pipe_rxdatak(pipe_rxdatak),
-    .pipe_rxvalid(pipe_rxvalid),
-    .pipe_rxelecidle(pipe_rxelecidle),
-    .pipe_rxstatus(pipe_rxstatus),
-    .pipe_phystatus(pipe_phystatus),
+    .pipe_rxpolarity(pipe_rxpolarity),
     .pipe_powerdown(pipe_powerdown),
     .pipe_rate(pipe_rate),
-    .pipe_rxpolarity(pipe_rxpolarity),
+    .pipe_rxvalid(pipe_rxvalid),
+    .pipe_phystatus(pipe_phystatus),
+    .pipe_phystatus_rst(pipe_phystatus_rst),
+    .pipe_rxelecidle(pipe_rxelecidle),
+    .pipe_rxstatus(pipe_rxstatus),
+    .pipe_txmargin(pipe_txmargin),
+    .pipe_txswing(pipe_txswing),
+    .pipe_txdeemph(pipe_txdeemph),
+    .pipe_txeq_ctrl(pipe_txeq_ctrl),
+    .pipe_txeq_preset(pipe_txeq_preset),
+    .pipe_txeq_coeff(pipe_txeq_coeff),
+    .pipe_txeq_fs(pipe_txeq_fs),
+    .pipe_txeq_lf(pipe_txeq_lf),
+    .pipe_txeq_new_coeff(pipe_txeq_new_coeff),
+    .pipe_txeq_done(pipe_txeq_done),
+    .pipe_rxeq_ctrl(pipe_rxeq_ctrl),
+    .pipe_rxeq_txpreset(pipe_rxeq_txpreset),
+    .pipe_rxeq_preset_sel(pipe_rxeq_preset_sel),
+    .pipe_rxeq_new_txcoeff(pipe_rxeq_new_txcoeff),
+    .pipe_rxeq_adapt_done(pipe_rxeq_adapt_done),
+    .pipe_rxeq_done(pipe_rxeq_done),
+    .pipe_as_mac_in_detect(pipe_as_mac_in_detect),
+    .pipe_as_cdr_hold_req(pipe_as_cdr_hold_req),
+    .pipe_as_mac_in_L0(pipe_as_mac_in_L0),
+    .pipe_cfg_rx_pm_state(pipe_cfg_rx_pm_state),
     .link_up(link_up)
   );
 

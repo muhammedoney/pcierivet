@@ -10,19 +10,69 @@
 | PHY | `rivet_pcie_phy_*` | PIPE ↔ serial (Xilinx **PG239**) |
 | Full IP | `rivet_pcie` | Controller + PHY for integrators |
 
-`MODE` selects Endpoint, Root Complex/Port, Switch USP, or Switch DSP. Current focus: **Endpoint**, **Gen2**, lanes **×1 / ×2 / ×4**.
+### PCIe stack and Rivet boundaries
+
+Where each layer, interface, and vendor product sits in the stack:
+
+```text
+                        ┌───────────────────────────────────────┐
+                        │            User application            │
+                        │            (FPGA PL logic)             │
+                        └───────────────────────────────────────┘
+      user boundary ===== AXI-ST CQ/CC/RQ/RC (PG213-style) + AXI-Lite (CSR) =====
+   (Xilinx PG213 IP is    │                                       │
+    the equivalent of     ▼                                       ▼
+    this Rivet boundary) ┌─────────────────────────────────────────┐  ┐
+                         │ TL  — Transaction Layer                 │  │
+                         │      TLP assembly, flow control,        │  │
+                         │      ┌───────────────────────────────┐  │  │
+                         │      │ Config Space (Type 0 for EP)  │  │  │
+                         │      └───────────────────────────────┘  │  │
+                         ├─────────────────────────────────────────┤  │  rivet_pcie_ctrl
+                         │ DLL — Data Link Layer                   │  │  (soft controller,
+                         │      DLLP, ACK/NAK, LCRC, credits       │  │   MODE = EP/RC/USP/DSP,
+                         ├─────────────────────────────────────────┤  │   no vendor cells)
+                         │ MAC — Media Access Control              │  │
+                         │      LTSSM, ordered sets, lane control  │  │
+                         └─────────────────────────────────────────┘  ┘
+      PHY boundary ======================= PIPE =======================
+     (MAC ↔ PHY, per                       │
+      Intel PIPE spec)                      ▼
+                         ┌─────────────────────────────────────────┐  ┐
+                         │ PCS — Physical Coding Sublayer          │  │  rivet_pcie_phy_*
+                         │      8b/10b (Gen1/2) or 128b/130b       │  │  wraps
+                         │      (Gen3+), scramble, elastic buffer  │  │  ┌────────────────┐
+                         ├─────────────────────────────────────────┤  │  │ Xilinx PG239   │
+                         │ PMA — Physical Media Attachment         │  │  │ PCIe PHY       │
+                         │      SerDes, CDR, TX/RX drivers (GT)    │  │  │ (PCS + PMA)    │
+                         └─────────────────────────────────────────┘  ┘  └────────────────┘
+                                                │
+                                                ▼
+                                    serial lanes  ×1 / ×2 / ×4
+                                        (pci_exp_tx/rx)
+
+   rivet_pcie = rivet_pcie_ctrl + rivet_pcie_phy_*  (full integrator-facing soft IP)
+```
+
+- **AXI-ST (PG213-style) + AXI-Lite** — user boundary. Xilinx **PG213** IP is the closest **equivalent to the Rivet soft IP** at this boundary; Rivet is the open counterpart.
+- **PIPE** — MAC ↔ PHY boundary (Intel PIPE spec). Rivet's controller talks PIPE; it does not embed the PHY.
+- **`rivet_pcie_ctrl`** covers **TL + DLL + MAC** (incl. Config Space), ending at PIPE — no vendor primitives.
+- **`rivet_pcie_phy_*`** covers **PCS + PMA** by wrapping Xilinx **PG239** (PIPE ↔ serial).
+- **`rivet_pcie`** = controller + PHY, the drop-in full IP.
+
+`MODE` selects Endpoint, Root Complex/Port, Switch USP, or Switch DSP. Current focus: **Endpoint**, **Gen2**, lanes **×1 / ×2 / ×4**. Phase 1 priority: **UVM environment**, then Gen2 link RTL.
 
 ## Status
 
 | Area | State |
 |------|--------|
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
-| Generation | Gen2 now → Gen4 → Gen5 |
+| Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
 | Target FPGA | **VCU128** (VU37P, UltraScale+ HBM) — primary bring-up |
-| Verification | UVM on controller @ PIPE; Verilator CI; Vivado BFM side-path |
+| Verification | **UVM first** (Phase 1); Verilator CI; Vivado BFM side-path |
 
-Phase 0: stubs, interfaces, UVM skeleton, tool hooks — not full protocol RTL yet.
+Phase 0 stubs + PG239-aligned PIPE ports. Phase 1: grow `tb/uvm`, then Gen2 LTSSM — not Gen3/4 protocol yet.
 
 ## Repository layout
 
@@ -65,6 +115,7 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`). Details: [H
 - [Architecture](docs/architecture.md)
 - [Hardware](docs/hardware.md)
 - [Roadmap](docs/roadmap.md)
+- [Gen2 → Gen3/4 evolution](docs/gen-evolution.md)
 - [Verification](docs/verification.md)
 - [Contributing](CONTRIBUTING.md)
 

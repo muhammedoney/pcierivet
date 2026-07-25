@@ -3,7 +3,8 @@
 ## Principles
 
 - **English only** for code, comments, commits, issues, and docs.
-- **Verification before features** — do not land RTL that breaks the smoke path.
+- **Verification before features** — Phase 1: **UVM environment first**, then Gen2 RTL slices.
+- **Gen2 is the active generation** — implement and test Gen2; record Gen3/4 follow-ups in [docs/gen-evolution.md](docs/gen-evolution.md) rather than coding Gen3/4 behavior early.
 - **Controller purity** — no Xilinx primitives inside `rtl/pcie_ctrl/`; vendor PHY only under `rtl/phy/` / `rivet_pcie`.
 - **Specs stay outside the repo** — cite documents; never commit proprietary PDFs or encrypted IP.
 

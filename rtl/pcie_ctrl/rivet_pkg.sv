@@ -26,7 +26,9 @@ package rivet_pkg;
   localparam int unsigned RIVET_AXI_DATA_WIDTH_DEFAULT = 64;
   localparam int unsigned RIVET_AXI_KEEP_WIDTH_DEFAULT = RIVET_AXI_DATA_WIDTH_DEFAULT / 8;
 
-  // PIPE per-lane data width (bits) for Gen2-oriented stub.
+  // PIPE per-lane data width (bits). Gen2 default 16; US+ PHY pins up to 64.
   localparam int unsigned RIVET_PIPE_DATA_WIDTH_DEFAULT = 16;
+  localparam int unsigned RIVET_PIPE_DATAK_WIDTH_PER_LANE = 2;
+  localparam int unsigned RIVET_PIPE_RXSTATUS_WIDTH_PER_LANE = 3;
 
 endpackage : rivet_pkg

@@ -37,20 +37,22 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** naming 
 | Switch Upstream Port (USP) | 2 | Reserved |
 | Switch Downstream Port (DSP) | 3 | Reserved |
 
-Generation roadmap: **Gen2** → Gen4 → Gen5.
+Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.  
+Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-evolution.md](gen-evolution.md).
 
 ## Parameters
 
 | Parameter | Values | Notes |
 |-----------|--------|-------|
 | `MODE` | EP first | RC/USP/DSP compile-gated later |
-| `GEN` | `2` first | 4, then 5 on roadmap |
+| `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 3+ |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
 | `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only; primary bring-up **VCU128 / VU37P** (US+) |
+| `PIPE_DATA_WIDTH` | `16` now | 32 Gen3 / 64 Gen4 US+ later |
 
 ## References (not redistributed)
 
 - PCI Express Base Specification
-- PIPE specification
-- Xilinx PG213 (AXI-ST interface conventions for the *user* side)
-- Xilinx PG239 (PCIe PHY — wrapped by `rivet_pcie_phy_*`)
+- Intel **PIPE** (PHY Interface for PCI Express / SATA / USB architectures) — PG239 does **not** name a revision; Rivet targets the classic/original PIPE signal set. Prefer **PIPE 4.4.1** (Gen1–Gen4) and optionally **PIPE 5.x** for Gen5 notes. Keep under local `specs/`.
+- Xilinx PG213 (AXI-ST interface conventions for the *user* side — not PIPE)
+- Xilinx PG239 (PCIe PHY — wrapped by `rivet_pcie_phy_*`; authoritative for AMD assist/EQ ports)

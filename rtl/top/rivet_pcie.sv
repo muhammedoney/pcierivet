@@ -81,20 +81,46 @@ module rivet_pcie #(
 );
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_txdata;
-  logic [LANES-1:0]                 pipe_txdatak;
-  logic                             pipe_txdetectrx;
-  logic                             pipe_txelecidle;
-  logic [LANES-1:0]                 pipe_txcompliance;
-  logic                             pipe_txdatavalid;
+  logic [2*LANES-1:0]               pipe_txdatak;
+  logic [LANES-1:0]                 pipe_txdata_valid;
+  logic [LANES-1:0]                 pipe_txstart_block;
+  logic [2*LANES-1:0]               pipe_txsync_header;
   logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_rxdata;
-  logic [LANES-1:0]                 pipe_rxdatak;
-  logic                             pipe_rxvalid;
-  logic                             pipe_rxelecidle;
-  logic [2:0]                       pipe_rxstatus;
-  logic                             pipe_phystatus;
+  logic [2*LANES-1:0]               pipe_rxdatak;
+  logic [LANES-1:0]                 pipe_rxdata_valid;
+  logic [2*LANES-1:0]               pipe_rxstart_block;
+  logic [2*LANES-1:0]               pipe_rxsync_header;
+  logic                             pipe_txdetectrx;
+  logic [LANES-1:0]                 pipe_txelecidle;
+  logic [LANES-1:0]                 pipe_txcompliance;
+  logic [LANES-1:0]                 pipe_rxpolarity;
   logic [1:0]                       pipe_powerdown;
   logic [2:0]                       pipe_rate;
-  logic                             pipe_rxpolarity;
+  logic [LANES-1:0]                 pipe_rxvalid;
+  logic [LANES-1:0]                 pipe_phystatus;
+  logic [LANES-1:0]                 pipe_phystatus_rst;
+  logic [LANES-1:0]                 pipe_rxelecidle;
+  logic [3*LANES-1:0]               pipe_rxstatus;
+  logic [2:0]                       pipe_txmargin;
+  logic                             pipe_txswing;
+  logic                             pipe_txdeemph;
+  logic [2*LANES-1:0]               pipe_txeq_ctrl;
+  logic [4*LANES-1:0]               pipe_txeq_preset;
+  logic [6*LANES-1:0]               pipe_txeq_coeff;
+  logic [5:0]                       pipe_txeq_fs;
+  logic [5:0]                       pipe_txeq_lf;
+  logic [18*LANES-1:0]              pipe_txeq_new_coeff;
+  logic [LANES-1:0]                 pipe_txeq_done;
+  logic [2*LANES-1:0]               pipe_rxeq_ctrl;
+  logic [4*LANES-1:0]               pipe_rxeq_txpreset;
+  logic [LANES-1:0]                 pipe_rxeq_preset_sel;
+  logic [18*LANES-1:0]              pipe_rxeq_new_txcoeff;
+  logic [LANES-1:0]                 pipe_rxeq_adapt_done;
+  logic [LANES-1:0]                 pipe_rxeq_done;
+  logic                             pipe_as_mac_in_detect;
+  logic                             pipe_as_cdr_hold_req;
+  logic                             pipe_as_mac_in_L0;
+  logic [1:0]                       pipe_cfg_rx_pm_state;
 
   rivet_pcie_ctrl #(
     .MODE(MODE),
@@ -157,19 +183,45 @@ module rivet_pcie #(
     .s_axil_rready(s_axil_rready),
     .pipe_txdata(pipe_txdata),
     .pipe_txdatak(pipe_txdatak),
+    .pipe_txdata_valid(pipe_txdata_valid),
+    .pipe_txstart_block(pipe_txstart_block),
+    .pipe_txsync_header(pipe_txsync_header),
+    .pipe_rxdata(pipe_rxdata),
+    .pipe_rxdatak(pipe_rxdatak),
+    .pipe_rxdata_valid(pipe_rxdata_valid),
+    .pipe_rxstart_block(pipe_rxstart_block),
+    .pipe_rxsync_header(pipe_rxsync_header),
     .pipe_txdetectrx(pipe_txdetectrx),
     .pipe_txelecidle(pipe_txelecidle),
     .pipe_txcompliance(pipe_txcompliance),
-    .pipe_txdatavalid(pipe_txdatavalid),
-    .pipe_rxdata(pipe_rxdata),
-    .pipe_rxdatak(pipe_rxdatak),
-    .pipe_rxvalid(pipe_rxvalid),
-    .pipe_rxelecidle(pipe_rxelecidle),
-    .pipe_rxstatus(pipe_rxstatus),
-    .pipe_phystatus(pipe_phystatus),
+    .pipe_rxpolarity(pipe_rxpolarity),
     .pipe_powerdown(pipe_powerdown),
     .pipe_rate(pipe_rate),
-    .pipe_rxpolarity(pipe_rxpolarity),
+    .pipe_rxvalid(pipe_rxvalid),
+    .pipe_phystatus(pipe_phystatus),
+    .pipe_phystatus_rst(pipe_phystatus_rst),
+    .pipe_rxelecidle(pipe_rxelecidle),
+    .pipe_rxstatus(pipe_rxstatus),
+    .pipe_txmargin(pipe_txmargin),
+    .pipe_txswing(pipe_txswing),
+    .pipe_txdeemph(pipe_txdeemph),
+    .pipe_txeq_ctrl(pipe_txeq_ctrl),
+    .pipe_txeq_preset(pipe_txeq_preset),
+    .pipe_txeq_coeff(pipe_txeq_coeff),
+    .pipe_txeq_fs(pipe_txeq_fs),
+    .pipe_txeq_lf(pipe_txeq_lf),
+    .pipe_txeq_new_coeff(pipe_txeq_new_coeff),
+    .pipe_txeq_done(pipe_txeq_done),
+    .pipe_rxeq_ctrl(pipe_rxeq_ctrl),
+    .pipe_rxeq_txpreset(pipe_rxeq_txpreset),
+    .pipe_rxeq_preset_sel(pipe_rxeq_preset_sel),
+    .pipe_rxeq_new_txcoeff(pipe_rxeq_new_txcoeff),
+    .pipe_rxeq_adapt_done(pipe_rxeq_adapt_done),
+    .pipe_rxeq_done(pipe_rxeq_done),
+    .pipe_as_mac_in_detect(pipe_as_mac_in_detect),
+    .pipe_as_cdr_hold_req(pipe_as_cdr_hold_req),
+    .pipe_as_mac_in_L0(pipe_as_mac_in_L0),
+    .pipe_cfg_rx_pm_state(pipe_cfg_rx_pm_state),
     .link_up(link_up)
   );
 
@@ -183,19 +235,45 @@ module rivet_pcie #(
         .preset_n(preset_n),
         .pipe_txdata(pipe_txdata),
         .pipe_txdatak(pipe_txdatak),
+        .pipe_txdata_valid(pipe_txdata_valid),
+        .pipe_txstart_block(pipe_txstart_block),
+        .pipe_txsync_header(pipe_txsync_header),
+        .pipe_rxdata(pipe_rxdata),
+        .pipe_rxdatak(pipe_rxdatak),
+        .pipe_rxdata_valid(pipe_rxdata_valid),
+        .pipe_rxstart_block(pipe_rxstart_block),
+        .pipe_rxsync_header(pipe_rxsync_header),
         .pipe_txdetectrx(pipe_txdetectrx),
         .pipe_txelecidle(pipe_txelecidle),
         .pipe_txcompliance(pipe_txcompliance),
-        .pipe_txdatavalid(pipe_txdatavalid),
-        .pipe_rxdata(pipe_rxdata),
-        .pipe_rxdatak(pipe_rxdatak),
-        .pipe_rxvalid(pipe_rxvalid),
-        .pipe_rxelecidle(pipe_rxelecidle),
-        .pipe_rxstatus(pipe_rxstatus),
-        .pipe_phystatus(pipe_phystatus),
+        .pipe_rxpolarity(pipe_rxpolarity),
         .pipe_powerdown(pipe_powerdown),
         .pipe_rate(pipe_rate),
-        .pipe_rxpolarity(pipe_rxpolarity),
+        .pipe_rxvalid(pipe_rxvalid),
+        .pipe_phystatus(pipe_phystatus),
+        .pipe_phystatus_rst(pipe_phystatus_rst),
+        .pipe_rxelecidle(pipe_rxelecidle),
+        .pipe_rxstatus(pipe_rxstatus),
+        .pipe_txmargin(pipe_txmargin),
+        .pipe_txswing(pipe_txswing),
+        .pipe_txdeemph(pipe_txdeemph),
+        .pipe_txeq_ctrl(pipe_txeq_ctrl),
+        .pipe_txeq_preset(pipe_txeq_preset),
+        .pipe_txeq_coeff(pipe_txeq_coeff),
+        .pipe_txeq_fs(pipe_txeq_fs),
+        .pipe_txeq_lf(pipe_txeq_lf),
+        .pipe_txeq_new_coeff(pipe_txeq_new_coeff),
+        .pipe_txeq_done(pipe_txeq_done),
+        .pipe_rxeq_ctrl(pipe_rxeq_ctrl),
+        .pipe_rxeq_txpreset(pipe_rxeq_txpreset),
+        .pipe_rxeq_preset_sel(pipe_rxeq_preset_sel),
+        .pipe_rxeq_new_txcoeff(pipe_rxeq_new_txcoeff),
+        .pipe_rxeq_adapt_done(pipe_rxeq_adapt_done),
+        .pipe_rxeq_done(pipe_rxeq_done),
+        .pipe_as_mac_in_detect(pipe_as_mac_in_detect),
+        .pipe_as_cdr_hold_req(pipe_as_cdr_hold_req),
+        .pipe_as_mac_in_L0(pipe_as_mac_in_L0),
+        .pipe_cfg_rx_pm_state(pipe_cfg_rx_pm_state),
         .pci_exp_txp(pci_exp_txp),
         .pci_exp_txn(pci_exp_txn),
         .pci_exp_rxp(pci_exp_rxp),
@@ -212,19 +290,45 @@ module rivet_pcie #(
         .preset_n(preset_n),
         .pipe_txdata(pipe_txdata),
         .pipe_txdatak(pipe_txdatak),
+        .pipe_txdata_valid(pipe_txdata_valid),
+        .pipe_txstart_block(pipe_txstart_block),
+        .pipe_txsync_header(pipe_txsync_header),
+        .pipe_rxdata(pipe_rxdata),
+        .pipe_rxdatak(pipe_rxdatak),
+        .pipe_rxdata_valid(pipe_rxdata_valid),
+        .pipe_rxstart_block(pipe_rxstart_block),
+        .pipe_rxsync_header(pipe_rxsync_header),
         .pipe_txdetectrx(pipe_txdetectrx),
         .pipe_txelecidle(pipe_txelecidle),
         .pipe_txcompliance(pipe_txcompliance),
-        .pipe_txdatavalid(pipe_txdatavalid),
-        .pipe_rxdata(pipe_rxdata),
-        .pipe_rxdatak(pipe_rxdatak),
-        .pipe_rxvalid(pipe_rxvalid),
-        .pipe_rxelecidle(pipe_rxelecidle),
-        .pipe_rxstatus(pipe_rxstatus),
-        .pipe_phystatus(pipe_phystatus),
+        .pipe_rxpolarity(pipe_rxpolarity),
         .pipe_powerdown(pipe_powerdown),
         .pipe_rate(pipe_rate),
-        .pipe_rxpolarity(pipe_rxpolarity),
+        .pipe_rxvalid(pipe_rxvalid),
+        .pipe_phystatus(pipe_phystatus),
+        .pipe_phystatus_rst(pipe_phystatus_rst),
+        .pipe_rxelecidle(pipe_rxelecidle),
+        .pipe_rxstatus(pipe_rxstatus),
+        .pipe_txmargin(pipe_txmargin),
+        .pipe_txswing(pipe_txswing),
+        .pipe_txdeemph(pipe_txdeemph),
+        .pipe_txeq_ctrl(pipe_txeq_ctrl),
+        .pipe_txeq_preset(pipe_txeq_preset),
+        .pipe_txeq_coeff(pipe_txeq_coeff),
+        .pipe_txeq_fs(pipe_txeq_fs),
+        .pipe_txeq_lf(pipe_txeq_lf),
+        .pipe_txeq_new_coeff(pipe_txeq_new_coeff),
+        .pipe_txeq_done(pipe_txeq_done),
+        .pipe_rxeq_ctrl(pipe_rxeq_ctrl),
+        .pipe_rxeq_txpreset(pipe_rxeq_txpreset),
+        .pipe_rxeq_preset_sel(pipe_rxeq_preset_sel),
+        .pipe_rxeq_new_txcoeff(pipe_rxeq_new_txcoeff),
+        .pipe_rxeq_adapt_done(pipe_rxeq_adapt_done),
+        .pipe_rxeq_done(pipe_rxeq_done),
+        .pipe_as_mac_in_detect(pipe_as_mac_in_detect),
+        .pipe_as_cdr_hold_req(pipe_as_cdr_hold_req),
+        .pipe_as_mac_in_L0(pipe_as_mac_in_L0),
+        .pipe_cfg_rx_pm_state(pipe_cfg_rx_pm_state),
         .pci_exp_txp(pci_exp_txp),
         .pci_exp_txn(pci_exp_txn),
         .pci_exp_rxp(pci_exp_rxp),

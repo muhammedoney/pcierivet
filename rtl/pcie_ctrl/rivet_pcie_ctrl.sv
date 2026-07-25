@@ -75,22 +75,48 @@ module rivet_pcie_ctrl #(
   output logic                       s_axil_rvalid,
   input  logic                       s_axil_rready,
 
-  // PIPE (controller / MAC view)
+  // PIPE (controller / MAC view) — PG239-aligned; see rivet_pipe_if
   output logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_txdata,
-  output logic [LANES-1:0]                 pipe_txdatak,
-  output logic                             pipe_txdetectrx,
-  output logic                             pipe_txelecidle,
-  output logic [LANES-1:0]                 pipe_txcompliance,
-  output logic                             pipe_txdatavalid,
+  output logic [2*LANES-1:0]               pipe_txdatak,
+  output logic [LANES-1:0]                 pipe_txdata_valid,
+  output logic [LANES-1:0]                 pipe_txstart_block,
+  output logic [2*LANES-1:0]               pipe_txsync_header,
   input  logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_rxdata,
-  input  logic [LANES-1:0]                 pipe_rxdatak,
-  input  logic                             pipe_rxvalid,
-  input  logic                             pipe_rxelecidle,
-  input  logic [2:0]                       pipe_rxstatus,
-  input  logic                             pipe_phystatus,
+  input  logic [2*LANES-1:0]               pipe_rxdatak,
+  input  logic [LANES-1:0]                 pipe_rxdata_valid,
+  input  logic [2*LANES-1:0]               pipe_rxstart_block,
+  input  logic [2*LANES-1:0]               pipe_rxsync_header,
+  output logic                             pipe_txdetectrx,
+  output logic [LANES-1:0]                 pipe_txelecidle,
+  output logic [LANES-1:0]                 pipe_txcompliance,
+  output logic [LANES-1:0]                 pipe_rxpolarity,
   output logic [1:0]                       pipe_powerdown,
   output logic [2:0]                       pipe_rate,
-  output logic                             pipe_rxpolarity,
+  input  logic [LANES-1:0]                 pipe_rxvalid,
+  input  logic [LANES-1:0]                 pipe_phystatus,
+  input  logic [LANES-1:0]                 pipe_phystatus_rst,
+  input  logic [LANES-1:0]                 pipe_rxelecidle,
+  input  logic [3*LANES-1:0]               pipe_rxstatus,
+  output logic [2:0]                       pipe_txmargin,
+  output logic                             pipe_txswing,
+  output logic                             pipe_txdeemph,
+  output logic [2*LANES-1:0]               pipe_txeq_ctrl,
+  output logic [4*LANES-1:0]               pipe_txeq_preset,
+  output logic [6*LANES-1:0]               pipe_txeq_coeff,
+  input  logic [5:0]                       pipe_txeq_fs,
+  input  logic [5:0]                       pipe_txeq_lf,
+  input  logic [18*LANES-1:0]              pipe_txeq_new_coeff,
+  input  logic [LANES-1:0]                 pipe_txeq_done,
+  output logic [2*LANES-1:0]               pipe_rxeq_ctrl,
+  output logic [4*LANES-1:0]               pipe_rxeq_txpreset,
+  input  logic [LANES-1:0]                 pipe_rxeq_preset_sel,
+  input  logic [18*LANES-1:0]              pipe_rxeq_new_txcoeff,
+  input  logic [LANES-1:0]                 pipe_rxeq_adapt_done,
+  input  logic [LANES-1:0]                 pipe_rxeq_done,
+  output logic                             pipe_as_mac_in_detect,
+  output logic                             pipe_as_cdr_hold_req,
+  output logic                             pipe_as_mac_in_L0,
+  output logic [1:0]                       pipe_cfg_rx_pm_state,
 
   output logic link_up
 );
@@ -130,15 +156,29 @@ module rivet_pcie_ctrl #(
   assign s_axil_rresp   = 2'b00;
   assign s_axil_rvalid  = s_axil_arvalid;
 
-  assign pipe_txdata       = '0;
-  assign pipe_txdatak      = '0;
-  assign pipe_txdetectrx   = 1'b0;
-  assign pipe_txelecidle   = 1'b1;
-  assign pipe_txcompliance = '0;
-  assign pipe_txdatavalid  = 1'b0;
-  assign pipe_powerdown    = 2'b10;
-  assign pipe_rate         = 3'd1;
-  assign pipe_rxpolarity   = 1'b0;
+  assign pipe_txdata            = '0;
+  assign pipe_txdatak           = '0;
+  assign pipe_txdata_valid      = '0;
+  assign pipe_txstart_block     = '0;
+  assign pipe_txsync_header     = '0;
+  assign pipe_txdetectrx        = 1'b0;
+  assign pipe_txelecidle        = '1;
+  assign pipe_txcompliance      = '0;
+  assign pipe_rxpolarity        = '0;
+  assign pipe_powerdown         = 2'b10; // P1 idle stub
+  assign pipe_rate              = 3'd1;  // Gen2
+  assign pipe_txmargin          = 3'b000;
+  assign pipe_txswing           = 1'b0;
+  assign pipe_txdeemph          = 1'b1;  // -3.5 dB default (PG239)
+  assign pipe_txeq_ctrl         = '0;
+  assign pipe_txeq_preset       = '0;
+  assign pipe_txeq_coeff        = '0;
+  assign pipe_rxeq_ctrl         = '0;
+  assign pipe_rxeq_txpreset     = '0;
+  assign pipe_as_mac_in_detect  = 1'b1;  // Detect.* until LTSSM exists
+  assign pipe_as_cdr_hold_req   = 1'b0;
+  assign pipe_as_mac_in_L0      = 1'b0;
+  assign pipe_cfg_rx_pm_state   = 2'b00;
 
   assign link_up = 1'b0;
 
