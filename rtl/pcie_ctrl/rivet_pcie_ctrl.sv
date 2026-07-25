@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Rivet PCIe soft controller — multi-mode (EP / RC / USP / DSP), PIPE boundary.
-// User application IF: AXI-ST CQ/CC/RQ/RC (PG213-style) + AXI-Lite.
+// User application IF: AXI-ST CQ/CC/RQ/RC + cfg_mgmt (PG213-style). No AXI-Lite.
 // Phase 0: synthesizable stub; development focus MODE=EP, GEN=2.
 
 module rivet_pcie_ctrl #(
@@ -15,9 +15,7 @@ module rivet_pcie_ctrl #(
   parameter int unsigned AXI_CC_USER_W   = 33,
   parameter int unsigned AXI_RQ_USER_W   = 85,
   parameter int unsigned AXI_RC_USER_W   = 75,
-  parameter int unsigned PIPE_DATA_WIDTH = 16,
-  parameter int unsigned AXIL_ADDR_WIDTH = 32,
-  parameter int unsigned AXIL_DATA_WIDTH = 32
+  parameter int unsigned PIPE_DATA_WIDTH = 16
 ) (
   input  logic user_clk,
   input  logic user_resetn,
@@ -69,24 +67,16 @@ module rivet_pcie_ctrl #(
   output logic [3:0]                 pcie_tfc_nph_av,
   output logic [3:0]                 pcie_tfc_npd_av,
 
-  // AXI-Lite config (CSR Phase 1+)
-  input  logic [AXIL_ADDR_WIDTH-1:0] s_axil_awaddr,
-  input  logic                       s_axil_awvalid,
-  output logic                       s_axil_awready,
-  input  logic [AXIL_DATA_WIDTH-1:0] s_axil_wdata,
-  input  logic [AXIL_DATA_WIDTH/8-1:0] s_axil_wstrb,
-  input  logic                       s_axil_wvalid,
-  output logic                       s_axil_wready,
-  output logic [1:0]                 s_axil_bresp,
-  output logic                       s_axil_bvalid,
-  input  logic                       s_axil_bready,
-  input  logic [AXIL_ADDR_WIDTH-1:0] s_axil_araddr,
-  input  logic                       s_axil_arvalid,
-  output logic                       s_axil_arready,
-  output logic [AXIL_DATA_WIDTH-1:0] s_axil_rdata,
-  output logic [1:0]                 s_axil_rresp,
-  output logic                       s_axil_rvalid,
-  input  logic                       s_axil_rready,
+  // Configuration Management (PG213 Table 26)
+  input  logic [9:0]                 cfg_mgmt_addr,
+  input  logic [7:0]                 cfg_mgmt_function_number,
+  input  logic                       cfg_mgmt_write,
+  input  logic [31:0]                cfg_mgmt_write_data,
+  input  logic [3:0]                 cfg_mgmt_byte_enable,
+  input  logic                       cfg_mgmt_read,
+  output logic [31:0]                cfg_mgmt_read_data,
+  output logic                       cfg_mgmt_read_write_done,
+  input  logic                       cfg_mgmt_debug_access,
 
   // PIPE (controller / MAC view) — PG239-aligned; see rivet_pipe_if
   output logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_txdata,
@@ -171,14 +161,8 @@ module rivet_pcie_ctrl #(
   assign pcie_tfc_nph_av      = '0;
   assign pcie_tfc_npd_av      = '0;
 
-  assign s_axil_awready = 1'b1;
-  assign s_axil_wready  = 1'b1;
-  assign s_axil_bresp   = 2'b00;
-  assign s_axil_bvalid  = s_axil_awvalid && s_axil_wvalid;
-  assign s_axil_arready = 1'b1;
-  assign s_axil_rdata   = '0;
-  assign s_axil_rresp   = 2'b00;
-  assign s_axil_rvalid  = s_axil_arvalid;
+  assign cfg_mgmt_read_data        = '0;
+  assign cfg_mgmt_read_write_done  = cfg_mgmt_read || cfg_mgmt_write;
 
   assign pipe_txdata            = '0;
   assign pipe_txdatak           = '0;
@@ -206,6 +190,7 @@ module rivet_pcie_ctrl #(
 
   assign link_up = 1'b0;
 
-  wire _unused_user = ^pcie_cq_np_req;
+  wire _unused_user = ^pcie_cq_np_req ^ (|cfg_mgmt_addr) ^ (|cfg_mgmt_function_number) ^
+                      (|cfg_mgmt_write_data) ^ (|cfg_mgmt_byte_enable) ^ cfg_mgmt_debug_access;
 
 endmodule : rivet_pcie_ctrl

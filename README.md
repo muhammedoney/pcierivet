@@ -6,7 +6,7 @@
 
 | Layer | Module | Boundary |
 |-------|--------|----------|
-| Controller | `rivet_pcie_ctrl` | AXI-ST (PG213-style) + AXI-Lite ↔ **PIPE** |
+| Controller | `rivet_pcie_ctrl` | AXI-ST + `cfg_mgmt` (PG213-style) ↔ **PIPE** |
 | PHY | `rivet_pcie_phy_*` | PIPE ↔ serial (Xilinx **PG239**) |
 | Full IP | `rivet_pcie` | Controller + PHY for integrators |
 
@@ -19,7 +19,7 @@ Where each layer, interface, and vendor product sits in the stack:
                         │            User application            │
                         │            (FPGA PL logic)             │
                         └───────────────────────────────────────┘
-      user boundary ===== AXI-ST CQ/CC/RQ/RC (PG213-style) + AXI-Lite (CSR) =====
+      user boundary ===== AXI-ST CQ/CC/RQ/RC + cfg_mgmt (PG213-style) =====
    (Xilinx PG213 IP is    │                                       │
     the equivalent of     ▼                                       ▼
     this Rivet boundary) ┌─────────────────────────────────────────┐  ┐
@@ -54,7 +54,7 @@ Where each layer, interface, and vendor product sits in the stack:
    rivet_pcie = rivet_pcie_ctrl + rivet_pcie_phy_*  (full integrator-facing soft IP)
 ```
 
-- **AXI-ST (PG213-style) + AXI-Lite** — user boundary. Xilinx **PG213** IP is the closest **functional equivalent to the complete Rivet soft IP**; Rivet is the open counterpart, but is not yet pin-compatible. See the [PG213 interface audit](docs/pg213-interface.md).
+- **AXI-ST + `cfg_mgmt` (PG213-style)** — user boundary. Xilinx **PG213** IP is the closest **functional equivalent to the complete Rivet soft IP**; Rivet aligns config access to PG213 Table 26 (`cfg_mgmt_*`), not AXI-Lite. See the [PG213 interface audit](docs/pg213-interface.md).
 - **PIPE** — MAC ↔ PHY boundary (Intel PIPE spec). Rivet's controller talks PIPE; it does not embed the PHY.
 - **`rivet_pcie_ctrl`** covers **TL + DLL + MAC** (incl. Config Space), ending at PIPE — no vendor primitives.
 - **`rivet_pcie_phy_*`** covers **PCS + PMA** by wrapping Xilinx **PG239** (PIPE ↔ serial).
@@ -80,7 +80,7 @@ Phase 0 stubs + PG239-aligned PIPE ports. Phase 1: grow `tb/uvm`, then Gen2 LTSS
 rtl/pcie_ctrl/   Soft controller (to PIPE)
 rtl/phy/         PG239 family PHY wrappers
 rtl/top/         rivet_pcie = ctrl + phy
-rtl/interfaces/  PIPE, AXI-ST, AXI-Lite SV interfaces
+rtl/interfaces/  PIPE, AXI-ST, cfg_mgmt SV interfaces
 tb/uvm/          Primary UVM (DUT = rivet_pcie_ctrl)
 tb/bfm/          Vivado RP/EP BFM side-path
 ```

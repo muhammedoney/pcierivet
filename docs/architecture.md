@@ -8,11 +8,11 @@
 | **PHY** | `rivet_pcie_phy_*` | Family-specific wrapper around Xilinx **PCIe PHY (PG239)**. PIPE ↔ serial lanes. |
 | **PCIe IP (full)** | `rivet_pcie` | Integrator-facing soft IP = **controller + PHY**. |
 
-User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** naming conventions in the style of Xilinx **PG213**, plus **AXI-Lite** for config. That is the *user* boundary — not the PHY.
+User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`cfg_mgmt_*`** naming conventions in the style of Xilinx **PG213**. That is the *user* boundary — not the PHY. There is **no AXI-Lite** user port.
 
 ```text
   [ User PL ]
-      |  AXI-ST (PG213-style) + AXI-Lite
+      |  AXI-ST (PG213-style) + cfg_mgmt
       v
   +--------------------+
   | rivet_pcie_ctrl    |   MODE = EP | RC | USP | DSP

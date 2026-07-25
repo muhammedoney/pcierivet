@@ -40,7 +40,7 @@ See `.cursor/rules/` and keep:
 - Packages: `rivet_pkg`, `rivet_uvm_pkg`
 - Parameters: `GEN`, `LANES` (1/2/4), `MODE` (`EP` first)
 - AXI-ST channels CQ/CC/RQ/RC always present on `rivet_pcie_ctrl`
-- AXI-Lite for configuration (stub ports in Phase 0)
+- `cfg_mgmt_*` for configuration (PG213 Table 26; no AXI-Lite)
 - Module names: controller / phy / `rivet_pcie` — not `*_ep` for the soft core
 
 ## Pull requests

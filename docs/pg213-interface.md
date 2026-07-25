@@ -23,9 +23,9 @@ Base Specification.
 2. The four AXI-ST channels alone are not a complete PG213-style user boundary.
    CQ NP credits, RQ tag/sequence feedback, configuration, interrupts, messages,
    flow-control visibility, reset/clock status, and FLR must also be accounted for.
-3. Rivet's AXI-Lite port is a deliberate native replacement for much of PG213's
-   large `cfg_*` management/control/status surface. Dedicated event and handshake
-   signals are still required where register polling is not semantically sufficient.
+3. Rivet uses PG213-style **`cfg_mgmt_*`** (Table 26) for configuration R/W —
+   **no AXI-Lite** on the user boundary. Other dedicated `cfg_*` event/handshake
+   ports remain required where pulse semantics cannot be polled.
 4. PG213 `user_clk` and active-High `user_reset` are outputs of the complete hard
    IP. The current soft controller takes `user_clk` and active-Low `user_resetn`
    as inputs. The final `rivet_pcie` clock/reset ownership must be resolved when
@@ -68,7 +68,7 @@ The packed fields stay in `tuser`; they are not separate top-level ports.
 | `pcie_rq_tag_av[3:0]` | output | Free requester tags | Present (stub) |
 | `pcie_tfc_nph_av[3:0]`, `pcie_tfc_npd_av[3:0]` | output | NP header/data TX credit availability | Present (stub) |
 
-These are dedicated handshakes/status ports, not AXI-Lite register substitutes.
+These are dedicated handshakes/status ports, not substitutes for `cfg_mgmt`.
 
 ## Configuration and status inventory
 
@@ -86,13 +86,12 @@ Status: missing; defer until ASPM is implemented.
   `cfg_mgmt_byte_enable[3:0]`, `cfg_mgmt_read`, `cfg_mgmt_debug_access`
 - Outputs: `cfg_mgmt_read_data[31:0]`, `cfg_mgmt_read_write_done`
 
-Rivet decision: map these semantics onto the AXI-Lite CSR/config-space window
-instead of duplicating the PG213 pulse interface. The mapping and atomicity rules
-must be documented with the config-space implementation.
+Rivet decision: expose **`cfg_mgmt_*`** directly (present as stub). Config-space
+atomicity and DW addressing follow PG213; `cfg_mgmt_debug_access` is a no-op in EP.
 
 ### Configuration/link status (Table 27)
 
-Phase 1/2 status that must be directly visible or mapped to AXI-Lite:
+Phase 1/2 status that must be directly visible as dedicated `cfg_*` ports:
 
 - `cfg_phy_link_down`, `cfg_phy_link_status[1:0]`
 - `cfg_negotiated_width[2:0]`, `cfg_current_speed[1:0]`
@@ -108,8 +107,8 @@ Phase 1/2 status that must be directly visible or mapped to AXI-Lite:
 - `cfg_tph_requester_enable`, `cfg_tph_st_mode`
 
 Rivet currently exposes only `link_up`; all detailed status is missing.
-The final API should expose frequently sampled link state directly and mirror all
-status into AXI-Lite.
+The final API should expose frequently sampled link state as dedicated PG213-style
+`cfg_*` status ports (not via AXI-Lite).
 
 Deferred status:
 
@@ -131,8 +130,8 @@ Deferred status:
   `cfg_msg_transmit_data[31:0]`
 - Output: `cfg_msg_transmit_done`
 
-Status: missing. Message events need a dedicated valid/data handshake; an
-AXI-Lite event FIFO can additionally retain them for software.
+Status: missing. Message events need a dedicated valid/data handshake
+(`cfg_msg_*`); software retention can be layered outside the core.
 
 ### Flow-control visibility (Table 32)
 
@@ -167,7 +166,7 @@ PG213 Table 33 contains both generally useful and mode/feature-specific signals.
 Rivet decision:
 
 - Static identity values should normally be parameters/initial config-space data,
-  with optional AXI-Lite override before enumeration.
+  with optional `cfg_mgmt` override before enumeration where PG213 allows.
 - Hot reset, power transition, errors, and FLR require event/handshake semantics;
   they cannot be represented only by passive status registers.
 - Current implementation has none of these except the coarse `link_up`.
@@ -223,8 +222,8 @@ PG213 Tables 38:
   `cfg_ext_write_data[31:0]`, `cfg_ext_write_byte_enable[3:0]`
 - Inputs: `cfg_ext_read_data[31:0]`, `cfg_ext_read_data_valid`
 
-Rivet decision: use an internal config-space router with an AXI-Lite-backed
-extension window. A direct compatibility adapter can reproduce these PG213 ports.
+Rivet decision: use an internal config-space router; expose PG213
+`cfg_ext_*` ports when extended config is implemented (no AXI-Lite bridge).
 
 ## Clock, reset, and physical boundary
 
@@ -254,7 +253,8 @@ the controller remains independently testable at user clock + PIPE.
 - [x] Add CQ NP credit and RQ tag/sequence/credit companion ports (stub behavior).
 - [ ] Define packed `tuser` types/bit positions in `rivet_pkg`.
 - [ ] Bind all four AXI-ST channels and companion ports into UVM agents.
-- [ ] Add canonical link/config status types and an AXI-Lite register map.
+- [x] Replace AXI-Lite with PG213 `cfg_mgmt_*` ports (stub).
+- [ ] Add canonical link/config status types and remaining `cfg_*` ports.
 
 ### Before Phase 2 functional endpoint
 

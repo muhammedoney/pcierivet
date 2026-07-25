@@ -69,13 +69,13 @@ module rivet_tb_top;
   logic [9:0]         pcie_rq_tag0, pcie_rq_tag1;
   logic               pcie_rq_tag_vld0, pcie_rq_tag_vld1;
   logic [3:0]         pcie_rq_tag_av, pcie_tfc_nph_av, pcie_tfc_npd_av;
-  // AXI-Lite
-  logic [31:0] s_axil_awaddr, s_axil_wdata, s_axil_araddr, s_axil_rdata;
-  logic [3:0]  s_axil_wstrb;
-  logic        s_axil_awvalid, s_axil_awready, s_axil_wvalid, s_axil_wready;
-  logic        s_axil_bvalid, s_axil_bready, s_axil_arvalid, s_axil_arready;
-  logic        s_axil_rvalid, s_axil_rready;
-  logic [1:0]  s_axil_bresp, s_axil_rresp;
+  // Configuration Management (PG213)
+  logic [9:0]         cfg_mgmt_addr;
+  logic [7:0]         cfg_mgmt_function_number;
+  logic               cfg_mgmt_write, cfg_mgmt_read, cfg_mgmt_read_write_done;
+  logic               cfg_mgmt_debug_access;
+  logic [31:0]        cfg_mgmt_write_data, cfg_mgmt_read_data;
+  logic [3:0]         cfg_mgmt_byte_enable;
   // PIPE (PG239-aligned widths; Gen2 smoke uses 16-bit datapath)
   logic [16*LANES-1:0]  pipe_txdata, pipe_rxdata;
   logic [2*LANES-1:0]   pipe_txdatak, pipe_rxdatak;
@@ -118,15 +118,13 @@ module rivet_tb_top;
   assign s_axis_rq_tvalid = 1'b0;
   assign s_axis_rq_tuser = '0;
   assign pcie_cq_np_req = 2'b01;
-  assign s_axil_awaddr = '0;
-  assign s_axil_awvalid = 1'b0;
-  assign s_axil_wdata = '0;
-  assign s_axil_wstrb = '0;
-  assign s_axil_wvalid = 1'b0;
-  assign s_axil_bready = 1'b1;
-  assign s_axil_araddr = '0;
-  assign s_axil_arvalid = 1'b0;
-  assign s_axil_rready = 1'b1;
+  assign cfg_mgmt_addr = '0;
+  assign cfg_mgmt_function_number = '0;
+  assign cfg_mgmt_write = 1'b0;
+  assign cfg_mgmt_write_data = '0;
+  assign cfg_mgmt_byte_enable = '0;
+  assign cfg_mgmt_read = 1'b0;
+  assign cfg_mgmt_debug_access = 1'b0;
   assign pipe_rxdata = '0;
   assign pipe_rxdatak = '0;
   assign pipe_rxdata_valid = '0;
@@ -191,23 +189,15 @@ module rivet_tb_top;
     .pcie_rq_tag_av(pcie_rq_tag_av),
     .pcie_tfc_nph_av(pcie_tfc_nph_av),
     .pcie_tfc_npd_av(pcie_tfc_npd_av),
-    .s_axil_awaddr(s_axil_awaddr),
-    .s_axil_awvalid(s_axil_awvalid),
-    .s_axil_awready(s_axil_awready),
-    .s_axil_wdata(s_axil_wdata),
-    .s_axil_wstrb(s_axil_wstrb),
-    .s_axil_wvalid(s_axil_wvalid),
-    .s_axil_wready(s_axil_wready),
-    .s_axil_bresp(s_axil_bresp),
-    .s_axil_bvalid(s_axil_bvalid),
-    .s_axil_bready(s_axil_bready),
-    .s_axil_araddr(s_axil_araddr),
-    .s_axil_arvalid(s_axil_arvalid),
-    .s_axil_arready(s_axil_arready),
-    .s_axil_rdata(s_axil_rdata),
-    .s_axil_rresp(s_axil_rresp),
-    .s_axil_rvalid(s_axil_rvalid),
-    .s_axil_rready(s_axil_rready),
+    .cfg_mgmt_addr(cfg_mgmt_addr),
+    .cfg_mgmt_function_number(cfg_mgmt_function_number),
+    .cfg_mgmt_write(cfg_mgmt_write),
+    .cfg_mgmt_write_data(cfg_mgmt_write_data),
+    .cfg_mgmt_byte_enable(cfg_mgmt_byte_enable),
+    .cfg_mgmt_read(cfg_mgmt_read),
+    .cfg_mgmt_read_data(cfg_mgmt_read_data),
+    .cfg_mgmt_read_write_done(cfg_mgmt_read_write_done),
+    .cfg_mgmt_debug_access(cfg_mgmt_debug_access),
     .pipe_txdata(pipe_txdata),
     .pipe_txdatak(pipe_txdatak),
     .pipe_txdata_valid(pipe_txdata_valid),

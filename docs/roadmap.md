@@ -7,7 +7,7 @@ Gen3/4/5 are later phases — see [gen-evolution.md](gen-evolution.md) for per-m
 
 - Repo, Apache-2.0, docs, Cursor rules/skills
 - Terminology: **`rivet_pcie_ctrl`** + **`rivet_pcie_phy_*`** + **`rivet_pcie`**
-- PIPE (PG239-aligned ports) + AXI-ST + AXI-Lite stubs
+- PIPE (PG239-aligned ports) + AXI-ST + `cfg_mgmt` stubs
 - UVM skeleton; Verilator CI; Questa scripts; Yosys hook
 - Vivado BFM side-path docs; target hardware **VCU128**
 
@@ -31,7 +31,7 @@ Gen3/4 ports may already exist on PIPE; **do not implement Gen3/4 behavior in Ph
 
 ## Phase 2 — EP Gen2 functional
 
-- TLP on AXI-ST; config via AXI-Lite  
+- TLP on AXI-ST; config via `cfg_mgmt_*`  
 - Expand UVM (TLP scoreboard, config sequences, coverage)  
 - FPGA bring-up with `rivet_pcie` + US+ PHY on **VCU128 (VU37P)**; VCU129-PP alternate  
 

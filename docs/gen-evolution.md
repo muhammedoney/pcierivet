@@ -66,12 +66,12 @@ Suggested future splits (still Gen2-first): `ltssm`, `dllp`, `tlp`, `pipe_mac` â
 | Pass-through PIPE between `u_ctrl` and `u_phy` | Same; optional width/adapters if ctrl logical width â‰  PHY pin width |
 | `FPGA_FAMILY` select | Gen4 speed-grade / part constraints in Vivado (not in soft RTL) |
 
-### `rtl/interfaces/rivet_axi_st_if.sv` / AXI-Lite
+### `rtl/interfaces/rivet_axi_st_if.sv` / `rivet_cfg_mgmt_if.sv`
 
 | Now (Gen2) | Later (Gen3/4) |
 |------------|----------------|
 | 64-bit AXI-ST stub (PG213-style) | May widen AXI data/user widths with gen/lanes; CQ/CC/RQ/RC stay |
-| AXI-Lite CSR stub | CSR bits for link gen, EQ status, etc. |
+| `cfg_mgmt_*` stub (PG213 Table 26) | Same pulse IF; extended regs / IDs as capabilities grow |
 
 ### `tb/uvm/**` (Phase 1 priority)
 
