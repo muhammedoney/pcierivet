@@ -272,3 +272,20 @@ the controller remains independently testable at user clock + PIPE.
 - Root Port-only controls/status.
 - Gen3/4-specific widths/features (tracked in `gen-evolution.md`).
 
+## PG213 extract caveats and locked decisions
+
+The local `specs/*.md` is auto-extracted from the PDF; some rows are ambiguous or
+corrupted. Where PG213 text conflicts, Rivet locks the choice below (Chapter 3
+Port Descriptions wins over migration/appendix tables).
+
+| Topic | Conflict in extract | Rivet decision |
+|-------|---------------------|----------------|
+| `pcie_rq_tag0/1` width | Table 13 says 10, Table 21/App.A say 8 | Use **10** (non-512 Table 13); low bits used until wider tags needed |
+| `pcie_rq_seq_num0` | Prose says `[3:0]`, port/tuser carry `[5:0]` | Port width **6**; `seq_num` sideband is 6 bits (`[27:24]`+`[61:60]`) |
+| `cfg_local_error_out/valid` | Ch.3 = Output, App.A Table 102 = Input | Treat as **Output** (Ch.3) |
+| `s_axis_cc_tready`, `s_axis_rq_tready` | 4-bit bus, all bits identical | Expose **[3:0]**; any bit is usable |
+| `s_axis_rq_tuser` | 85-bit port, only `[61:0]` defined | Port **85**, `[84:62]` reserved / tie-0 |
+| `user_lnk_up` | Missing from clock/reset Table 39; only prose/Tandem | Rivet uses `link_up`; alias `user_lnk_up` in a future PG213 adapter |
+| `cfg_dpa_substate_change`, `cfg_ds_function_number` | In Ch.3 but "not available" in Table 104 | Treat as deprecated; do not rely on for new work |
+| Name typos (`cfg_msg_data`, `cfg_mg_transmit`, `cfg_ext_wrte_data`, `cfg_vf_flr_runc_num`, `cfg_imterrupt_msi_int`) | PDF OCR/extraction noise | Use the corrected canonical names in this doc |
+
