@@ -9,7 +9,7 @@ Gen3/4/5 are later phases — see [gen-evolution.md](gen-evolution.md) for per-m
 - Terminology: **`rivet_pcie_ctrl`** + **`rivet_pcie_phy_*`** + **`rivet_pcie`**
 - PIPE (PG239-aligned ports) + AXI-ST + `cfg_mgmt` stubs
 - UVM skeleton; Verilator CI; Questa scripts; Yosys hook
-- Vivado BFM side-path docs; target hardware **VCU128**
+- Vivado BFM side-path docs; target hardware **VCU118 (XCVU9P)**
 
 ## Phase 1 — UVM environment first, then Gen2 link skeleton (current)
 
@@ -33,7 +33,7 @@ Gen3/4 ports may already exist on PIPE; **do not implement Gen3/4 behavior in Ph
 
 - TLP on AXI-ST; config via `cfg_mgmt_*`  
 - Expand UVM (TLP scoreboard, config sequences, coverage)  
-- FPGA bring-up with `rivet_pcie` + US+ PHY on **VCU128 (VU37P)**; VCU129-PP alternate  
+- FPGA bring-up with `rivet_pcie` + US+ PHY on **VCU118 (XCVU9P)**; PG239 generate for VU9P  
 
 ## Phase 3 — EP Gen3
 
@@ -44,7 +44,7 @@ Gen3/4 ports may already exist on PIPE; **do not implement Gen3/4 behavior in Ph
 
 ## Phase 4 — EP Gen4
 
-- Gen4 rate / 64-bit US+ datapath; VCU128 constraints  
+- Gen4 rate / 64-bit US+ datapath; VCU118 constraints  
 - UVM Gen4 smokes and EQ/rate-change coverage  
 - Details: [gen-evolution.md](gen-evolution.md)
 

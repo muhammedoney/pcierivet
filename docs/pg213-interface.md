@@ -237,7 +237,7 @@ Rivet mapping:
 | `user_lnk_up` | `link_up` | Equivalent coarse link indication; compatibility adapter can rename |
 | `user_clk` core output | `user_clk` controller/top input | Full IP should derive/export the user clock from the PHY/clocking block |
 | `user_reset` active-High output | `user_resetn` active-Low input | Define one canonical polarity and generate user reset inside full IP |
-| `sys_clk`, `sys_clk_gt` | one `sys_clk` input | Real VCU128 wrapper must separate fabric and GT reference clock paths |
+| `sys_clk`, `sys_clk_gt` | one `sys_clk` input | Real VCU118 wrapper must separate fabric and GT reference clock paths |
 | `sys_reset` active-low | `sys_reset_n` | Semantically aligned |
 | `phy_rdy_out` | absent | Add when real PG239 reset/clock FSM exists |
 | serial lanes | present on `rivet_pcie` | Present |

@@ -1,7 +1,8 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Rivet PCIe PHY — UltraScale+ family (wraps Xilinx PCIe PHY / PG239).
+// Rivet PCIe PHY — UltraScale+ / VCU118 (XCVU9P).
+// Wrap Xilinx PCIe PHY (PG239) generated for VU9P (GTY).
 // PIPE <-> serial. Phase 0: behavioral stub (no vendor netlist in-repo).
 // PIPE ports match rivet_pipe_if / PG239 Tables 5–15 (GT/DRP stay off this stub).
 

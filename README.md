@@ -69,7 +69,7 @@ Where each layer, interface, and vendor product sits in the stack:
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
 | Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
-| Target FPGA | **VCU128** (VU37P, UltraScale+ HBM) — primary bring-up |
+| Target FPGA | **VCU118** (**XCVU9P**, UltraScale+ GTY) — primary bring-up |
 | Verification | **UVM first** (Phase 1); Verilator CI; Vivado BFM side-path |
 
 Phase 0 stubs + PG239-aligned PIPE ports. Phase 1: grow `tb/uvm`, then Gen2 LTSSM — not Gen3/4 protocol yet.
@@ -89,10 +89,11 @@ tb/bfm/          Vivado RP/EP BFM side-path
 
 | Kit | FPGA | Role |
 |-----|------|------|
-| **AMD Virtex UltraScale+ HBM VCU128** | **VU37P** | **Primary** FPGA evaluation / bring-up |
-| AMD Virtex UltraScale+ 56G PAM4 VCU129-PP | — | Acceptable alternate if VCU128 is unavailable |
+| **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | **Primary** — native PG239 GTY generate + 52 GTY + PCIe ×16 |
+| — | VU3P | PG239 GTY generate OK; fewer GTs / no preferred kit |
+| VCU128 (VU37P) | — | **Out of scope** (PG239 not offered for VU37P) |
 
-PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`). Details: [Hardware](docs/hardware.md).
+PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **VU9P**). Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
 
 ## Tools
 
@@ -101,7 +102,7 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`). Details: [H
 | QuestaSim | UVM regression (local license) |
 | Verilator | Lint / smoke (CI) |
 | Yosys | Open synth sanity |
-| Vivado | PHY IP + optional BFM export + VCU128 flows |
+| Vivado | PHY IP (PG239 on VU9P) + optional BFM export + VCU118 flows |
 
 ## Quick start (Verilator)
 
@@ -114,6 +115,7 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`). Details: [H
 
 - [Architecture](docs/architecture.md)
 - [Hardware](docs/hardware.md)
+- [Boards / PG239 targets](docs/boards.md)
 - [Roadmap](docs/roadmap.md)
 - [Gen2 → Gen3/4 evolution](docs/gen-evolution.md)
 - [PG213-style interface audit](docs/pg213-interface.md)
@@ -130,12 +132,12 @@ Specifications are not redistributed; obtain PCIe / PIPE / PG213 / PG239 yoursel
 
 Early-stage open interconnect IP. **Hardware sponsorship is a real blocker** for FPGA bring-up.
 
-**Most needed:** an **AMD Virtex UltraScale+ HBM VCU128** evaluation kit (**VU37P**), or equivalent board loan / donation. VCU129-PP is a workable alternate; VCU128 is strongly preferred.
+**Most needed:** an **AMD Virtex UltraScale+ VCU118** evaluation kit (**XCVU9P**), or equivalent board loan / donation. VU9P is required so PG239 can be generated and instantiated for the soft PHY path.
 
 Also welcome:
 
 - Sponsorship for simulation tooling (Questa) and related costs
 - Review of UVM methodology and PIPE / AXI-ST fidelity
-- Other UltraScale+ PCIe-capable boards if VCU128 is not available
+- Other **VU9P-class** UltraScale+ PCIe boards (native PG239 GTY)
 
 If you can ship a board, fund a kit, or connect us to AMD/Xilinx university / open-source hardware programs — please open an issue or reach out. Thank you.

@@ -1,27 +1,19 @@
 # Target hardware
 
-## Primary kit
+Primary bring-up platform (locked):
 
 | Item | Value |
-|------|--------|
-| Kit | AMD Virtex UltraScale+ HBM **VCU128** FPGA Evaluation Kit |
-| FPGA | **VU37P** (UltraScale+) |
-| Rivet PHY | `rivet_pcie_phy_usplus` (`FPGA_FAMILY=0` on `rivet_pcie`) |
+|------|-------|
+| Kit | AMD Virtex UltraScale+ FPGA **VCU118** Evaluation Kit (EK-U1-VCU118-G) |
+| FPGA | **XCVU9P** (UltraScale+, GTY) |
+| Example Vivado part | `xcvu9p-flga2104-2L-e` (Rev 2.0+, VCCINT 0.85 V) |
+| PG239 generate part | **VU9P** (official GTY target) |
+| Board GTs | 52 GTY (16 on PCIe ×16 edge) |
 
-VCU128 is the reference platform for Phase 2+ FPGA bring-up (full `rivet_pcie` + PG239).
+**VCU128 (XCVU37P) is not used** — Vivado does not generate PG239 for VU37P.
 
-## Alternate kit
-
-| Kit | Notes |
-|-----|--------|
-| AMD Virtex UltraScale+ 56G PAM4 **VCU129-PP** | Acceptable if VCU128 cannot be obtained; prefer VCU128 |
+Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md).
 
 ## Sponsorship
 
-Open-source Rivet development needs access to a **VCU128** (or loan/donation of an equivalent UltraScale+ PCIe board). See the README support section.
-
-## Specs and vendor IP
-
-- Keep proprietary PDFs under local `specs/` (gitignored; never commit).
-- Generated / encrypted PHY and BFM material stays under `third_party/` per existing ignore rules.
-- Next useful add: Intel **PIPE 4.4.1** (see `docs/architecture.md` / `docs/verification.md`). PG239 never names a PIPE revision.
+Rivet needs a **VCU118** (or loan/donation). Prefer VU9P-class boards with a PCIe edge connector and native PG239 GTY generation.

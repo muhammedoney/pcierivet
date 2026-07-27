@@ -57,7 +57,7 @@ Suggested future splits (still Gen2-first): `ltssm`, `dllp`, `tlp`, `pipe_mac` â
 | Behavioral stub; serial tied | Real PG239 instance; map Rivet PIPE â†” `phy_*` |
 | 16-bit logical width | Connect full 32/64-bit `phy_txdata`/`phy_rxdata` per family table |
 | US wrapper shares US+ stub packing | Honor US 1-bit `rxstart_block` vs US+ 2-bit if wrapping real IP |
-| No GT/DRP on stub | Wire GT-specific / clocking for VCU128 (refclk, `gt_gtpowergood`, etc.) |
+| No GT/DRP on stub | Wire GT-specific / clocking for VCU118 (refclk, `gt_gtpowergood`, etc.) |
 
 ### `rtl/top/rivet_pcie.sv`
 

@@ -37,7 +37,17 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`
 | Switch Upstream Port (USP) | 2 | Reserved |
 | Switch Downstream Port (DSP) | 3 | Reserved |
 
-Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.  
+Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
+
+## Primary FPGA / board (locked)
+
+| Item | Choice |
+|------|--------|
+| Board | **VCU118** |
+| FPGA | **XCVU9P** (UltraScale+, GTY) |
+| PHY IP | PG239 generated for **VU9P** |
+
+**VCU128 (XCVU37P) is out of scope** for Rivet soft-PHY bring-up — PG239 is not offered for that part in Vivado. Details: [boards.md](boards.md).  
 Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-evolution.md](gen-evolution.md).
 
 ## Parameters
@@ -47,7 +57,7 @@ Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-
 | `MODE` | EP first | RC/USP/DSP compile-gated later |
 | `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 3+ |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
-| `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only; primary bring-up **VCU128 / VU37P** (US+) |
+| `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only; primary bring-up **VCU118 / XCVU9P** (US+) |
 | `PIPE_DATA_WIDTH` | `16` now | 32 Gen3 / 64 Gen4 US+ later |
 
 ## References (not redistributed)
