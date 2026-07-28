@@ -19,25 +19,34 @@ Primary DUT: **`rivet_pcie_ctrl`**. Full IP `rivet_pcie` is for FPGA / BFM bring
 
 ## Phase 1 UVM build-out (priority)
 
-Skeleton exists; fill in this order:
-
-1. PIPE agent — Gen2 driver/monitor/sequencer, interface binding to `rivet_pipe_if` / DUT ports  
-2. AXI-ST agents — CQ/CC/RQ/RC  
-3. Env connect — analysis ports → scoreboard / coverage  
-4. Sequences — reset, idle PIPE, then LTSSM/DLLP as RTL appears  
-5. Smokes — `smoke_gen2_x1` must run under Questa when available; then ×2 / ×4  
-6. Scoreboard / coverage — grow with protocol; keep stubs until then  
+| Step | Status |
+|------|--------|
+| PIPE agent + idle smoke | Done (`smoke_gen2_x1`) |
+| AXI-ST CQ/CC/RQ/RC agents | Done |
+| `cfg_mgmt` agent + companion monitor | Done |
+| Virtual sequencer + shared idle vseq | Done |
+| Smokes ×2 / ×4 | Done (`smoke_gen2_x2`, `smoke_gen2_x4`) |
+| Coverage (PIPE idle + lanes) | Started |
+| LTSSM / DLLP sequences as RTL lands | Next |
 
 Do not block UVM progress on Gen3/4 features. Keep Gen3+ PIPE fields in the interface unused/idle in Gen2 tests.
 
 ## QuestaSim (local)
 
-Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then `scripts/sim_questa.ps1`.
+Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then:
+
+```powershell
+.\scripts\sim_questa.ps1 smoke_gen2_x1 1
+.\scripts\sim_questa.ps1 smoke_gen2_x2 2
+.\scripts\sim_questa.ps1 smoke_gen2_x4 4
+```
+
+Uses built-in `-L mtiUvm` (match `UVM_HOME` to uvm-1.1d). Lane width is a **compile-time** `+define+RIVET_TB_LANES=N`.
 
 | Tool | Version |
 |------|---------|
-| QuestaSim | _TBD_ |
-| UVM | _TBD_ |
+| QuestaSim | 2024.1 (local) |
+| UVM | mtiUvm / 1.1d |
 | Verilator | _TBD_ |
 | Yosys | _TBD_ |
 

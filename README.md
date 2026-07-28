@@ -120,6 +120,8 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **
 - [Gen2 → Gen3/4 evolution](docs/gen-evolution.md)
 - [PG213-style interface audit](docs/pg213-interface.md)
 - [Verification](docs/verification.md)
+- [Reference: PCI_Express_Gen7.0](docs/ref-pci-express-gen7.md) (educational; do not copy)
+- [Reference: pcievhost](docs/ref-pcievhost.md) (GPL-3 VIP; inspire only)
 - [Contributing](CONTRIBUTING.md)
 
 ## License
