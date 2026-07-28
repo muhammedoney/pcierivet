@@ -76,34 +76,10 @@ module rivet_tb_top;
   logic               cfg_mgmt_debug_access;
   logic [31:0]        cfg_mgmt_write_data, cfg_mgmt_read_data;
   logic [3:0]         cfg_mgmt_byte_enable;
-  // PIPE (PG239-aligned widths; Gen2 smoke uses 16-bit datapath)
-  logic [16*LANES-1:0]  pipe_txdata, pipe_rxdata;
-  logic [2*LANES-1:0]   pipe_txdatak, pipe_rxdatak;
-  logic [LANES-1:0]     pipe_txdata_valid, pipe_txstart_block;
-  logic [2*LANES-1:0]   pipe_txsync_header;
-  logic [LANES-1:0]     pipe_rxdata_valid;
-  logic [2*LANES-1:0]   pipe_rxstart_block, pipe_rxsync_header;
-  logic                 pipe_txdetectrx;
-  logic [LANES-1:0]     pipe_txelecidle, pipe_txcompliance, pipe_rxpolarity;
-  logic [1:0]           pipe_powerdown;
-  logic [2:0]           pipe_rate;
-  logic [LANES-1:0]     pipe_rxvalid, pipe_phystatus, pipe_phystatus_rst, pipe_rxelecidle;
-  logic [3*LANES-1:0]   pipe_rxstatus;
-  logic [2:0]           pipe_txmargin;
-  logic                 pipe_txswing, pipe_txdeemph;
-  logic [2*LANES-1:0]   pipe_txeq_ctrl;
-  logic [4*LANES-1:0]   pipe_txeq_preset;
-  logic [6*LANES-1:0]   pipe_txeq_coeff;
-  logic [5:0]           pipe_txeq_fs, pipe_txeq_lf;
-  logic [18*LANES-1:0]  pipe_txeq_new_coeff;
-  logic [LANES-1:0]     pipe_txeq_done;
-  logic [2*LANES-1:0]   pipe_rxeq_ctrl;
-  logic [4*LANES-1:0]   pipe_rxeq_txpreset;
-  logic [LANES-1:0]     pipe_rxeq_preset_sel, pipe_rxeq_adapt_done, pipe_rxeq_done;
-  logic [18*LANES-1:0]  pipe_rxeq_new_txcoeff;
-  logic                 pipe_as_mac_in_detect, pipe_as_cdr_hold_req, pipe_as_mac_in_L0;
-  logic [1:0]           pipe_cfg_rx_pm_state;
   logic link_up;
+
+  // PIPE interface (UVM PHY agent binds here)
+  rivet_pipe_if #(.LANES(LANES), .PIPE_DATA_WIDTH(16)) pipe_if (.pclk(pclk), .preset_n(preset_n));
 
   assign m_axis_cq_tready = 1'b1;
   assign m_axis_rc_tready = 1'b1;
@@ -125,24 +101,6 @@ module rivet_tb_top;
   assign cfg_mgmt_byte_enable = '0;
   assign cfg_mgmt_read = 1'b0;
   assign cfg_mgmt_debug_access = 1'b0;
-  assign pipe_rxdata = '0;
-  assign pipe_rxdatak = '0;
-  assign pipe_rxdata_valid = '0;
-  assign pipe_rxstart_block = '0;
-  assign pipe_rxsync_header = '0;
-  assign pipe_rxvalid = '0;
-  assign pipe_rxelecidle = '1;
-  assign pipe_rxstatus = '0;
-  assign pipe_phystatus = '0;
-  assign pipe_phystatus_rst = '0;
-  assign pipe_txeq_fs = '0;
-  assign pipe_txeq_lf = '0;
-  assign pipe_txeq_new_coeff = '0;
-  assign pipe_txeq_done = '0;
-  assign pipe_rxeq_preset_sel = '0;
-  assign pipe_rxeq_new_txcoeff = '0;
-  assign pipe_rxeq_adapt_done = '0;
-  assign pipe_rxeq_done = '0;
 
   rivet_pcie_ctrl #(
     .MODE(0),
@@ -198,51 +156,56 @@ module rivet_tb_top;
     .cfg_mgmt_read_data(cfg_mgmt_read_data),
     .cfg_mgmt_read_write_done(cfg_mgmt_read_write_done),
     .cfg_mgmt_debug_access(cfg_mgmt_debug_access),
-    .pipe_txdata(pipe_txdata),
-    .pipe_txdatak(pipe_txdatak),
-    .pipe_txdata_valid(pipe_txdata_valid),
-    .pipe_txstart_block(pipe_txstart_block),
-    .pipe_txsync_header(pipe_txsync_header),
-    .pipe_rxdata(pipe_rxdata),
-    .pipe_rxdatak(pipe_rxdatak),
-    .pipe_rxdata_valid(pipe_rxdata_valid),
-    .pipe_rxstart_block(pipe_rxstart_block),
-    .pipe_rxsync_header(pipe_rxsync_header),
-    .pipe_txdetectrx(pipe_txdetectrx),
-    .pipe_txelecidle(pipe_txelecidle),
-    .pipe_txcompliance(pipe_txcompliance),
-    .pipe_rxpolarity(pipe_rxpolarity),
-    .pipe_powerdown(pipe_powerdown),
-    .pipe_rate(pipe_rate),
-    .pipe_rxvalid(pipe_rxvalid),
-    .pipe_phystatus(pipe_phystatus),
-    .pipe_phystatus_rst(pipe_phystatus_rst),
-    .pipe_rxelecidle(pipe_rxelecidle),
-    .pipe_rxstatus(pipe_rxstatus),
-    .pipe_txmargin(pipe_txmargin),
-    .pipe_txswing(pipe_txswing),
-    .pipe_txdeemph(pipe_txdeemph),
-    .pipe_txeq_ctrl(pipe_txeq_ctrl),
-    .pipe_txeq_preset(pipe_txeq_preset),
-    .pipe_txeq_coeff(pipe_txeq_coeff),
-    .pipe_txeq_fs(pipe_txeq_fs),
-    .pipe_txeq_lf(pipe_txeq_lf),
-    .pipe_txeq_new_coeff(pipe_txeq_new_coeff),
-    .pipe_txeq_done(pipe_txeq_done),
-    .pipe_rxeq_ctrl(pipe_rxeq_ctrl),
-    .pipe_rxeq_txpreset(pipe_rxeq_txpreset),
-    .pipe_rxeq_preset_sel(pipe_rxeq_preset_sel),
-    .pipe_rxeq_new_txcoeff(pipe_rxeq_new_txcoeff),
-    .pipe_rxeq_adapt_done(pipe_rxeq_adapt_done),
-    .pipe_rxeq_done(pipe_rxeq_done),
-    .pipe_as_mac_in_detect(pipe_as_mac_in_detect),
-    .pipe_as_cdr_hold_req(pipe_as_cdr_hold_req),
-    .pipe_as_mac_in_L0(pipe_as_mac_in_L0),
-    .pipe_cfg_rx_pm_state(pipe_cfg_rx_pm_state),
+    // MAC -> PHY (DUT drives; mirror into IF for monitor)
+    .pipe_txdata(pipe_if.txdata),
+    .pipe_txdatak(pipe_if.txdatak),
+    .pipe_txdata_valid(pipe_if.txdata_valid),
+    .pipe_txstart_block(pipe_if.txstart_block),
+    .pipe_txsync_header(pipe_if.txsync_header),
+    // PHY -> MAC (IF driven by UVM pipe agent)
+    .pipe_rxdata(pipe_if.rxdata),
+    .pipe_rxdatak(pipe_if.rxdatak),
+    .pipe_rxdata_valid(pipe_if.rxdata_valid),
+    .pipe_rxstart_block(pipe_if.rxstart_block),
+    .pipe_rxsync_header(pipe_if.rxsync_header),
+    .pipe_txdetectrx(pipe_if.txdetectrx),
+    .pipe_txelecidle(pipe_if.txelecidle),
+    .pipe_txcompliance(pipe_if.txcompliance),
+    .pipe_rxpolarity(pipe_if.rxpolarity),
+    .pipe_powerdown(pipe_if.powerdown),
+    .pipe_rate(pipe_if.rate),
+    .pipe_rxvalid(pipe_if.rxvalid),
+    .pipe_phystatus(pipe_if.phystatus),
+    .pipe_phystatus_rst(pipe_if.phystatus_rst),
+    .pipe_rxelecidle(pipe_if.rxelecidle),
+    .pipe_rxstatus(pipe_if.rxstatus),
+    .pipe_txmargin(pipe_if.txmargin),
+    .pipe_txswing(pipe_if.txswing),
+    .pipe_txdeemph(pipe_if.txdeemph),
+    .pipe_txeq_ctrl(pipe_if.txeq_ctrl),
+    .pipe_txeq_preset(pipe_if.txeq_preset),
+    .pipe_txeq_coeff(pipe_if.txeq_coeff),
+    .pipe_txeq_fs(pipe_if.txeq_fs),
+    .pipe_txeq_lf(pipe_if.txeq_lf),
+    .pipe_txeq_new_coeff(pipe_if.txeq_new_coeff),
+    .pipe_txeq_done(pipe_if.txeq_done),
+    .pipe_rxeq_ctrl(pipe_if.rxeq_ctrl),
+    .pipe_rxeq_txpreset(pipe_if.rxeq_txpreset),
+    .pipe_rxeq_preset_sel(pipe_if.rxeq_preset_sel),
+    .pipe_rxeq_new_txcoeff(pipe_if.rxeq_new_txcoeff),
+    .pipe_rxeq_adapt_done(pipe_if.rxeq_adapt_done),
+    .pipe_rxeq_done(pipe_if.rxeq_done),
+    .pipe_as_mac_in_detect(pipe_if.as_mac_in_detect),
+    .pipe_as_cdr_hold_req(pipe_if.as_cdr_hold_req),
+    .pipe_as_mac_in_L0(pipe_if.as_mac_in_L0),
+    .pipe_cfg_rx_pm_state(pipe_if.cfg_rx_pm_state),
     .link_up(link_up)
   );
 
   initial begin
+    uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent.*", "vif", pipe_if);
+    uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent", "vif", pipe_if);
+    uvm_config_db#(int unsigned)::set(null, "*", "lanes", LANES);
     run_test();
   end
 endmodule : rivet_tb_top
