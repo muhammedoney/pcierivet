@@ -113,6 +113,8 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [MAC follow-guide](docs/mac.md) — LTSSM, OS, DLL↔MAC, PIPE duties, milestones
+- [PIPE notes](docs/pipe-notes.md) — MAC↔PHY digest (Original PIPE / PG239)
 - [Hardware](docs/hardware.md)
 - [Boards / PG239 targets](docs/boards.md)
 - [Roadmap](docs/roadmap.md)

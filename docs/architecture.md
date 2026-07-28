@@ -59,6 +59,10 @@ Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-
 | `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only; primary bring-up **VCU118 / XCVU9P** (US+) |
 | `PIPE_DATA_WIDTH` | `16` now | 32 Gen3 / 64 Gen4 US+ later |
 
+## MAC and PIPE
+
+Controller MAC (LTSSM, ordered sets, PIPE adapter) sits between DLL and PIPE. Implementation checklist: [mac.md](mac.md). PIPE TX/RX / elastic-buffer concepts for Rivet: [pipe-notes.md](pipe-notes.md).
+
 ## References (not redistributed)
 
 - PCI Express Base Specification

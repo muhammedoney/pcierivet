@@ -23,7 +23,8 @@ Gen3/4/5 are later phases — see [gen-evolution.md](gen-evolution.md) for per-m
    - Runnable Questa smokes: `smoke_gen2_x1`, then ×2 / ×4  
    - Verilator remains lint/elaborate gate; UVM is the functional authority  
 2. **Gen2 EP link RTL** (against that UVM)  
-   - LTSSM Detect → Polling → Configuration (`MODE=EP`, Gen2 ×1)  
+   - Follow [mac.md](mac.md) milestones (LTSSM Detect → … → L0, then DLL stubs)  
+   - PIPE context: [pipe-notes.md](pipe-notes.md)  
    - DLLP / credit stubs  
    - Grow sequences/scoreboard with each RTL slice  
 
