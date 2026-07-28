@@ -91,7 +91,6 @@ tb/bfm/          Vivado RP/EP BFM side-path
 |-----|------|------|
 | **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | **Primary** — native PG239 GTY generate + 52 GTY + PCIe ×16 |
 | — | VU3P | PG239 GTY generate OK; fewer GTs / no preferred kit |
-| VCU128 (VU37P) | — | **Out of scope** (PG239 not offered for VU37P) |
 
 PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **VU9P**). Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
 

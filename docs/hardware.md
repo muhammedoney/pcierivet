@@ -10,8 +10,6 @@ Primary bring-up platform (locked):
 | PG239 generate part | **VU9P** (official GTY target) |
 | Board GTs | 52 GTY (16 on PCIe ×16 edge) |
 
-**VCU128 (XCVU37P) is not used** — Vivado does not generate PG239 for VU37P.
-
 Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md).
 
 ## Sponsorship

@@ -47,7 +47,6 @@ Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
 | FPGA | **XCVU9P** (UltraScale+, GTY) |
 | PHY IP | PG239 generated for **VU9P** |
 
-**VCU128 (XCVU37P) is out of scope** for Rivet soft-PHY bring-up — PG239 is not offered for that part in Vivado. Details: [boards.md](boards.md).  
 Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-evolution.md](gen-evolution.md).
 
 ## Parameters

@@ -10,8 +10,6 @@
 | **PCIe on board** | Edge connector ×16 (Gen1/Gen2 ×16; Gen3 ×16 on Rev 2.0+) |
 | **PG239** | Generate PHY for **VU9P** (official GTY generation target), then use on VCU118 |
 
-VCU128 (**XCVU37P** HBM) is **not** a Rivet bring-up target: Vivado does not offer PG239 generation for VU37P, and soft-PHY instantiate/migrate is not a reliable path for this project.
-
 ## Why VCU118 / VU9P
 
 PG239 (PCI Express PHY) can only be *generated* in Vivado for a short list of parts ([PG239 Introduction](https://docs.amd.com/r/en-US/pg239-pcie-phy/Introduction)):
@@ -28,10 +26,9 @@ Among **official GTY generation** devices, **VU9P** has the largest transceiver 
 |-------|------|-------------------------|------------|-----------|
 | **VCU118** | **XCVU9P** | **Yes (VU9P)** | **52 GTY** | ×16 |
 | — | VU3P | Yes | Fewer GTY | No common ×16 kit like VCU118 |
-| VCU128 | XCVU37P | **No** | Many GTY | ×16 (hard/integrated path; not PG239-first) |
 | ZCU102/etc. | ZU* | ZU9EG (GTH) | Fewer | Often ×4 |
 
-Larger US+ parts (VU13P, VU19P, VU37P, …) may have more GTs, but they are **not** PG239 generation targets. Rivet prioritizes **direct PG239 instantiate** over raw GT count on unsupported SKUs.
+Larger US+ parts may have more GTs, but Rivet prioritizes **direct PG239 instantiate** on official generation targets.
 
 ## PHY wrapper mapping
 
