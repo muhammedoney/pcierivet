@@ -40,28 +40,6 @@ module rivet_tb_top;
     preset_n    = 1;
   end
 
-  // AXI-ST CQ
-  logic [AXI_W-1:0]   m_axis_cq_tdata;
-  logic [KEEP_W-1:0]  m_axis_cq_tkeep;
-  logic               m_axis_cq_tlast, m_axis_cq_tvalid, m_axis_cq_tready;
-  logic [87:0]        m_axis_cq_tuser;
-  // CC
-  logic [AXI_W-1:0]   s_axis_cc_tdata;
-  logic [KEEP_W-1:0]  s_axis_cc_tkeep;
-  logic               s_axis_cc_tlast, s_axis_cc_tvalid;
-  logic [3:0]         s_axis_cc_tready;
-  logic [32:0]        s_axis_cc_tuser;
-  // RQ
-  logic [AXI_W-1:0]   s_axis_rq_tdata;
-  logic [KEEP_W-1:0]  s_axis_rq_tkeep;
-  logic               s_axis_rq_tlast, s_axis_rq_tvalid;
-  logic [3:0]         s_axis_rq_tready;
-  logic [84:0]        s_axis_rq_tuser;
-  // RC
-  logic [AXI_W-1:0]   m_axis_rc_tdata;
-  logic [KEEP_W-1:0]  m_axis_rc_tkeep;
-  logic               m_axis_rc_tlast, m_axis_rc_tvalid, m_axis_rc_tready;
-  logic [74:0]        m_axis_rc_tuser;
   // PG213 companion flow-control / tracking
   logic [1:0]         pcie_cq_np_req;
   logic [5:0]         pcie_cq_np_req_count, pcie_rq_seq_num0;
@@ -78,21 +56,17 @@ module rivet_tb_top;
   logic [3:0]         cfg_mgmt_byte_enable;
   logic link_up;
 
-  // PIPE interface (UVM PHY agent binds here)
+  // PIPE + AXI-ST interfaces (UVM agents bind here)
   rivet_pipe_if #(.LANES(LANES), .PIPE_DATA_WIDTH(16)) pipe_if (.pclk(pclk), .preset_n(preset_n));
+  rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
+    cq_if (.aclk(user_clk), .aresetn(user_resetn));
+  rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
+    cc_if (.aclk(user_clk), .aresetn(user_resetn));
+  rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
+    rq_if (.aclk(user_clk), .aresetn(user_resetn));
+  rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
+    rc_if (.aclk(user_clk), .aresetn(user_resetn));
 
-  assign m_axis_cq_tready = 1'b1;
-  assign m_axis_rc_tready = 1'b1;
-  assign s_axis_cc_tdata = '0;
-  assign s_axis_cc_tkeep = '0;
-  assign s_axis_cc_tlast = 1'b0;
-  assign s_axis_cc_tvalid = 1'b0;
-  assign s_axis_cc_tuser = '0;
-  assign s_axis_rq_tdata = '0;
-  assign s_axis_rq_tkeep = '0;
-  assign s_axis_rq_tlast = 1'b0;
-  assign s_axis_rq_tvalid = 1'b0;
-  assign s_axis_rq_tuser = '0;
   assign pcie_cq_np_req = 2'b01;
   assign cfg_mgmt_addr = '0;
   assign cfg_mgmt_function_number = '0;
@@ -112,30 +86,30 @@ module rivet_tb_top;
     .user_resetn(user_resetn),
     .pclk(pclk),
     .preset_n(preset_n),
-    .m_axis_cq_tdata(m_axis_cq_tdata),
-    .m_axis_cq_tkeep(m_axis_cq_tkeep),
-    .m_axis_cq_tlast(m_axis_cq_tlast),
-    .m_axis_cq_tvalid(m_axis_cq_tvalid),
-    .m_axis_cq_tready(m_axis_cq_tready),
-    .m_axis_cq_tuser(m_axis_cq_tuser),
-    .s_axis_cc_tdata(s_axis_cc_tdata),
-    .s_axis_cc_tkeep(s_axis_cc_tkeep),
-    .s_axis_cc_tlast(s_axis_cc_tlast),
-    .s_axis_cc_tvalid(s_axis_cc_tvalid),
-    .s_axis_cc_tready(s_axis_cc_tready),
-    .s_axis_cc_tuser(s_axis_cc_tuser),
-    .s_axis_rq_tdata(s_axis_rq_tdata),
-    .s_axis_rq_tkeep(s_axis_rq_tkeep),
-    .s_axis_rq_tlast(s_axis_rq_tlast),
-    .s_axis_rq_tvalid(s_axis_rq_tvalid),
-    .s_axis_rq_tready(s_axis_rq_tready),
-    .s_axis_rq_tuser(s_axis_rq_tuser),
-    .m_axis_rc_tdata(m_axis_rc_tdata),
-    .m_axis_rc_tkeep(m_axis_rc_tkeep),
-    .m_axis_rc_tlast(m_axis_rc_tlast),
-    .m_axis_rc_tvalid(m_axis_rc_tvalid),
-    .m_axis_rc_tready(m_axis_rc_tready),
-    .m_axis_rc_tuser(m_axis_rc_tuser),
+    .m_axis_cq_tdata(cq_if.tdata),
+    .m_axis_cq_tkeep(cq_if.tkeep),
+    .m_axis_cq_tlast(cq_if.tlast),
+    .m_axis_cq_tvalid(cq_if.tvalid),
+    .m_axis_cq_tready(cq_if.tready[0]),
+    .m_axis_cq_tuser(cq_if.tuser[87:0]),
+    .s_axis_cc_tdata(cc_if.tdata),
+    .s_axis_cc_tkeep(cc_if.tkeep),
+    .s_axis_cc_tlast(cc_if.tlast),
+    .s_axis_cc_tvalid(cc_if.tvalid),
+    .s_axis_cc_tready(cc_if.tready),
+    .s_axis_cc_tuser(cc_if.tuser[32:0]),
+    .s_axis_rq_tdata(rq_if.tdata),
+    .s_axis_rq_tkeep(rq_if.tkeep),
+    .s_axis_rq_tlast(rq_if.tlast),
+    .s_axis_rq_tvalid(rq_if.tvalid),
+    .s_axis_rq_tready(rq_if.tready),
+    .s_axis_rq_tuser(rq_if.tuser[84:0]),
+    .m_axis_rc_tdata(rc_if.tdata),
+    .m_axis_rc_tkeep(rc_if.tkeep),
+    .m_axis_rc_tlast(rc_if.tlast),
+    .m_axis_rc_tvalid(rc_if.tvalid),
+    .m_axis_rc_tready(rc_if.tready[0]),
+    .m_axis_rc_tuser(rc_if.tuser[74:0]),
     .pcie_cq_np_req(pcie_cq_np_req),
     .pcie_cq_np_req_count(pcie_cq_np_req_count),
     .pcie_rq_seq_num0(pcie_rq_seq_num0),
@@ -156,13 +130,11 @@ module rivet_tb_top;
     .cfg_mgmt_read_data(cfg_mgmt_read_data),
     .cfg_mgmt_read_write_done(cfg_mgmt_read_write_done),
     .cfg_mgmt_debug_access(cfg_mgmt_debug_access),
-    // MAC -> PHY (DUT drives; mirror into IF for monitor)
     .pipe_txdata(pipe_if.txdata),
     .pipe_txdatak(pipe_if.txdatak),
     .pipe_txdata_valid(pipe_if.txdata_valid),
     .pipe_txstart_block(pipe_if.txstart_block),
     .pipe_txsync_header(pipe_if.txsync_header),
-    // PHY -> MAC (IF driven by UVM pipe agent)
     .pipe_rxdata(pipe_if.rxdata),
     .pipe_rxdatak(pipe_if.rxdatak),
     .pipe_rxdata_valid(pipe_if.rxdata_valid),
@@ -203,8 +175,11 @@ module rivet_tb_top;
   );
 
   initial begin
-    uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent.*", "vif", pipe_if);
-    uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent", "vif", pipe_if);
+    uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent*", "vif", pipe_if);
+    uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.cq_agent*", "vif", cq_if);
+    uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.cc_agent*", "vif", cc_if);
+    uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rq_agent*", "vif", rq_if);
+    uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rc_agent*", "vif", rc_if);
     uvm_config_db#(int unsigned)::set(null, "*", "lanes", LANES);
     run_test();
   end

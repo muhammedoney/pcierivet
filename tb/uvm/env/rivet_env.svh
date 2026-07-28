@@ -18,6 +18,17 @@ class rivet_env extends uvm_env;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
+
+    // Config before create — agent build_phase reads these.
+    uvm_config_db#(string)::set(this, "cq_agent*", "channel_name", "cq");
+    uvm_config_db#(string)::set(this, "cc_agent*", "channel_name", "cc");
+    uvm_config_db#(string)::set(this, "rq_agent*", "channel_name", "rq");
+    uvm_config_db#(string)::set(this, "rc_agent*", "channel_name", "rc");
+    uvm_config_db#(bit)::set(this, "cq_agent*", "is_master", 1'b0);
+    uvm_config_db#(bit)::set(this, "rc_agent*", "is_master", 1'b0);
+    uvm_config_db#(bit)::set(this, "cc_agent*", "is_master", 1'b1);
+    uvm_config_db#(bit)::set(this, "rq_agent*", "is_master", 1'b1);
+
     pipe_agent = rivet_pipe_agent::type_id::create("pipe_agent", this);
     cq_agent   = rivet_axi_st_agent::type_id::create("cq_agent", this);
     cc_agent   = rivet_axi_st_agent::type_id::create("cc_agent", this);
@@ -25,15 +36,14 @@ class rivet_env extends uvm_env;
     rc_agent   = rivet_axi_st_agent::type_id::create("rc_agent", this);
     scoreboard = rivet_scoreboard::type_id::create("scoreboard", this);
     coverage   = rivet_coverage::type_id::create("coverage", this);
-
-    uvm_config_db#(string)::set(this, "cq_agent", "channel_name", "cq");
-    uvm_config_db#(string)::set(this, "cc_agent", "channel_name", "cc");
-    uvm_config_db#(string)::set(this, "rq_agent", "channel_name", "rq");
-    uvm_config_db#(string)::set(this, "rc_agent", "channel_name", "rc");
   endfunction
 
   function void connect_phase(uvm_phase phase);
     super.connect_phase(phase);
     pipe_agent.ap.connect(scoreboard.pipe_imp);
+    cq_agent.ap.connect(scoreboard.axi_imp);
+    cc_agent.ap.connect(scoreboard.axi_imp);
+    rq_agent.ap.connect(scoreboard.axi_imp);
+    rc_agent.ap.connect(scoreboard.axi_imp);
   endfunction
 endclass : rivet_env

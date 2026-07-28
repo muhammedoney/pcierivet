@@ -11,13 +11,25 @@ package rivet_uvm_pkg;
 `endif
   typedef virtual rivet_pipe_if #(.LANES(`RIVET_TB_LANES), .PIPE_DATA_WIDTH(16)) rivet_pipe_vif;
 
+  // Shared AXI-ST IF: USER padded to CQ max (88); READY padded to CC/RQ (4).
+  typedef virtual rivet_axi_st_if #(
+    .DATA_WIDTH(64), .KEEP_WIDTH(2), .USER_WIDTH(88), .READY_WIDTH(4)
+  ) rivet_axi_st_vif;
+
+  `uvm_analysis_imp_decl(_pipe)
+  `uvm_analysis_imp_decl(_axi)
+
   `include "seq/rivet_pipe_item.svh"
   `include "seq/rivet_axi_st_item.svh"
   `include "seq/rivet_pipe_idle_seq.svh"
+  `include "seq/rivet_axi_st_idle_seq.svh"
   `include "agents/rivet_pipe_sequencer.svh"
   `include "agents/rivet_pipe_driver.svh"
   `include "agents/rivet_pipe_monitor.svh"
   `include "agents/rivet_pipe_agent.svh"
+  `include "agents/rivet_axi_st_sequencer.svh"
+  `include "agents/rivet_axi_st_driver.svh"
+  `include "agents/rivet_axi_st_monitor.svh"
   `include "agents/rivet_axi_st_agent.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
