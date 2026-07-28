@@ -15,21 +15,22 @@ module rivet_tb_top;
 
   localparam int unsigned LANES = `RIVET_TB_LANES;
   localparam int unsigned AXI_W = 64;
-  localparam int unsigned KEEP_W = AXI_W / 32; // PG213: one TKEEP bit per Dword
+  localparam int unsigned KEEP_W = AXI_W / 32;
 
   logic user_clk;
   logic user_resetn;
   logic pclk;
   logic preset_n;
+  logic link_up;
 
   initial begin
     user_clk = 0;
-    forever #4 user_clk = ~user_clk; // 125 MHz stub
+    forever #4 user_clk = ~user_clk;
   end
 
   initial begin
     pclk = 0;
-    forever #2 pclk = ~pclk; // 250 MHz stub
+    forever #2 pclk = ~pclk;
   end
 
   initial begin
@@ -40,23 +41,6 @@ module rivet_tb_top;
     preset_n    = 1;
   end
 
-  // PG213 companion flow-control / tracking
-  logic [1:0]         pcie_cq_np_req;
-  logic [5:0]         pcie_cq_np_req_count, pcie_rq_seq_num0;
-  logic               pcie_rq_seq_num_vld0;
-  logic [9:0]         pcie_rq_tag0, pcie_rq_tag1;
-  logic               pcie_rq_tag_vld0, pcie_rq_tag_vld1;
-  logic [3:0]         pcie_rq_tag_av, pcie_tfc_nph_av, pcie_tfc_npd_av;
-  // Configuration Management (PG213)
-  logic [9:0]         cfg_mgmt_addr;
-  logic [7:0]         cfg_mgmt_function_number;
-  logic               cfg_mgmt_write, cfg_mgmt_read, cfg_mgmt_read_write_done;
-  logic               cfg_mgmt_debug_access;
-  logic [31:0]        cfg_mgmt_write_data, cfg_mgmt_read_data;
-  logic [3:0]         cfg_mgmt_byte_enable;
-  logic link_up;
-
-  // PIPE + AXI-ST interfaces (UVM agents bind here)
   rivet_pipe_if #(.LANES(LANES), .PIPE_DATA_WIDTH(16)) pipe_if (.pclk(pclk), .preset_n(preset_n));
   rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
     cq_if (.aclk(user_clk), .aresetn(user_resetn));
@@ -66,15 +50,11 @@ module rivet_tb_top;
     rq_if (.aclk(user_clk), .aresetn(user_resetn));
   rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
     rc_if (.aclk(user_clk), .aresetn(user_resetn));
+  rivet_cfg_mgmt_if cfg_if (.aclk(user_clk), .aresetn(user_resetn));
+  rivet_companion_if comp_if (.aclk(user_clk), .aresetn(user_resetn));
 
-  assign pcie_cq_np_req = 2'b01;
-  assign cfg_mgmt_addr = '0;
-  assign cfg_mgmt_function_number = '0;
-  assign cfg_mgmt_write = 1'b0;
-  assign cfg_mgmt_write_data = '0;
-  assign cfg_mgmt_byte_enable = '0;
-  assign cfg_mgmt_read = 1'b0;
-  assign cfg_mgmt_debug_access = 1'b0;
+  // Default CQ NP grant (PG213); sequences may override later via force/driver.
+  assign comp_if.cq_np_req = 2'b01;
 
   rivet_pcie_ctrl #(
     .MODE(0),
@@ -110,26 +90,26 @@ module rivet_tb_top;
     .m_axis_rc_tvalid(rc_if.tvalid),
     .m_axis_rc_tready(rc_if.tready[0]),
     .m_axis_rc_tuser(rc_if.tuser[74:0]),
-    .pcie_cq_np_req(pcie_cq_np_req),
-    .pcie_cq_np_req_count(pcie_cq_np_req_count),
-    .pcie_rq_seq_num0(pcie_rq_seq_num0),
-    .pcie_rq_seq_num_vld0(pcie_rq_seq_num_vld0),
-    .pcie_rq_tag0(pcie_rq_tag0),
-    .pcie_rq_tag_vld0(pcie_rq_tag_vld0),
-    .pcie_rq_tag1(pcie_rq_tag1),
-    .pcie_rq_tag_vld1(pcie_rq_tag_vld1),
-    .pcie_rq_tag_av(pcie_rq_tag_av),
-    .pcie_tfc_nph_av(pcie_tfc_nph_av),
-    .pcie_tfc_npd_av(pcie_tfc_npd_av),
-    .cfg_mgmt_addr(cfg_mgmt_addr),
-    .cfg_mgmt_function_number(cfg_mgmt_function_number),
-    .cfg_mgmt_write(cfg_mgmt_write),
-    .cfg_mgmt_write_data(cfg_mgmt_write_data),
-    .cfg_mgmt_byte_enable(cfg_mgmt_byte_enable),
-    .cfg_mgmt_read(cfg_mgmt_read),
-    .cfg_mgmt_read_data(cfg_mgmt_read_data),
-    .cfg_mgmt_read_write_done(cfg_mgmt_read_write_done),
-    .cfg_mgmt_debug_access(cfg_mgmt_debug_access),
+    .pcie_cq_np_req(comp_if.cq_np_req),
+    .pcie_cq_np_req_count(comp_if.cq_np_req_count),
+    .pcie_rq_seq_num0(comp_if.rq_seq_num0),
+    .pcie_rq_seq_num_vld0(comp_if.rq_seq_num_vld0),
+    .pcie_rq_tag0(comp_if.rq_tag0),
+    .pcie_rq_tag_vld0(comp_if.rq_tag_vld0),
+    .pcie_rq_tag1(comp_if.rq_tag1),
+    .pcie_rq_tag_vld1(comp_if.rq_tag_vld1),
+    .pcie_rq_tag_av(comp_if.rq_tag_av),
+    .pcie_tfc_nph_av(comp_if.tfc_nph_av),
+    .pcie_tfc_npd_av(comp_if.tfc_npd_av),
+    .cfg_mgmt_addr(cfg_if.addr),
+    .cfg_mgmt_function_number(cfg_if.function_number),
+    .cfg_mgmt_write(cfg_if.write),
+    .cfg_mgmt_write_data(cfg_if.write_data),
+    .cfg_mgmt_byte_enable(cfg_if.byte_enable),
+    .cfg_mgmt_read(cfg_if.read),
+    .cfg_mgmt_read_data(cfg_if.read_data),
+    .cfg_mgmt_read_write_done(cfg_if.read_write_done),
+    .cfg_mgmt_debug_access(cfg_if.debug_access),
     .pipe_txdata(pipe_if.txdata),
     .pipe_txdatak(pipe_if.txdatak),
     .pipe_txdata_valid(pipe_if.txdata_valid),
@@ -180,6 +160,8 @@ module rivet_tb_top;
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.cc_agent*", "vif", cc_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rq_agent*", "vif", rq_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rc_agent*", "vif", rc_if);
+    uvm_config_db#(rivet_cfg_mgmt_vif)::set(null, "uvm_test_top.env.cfg_agent*", "vif", cfg_if);
+    uvm_config_db#(rivet_companion_vif)::set(null, "uvm_test_top.env.companion_mon*", "vif", comp_if);
     uvm_config_db#(int unsigned)::set(null, "*", "lanes", LANES);
     run_test();
   end
