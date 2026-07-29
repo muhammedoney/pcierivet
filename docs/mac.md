@@ -170,6 +170,42 @@ Field handling for EP: Link Number, Lane Number, N_FTS, Data Rate ID, Training C
 
 All three are first-class parameters; do not hard-code ×1 in MAC datapath.
 
+### 7.1 Negotiated width vs port width
+
+`LANES` is **our port width**, not the width of the link partner. Two cases that
+look alike behave very differently today:
+
+| Case | Status |
+|------|--------|
+| Partner is **wider** than us (×16 Root Port, `LANES=4` Endpoint) | **Works.** All four of our Lanes detect a Receiver and get numbered; narrowing 16 → 4 is the Downstream Port's job. Covered by the ×4 smoke. |
+| No Receiver on some Lanes at all | **Works.** Detect.Active's two-pass rule narrows `lane_en` to the Lanes that detected, and training continues on that subset. |
+| Partner **configures fewer Lanes than we have** (×4 Endpoint, Root Port offers ×2) | **Not yet.** The LTSSM climbs to Configuration.Linkwidth.Accept, times out after 24 ms and drops to Detect, forever. |
+
+The third case fails in two specific places, both in `rivet_ltssm`:
+
+1. `Configuration.Linkwidth.Start` clears `link_pad` for **every** Lane in
+   `lane_en` instead of narrowing `lane_en` to the Lanes that actually received a
+   non-PAD Link number. Lanes the partner left out must keep transmitting PAD.
+2. `Configuration.Linkwidth.Accept` waits for `ts1_lane_all_i`, so it requires a
+   non-PAD Lane number on *every* enabled Lane. The Lanes the partner left out
+   stay PAD, so the condition can never be satisfied.
+
+Reproduce with the smoke peer, which can be told to configure fewer Lanes than
+the DUT has:
+
+```text
+# passes  — partner configures all four Lanes
+verilator ... -DRIVET_SMOKE_LANES=4 -DRIVET_SMOKE_PEER_LANES=4
+# retrain loop — partner offers only two of our four Lanes
+verilator ... -DRIVET_SMOKE_LANES=4 -DRIVET_SMOKE_PEER_LANES=2
+```
+
+Closing it is the M3 slice and needs: per-Lane shape flags out of `os_rx`
+(the per-Lane counters already exist internally, only the reductions are
+exported), per-Lane `tx_link_pad` / `tx_lane_pad` in `os_tx`, and `lane_en`
+narrowing in the two Linkwidth substates. `negotiated_width` already follows
+`lane_en`, so status reporting needs no change.
+
 ---
 
 ## 8. Gen2 now vs Gen3/4 later (MAC-only)
@@ -230,7 +266,7 @@ Known simplifications, all revisited in M2–M4:
 | Lane numbers | Sequential 0..n-1, no Lane reversal |
 | Recovery | Only `Recovery.RcvrLock` exists, and only so timeouts and RX errors cannot dead-end |
 | EIOS | 4 symbols (2.5 GT/s form); the 8-symbol 5.0 GT/s form lands with Recovery.Speed |
-| Multi-lane exits | Configuration substates use "all enabled Lanes" where the spec allows per-Lane "any" |
+| Multi-lane exits | Configuration substates use "all enabled Lanes" where the spec allows per-Lane "any", so a partner that configures fewer Lanes than our port width cannot train — see [§7.1](#71-negotiated-width-vs-port-width) |
 
 ### M2 — DLL stubs at MAC boundary
 

@@ -19,7 +19,16 @@ module rivet_ltssm_smoke_tb;
   `define RIVET_SMOKE_LANES 1
 `endif
 
-  localparam int unsigned LANES = `RIVET_SMOKE_LANES;
+// How many Lanes the peer Downstream Port is willing to configure. Setting this
+// below RIVET_SMOKE_LANES models a Root Port that offers a narrower Link than
+// the Endpoint's port width: it sends TS1/TS2 with PAD Link and Lane numbers on
+// the Lanes it leaves out.
+`ifndef RIVET_SMOKE_PEER_LANES
+  `define RIVET_SMOKE_PEER_LANES `RIVET_SMOKE_LANES
+`endif
+
+  localparam int unsigned LANES      = `RIVET_SMOKE_LANES;
+  localparam int unsigned PEER_LANES = `RIVET_SMOKE_PEER_LANES;
   localparam int unsigned PIPE_W = 16;
   localparam int unsigned AXI_W  = 64;
   localparam int unsigned KEEP_W = AXI_W / 32;
@@ -262,12 +271,14 @@ module rivet_ltssm_smoke_tb;
   // ---------------------------------------------------------------------------
   logic [3:0] detect_cnt;
   logic       detect_ack;
+  logic       txdetectrx_q;
   logic       peer_active;
 
   always_ff @(posedge pclk or negedge preset_n) begin
     if (!preset_n) begin
       detect_cnt     <= '0;
       detect_ack     <= 1'b0;
+      txdetectrx_q   <= 1'b0;
       peer_active    <= 1'b0;
       pipe_phystatus <= '0;
       pipe_rxstatus  <= '0;
@@ -276,8 +287,14 @@ module rivet_ltssm_smoke_tb;
     end else begin
       pipe_phystatus <= '0;
       pipe_rxstatus  <= '0;
+      txdetectrx_q   <= pipe_txdetectrx;
 
-      if (pipe_txdetectrx && (pipe_powerdown == 2'b10) && !detect_ack) begin
+      // A PHY answers every TxDetectRx assertion with its own PhyStatus pulse,
+      // so re-arm the handshake each time the MAC starts a detection sequence.
+      if (pipe_txdetectrx && !txdetectrx_q) begin
+        detect_cnt <= '0;
+        detect_ack <= 1'b0;
+      end else if (pipe_txdetectrx && (pipe_powerdown == 2'b10) && !detect_ack) begin
         detect_cnt <= detect_cnt + 4'd1;
         if (detect_cnt == 4'd4) begin
           detect_ack     <= 1'b1;
@@ -356,7 +373,8 @@ module rivet_ltssm_smoke_tb;
         for (int unsigned l = 0; l < LANES; l++) begin
           for (int unsigned s = 0; s < 2; s++) begin
             peer_tmp = send_os ? peer_sym(4'(peer_ptr + 5'(s)), send_ts2,
-                                          send_link_pad, send_lane_pad, 8'(l))
+                                          send_link_pad || (l >= PEER_LANES),
+                                          send_lane_pad || (l >= PEER_LANES), 8'(l))
                                : {1'b0, 8'h00};
             pipe_rxdata[PIPE_W*l + 8*s +: 8] <= peer_tmp[7:0];
             pipe_rxdatak[2*l + s]            <= peer_tmp[8];
@@ -373,8 +391,15 @@ module rivet_ltssm_smoke_tb;
         end
       end
 
-      // Follow the DUT: react to the ordered set it is sending.
-      case (phase)
+      // Follow the DUT: react to the ordered set it is sending. A Downstream
+      // Port whose partner drops back to Detect restarts its own training, so
+      // the phase machine rewinds when the DUT parks its transmitter.
+      if (pipe_txelecidle == {LANES{1'b1}}) begin
+        phase      <= P_TS1_PAD;
+        phase_sets <= '0;
+        peer_ptr   <= '0;
+        idle_seen  <= '0;
+      end else case (phase)
         P_TS1_PAD: if (dut_tx_ts2) begin
           phase      <= P_TS2_PAD;
           phase_sets <= '0;

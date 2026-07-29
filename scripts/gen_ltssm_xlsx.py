@@ -508,9 +508,17 @@ FINDINGS = [
     ["13", "Gap", "Open", "Recovery exists only as RcvrLock with a timeout back to "
      "Detect, so L0 errors do not actually retrain.", "rivet_ltssm.sv",
      "Full Recovery ladder (RcvrLock / RcvrCfg / Idle / Speed) in M4"],
-    ["14", "Gap", "Open", "Multi-lane Configuration exits use 'all enabled Lanes' where "
-     "the spec allows per-Lane 'any', and Lane numbers are always sequential.",
-     "rivet_ltssm.sv", "Revisit with x2/x4 lane grow and Lane reversal in M3"],
+    ["14", "Gap", "Open", "A partner that configures FEWER Lanes than our port width "
+     "cannot train: Linkwidth.Start clears link_pad on every enabled Lane instead of "
+     "narrowing lane_en to the Lanes that received a non-PAD Link number, and "
+     "Linkwidth.Accept requires a non-PAD Lane number on every enabled Lane. Reproduce "
+     "with -DRIVET_SMOKE_LANES=4 -DRIVET_SMOKE_PEER_LANES=2 (retrain loop at 6'h06). "
+     "A partner that is WIDER than us, and Lanes with no Receiver at all, both work.",
+     "rivet_ltssm.sv, rivet_mac_os_rx.sv, rivet_mac_os_tx.sv",
+     "M3: per-Lane shape flags out of os_rx, per-Lane PAD control in os_tx, lane_en "
+     "narrowing in both Linkwidth substates"],
+    ["15", "Gap", "Open", "Lane numbers are always sequential 0..n-1; Lane reversal is "
+     "not implemented.", "rivet_ltssm.sv", "M3 with lane grow"],
 ]
 
 SHEETS = [
