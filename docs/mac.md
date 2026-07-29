@@ -200,11 +200,12 @@ UVM must use an **independent** PIPE peer (not a BFM that peeks DUT LTSSM).
 
 ## 10. Implementation milestones (follow in order)
 
-### M0 — Types & IF (docs done → code next)
+### M0 — Types & IF (done skeleton)
 
-- [ ] `rivet_ltssm_state_e` with PG213 values  
-- [ ] `rivet_dll_mac_*` structs / interface skeleton  
-- [ ] Lint green (`scripts/lint.ps1`)
+- [x] `rivet_ltssm_state_e` with PG213 values (`rivet_pkg`)
+- [x] `rivet_dll_mac_*` structs + `rivet_dll_mac_if`
+- [x] `rivet_mac` / LTSSM / OS TX/RX / PIPE adapter stubs wired in `rivet_pcie_ctrl`
+- [ ] Lint green (`scripts/lint.ps1`) when Verilator available
 
 ### M1 — Gen2 ×1 Detect → … → L0
 

@@ -116,12 +116,15 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **
 - [Architecture](docs/architecture.md)
 - [MAC follow-guide](docs/mac.md) — LTSSM, OS, DLL↔MAC, PIPE duties, milestones
 - [PIPE notes](docs/pipe-notes.md) — MAC↔PHY digest (Original PIPE / PG239)
+- [RTL style](docs/rtl-style.md) — lowRISC-inspired coding rules
+- [DO-254 practices](docs/do254-practices.md) — lightweight assurance (no cert claim)
 - [Hardware](docs/hardware.md)
 - [Boards / PG239 targets](docs/boards.md)
 - [Roadmap](docs/roadmap.md)
 - [Gen2 → Gen3/4 evolution](docs/gen-evolution.md)
 - [PG213-style interface audit](docs/pg213-interface.md)
 - [Verification](docs/verification.md)
+- [Reference: lowRISC style-guides](docs/ref-lowrisc-style.md) (CC-BY-4.0; local clone)
 - [Reference: PCI_Express_Gen7.0](docs/ref-pci-express-gen7.md) (educational; do not copy)
 - [Reference: pcievhost](docs/ref-pcievhost.md) (GPL-3 VIP; inspire only)
 - [Contributing](CONTRIBUTING.md)

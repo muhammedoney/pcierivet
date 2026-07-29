@@ -34,9 +34,15 @@ docs(readme): clarify dual delivery forms
 
 ## Coding standards
 
-See `.cursor/rules/` and keep:
+See `.cursor/rules/` and:
 
-- SystemVerilog `lower_snake` for modules/signals
+- [docs/rtl-style.md](docs/rtl-style.md) — Rivet RTL style (lowRISC-inspired, CC-BY attribution)
+- [docs/do254-practices.md](docs/do254-practices.md) — lightweight assurance practices (no cert claim)
+- Local full guide: `third_party/ref/style-guides/` ([clone notes](third_party/ref/README.md))
+
+Keep:
+
+- SystemVerilog `lower_snake` for modules/signals; internal ports prefer `*_i`/`*_o`
 - Packages: `rivet_pkg`, `rivet_uvm_pkg`
 - Parameters: `GEN`, `LANES` (1/2/4), `MODE` (`EP` first)
 - AXI-ST channels CQ/CC/RQ/RC always present on `rivet_pcie_ctrl`
