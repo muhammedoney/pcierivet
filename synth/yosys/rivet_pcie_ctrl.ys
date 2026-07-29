@@ -1,6 +1,12 @@
 # Yosys synthesis sanity for rivet_pcie_ctrl (not FPGA timing-accurate)
 
 read_verilog -sv rtl/pcie_ctrl/rivet_pkg.sv
+read_verilog -sv rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv
+read_verilog -sv rtl/pcie_ctrl/mac/rivet_ltssm.sv
+read_verilog -sv rtl/pcie_ctrl/mac/rivet_mac_os_tx.sv
+read_verilog -sv rtl/pcie_ctrl/mac/rivet_mac_os_rx.sv
+read_verilog -sv rtl/pcie_ctrl/mac/rivet_mac_pipe_adapter.sv
+read_verilog -sv rtl/pcie_ctrl/mac/rivet_mac.sv
 read_verilog -sv rtl/pcie_ctrl/rivet_pcie_ctrl.sv
 hierarchy -check -top rivet_pcie_ctrl
 proc; opt; fsm; opt; memory; opt

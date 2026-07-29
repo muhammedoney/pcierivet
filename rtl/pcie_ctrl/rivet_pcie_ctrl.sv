@@ -3,7 +3,7 @@
 //
 // Rivet PCIe soft controller — multi-mode (EP / RC / USP / DSP), PIPE boundary.
 // User application IF: AXI-ST CQ/CC/RQ/RC + cfg_mgmt (PG213-style). No AXI-Lite.
-// Phase 0: synthesizable stub; development focus MODE=EP, GEN=2.
+// Integrates MAC (pclk); TL/DLL stubs remain at this top until layered.
 
 module rivet_pcie_ctrl #(
   parameter int unsigned MODE            = 0,  // rivet_pkg::RIVET_MODE_EP
@@ -124,17 +124,22 @@ module rivet_pcie_ctrl #(
   output logic link_up
 );
 
+  import rivet_pkg::*;
+
 `ifndef SYNTHESIS
   initial begin
     if (MODE != 0)
-      $error("rivet_pcie_ctrl Phase 0 stub only exercises MODE=EP (0)");
+      $error("rivet_pcie_ctrl Phase 1 stub only exercises MODE=EP (0)");
     if (GEN != 2)
-      $error("rivet_pcie_ctrl Phase 0 supports GEN=2 only");
+      $error("rivet_pcie_ctrl Phase 1 supports GEN=2 only");
     if (!(LANES == 1 || LANES == 2 || LANES == 4))
       $error("rivet_pcie_ctrl LANES must be 1, 2, or 4");
   end
 `endif
 
+  // -------------------------------------------------------------------------
+  // User / TL stubs (user_clk) — CDC to pclk later
+  // -------------------------------------------------------------------------
   assign m_axis_cq_tdata  = '0;
   assign m_axis_cq_tkeep  = '0;
   assign m_axis_cq_tlast  = 1'b0;
@@ -161,36 +166,96 @@ module rivet_pcie_ctrl #(
   assign pcie_tfc_nph_av      = '0;
   assign pcie_tfc_npd_av      = '0;
 
-  assign cfg_mgmt_read_data        = '0;
-  assign cfg_mgmt_read_write_done  = cfg_mgmt_read || cfg_mgmt_write;
+  assign cfg_mgmt_read_data       = '0;
+  assign cfg_mgmt_read_write_done = cfg_mgmt_read || cfg_mgmt_write;
 
-  assign pipe_txdata            = '0;
-  assign pipe_txdatak           = '0;
-  assign pipe_txdata_valid      = '0;
-  assign pipe_txstart_block     = '0;
-  assign pipe_txsync_header     = '0;
-  assign pipe_txdetectrx        = 1'b0;
-  assign pipe_txelecidle        = '1;
-  assign pipe_txcompliance      = '0;
-  assign pipe_rxpolarity        = '0;
-  assign pipe_powerdown         = 2'b10; // P1 idle stub
-  assign pipe_rate              = 3'd1;  // Gen2
-  assign pipe_txmargin          = 3'b000;
-  assign pipe_txswing           = 1'b0;
-  assign pipe_txdeemph          = 1'b1;  // -3.5 dB default (PG239)
-  assign pipe_txeq_ctrl         = '0;
-  assign pipe_txeq_preset       = '0;
-  assign pipe_txeq_coeff        = '0;
-  assign pipe_rxeq_ctrl         = '0;
-  assign pipe_rxeq_txpreset     = '0;
-  assign pipe_as_mac_in_detect  = 1'b1;  // Detect.* until LTSSM exists
-  assign pipe_as_cdr_hold_req   = 1'b0;
-  assign pipe_as_mac_in_L0      = 1'b0;
-  assign pipe_cfg_rx_pm_state   = 2'b00;
+  // -------------------------------------------------------------------------
+  // DLL stubs on pclk (no traffic yet)
+  // -------------------------------------------------------------------------
+  rivet_dll_mac_tx_beat_t dll_tx_beat;
+  logic                   dll_tx_valid;
+  logic                   dll_tx_ready;
+  rivet_dll_mac_rx_beat_t dll_rx_beat;
+  logic                   dll_rx_valid;
+  logic                   dll_rx_ready;
+  rivet_mac_dll_sb_t      mac_to_dll_sb;
+  rivet_dll_mac_sb_t      dll_to_mac_sb;
+  rivet_ltssm_state_e     ltssm_state;
 
-  assign link_up = 1'b0;
+  assign dll_tx_beat    = '0;
+  assign dll_tx_valid   = 1'b0;
+  assign dll_rx_ready   = 1'b1;
+  assign dll_to_mac_sb  = '0;
 
-  wire _unused_user = ^pcie_cq_np_req ^ (|cfg_mgmt_addr) ^ (|cfg_mgmt_function_number) ^
-                      (|cfg_mgmt_write_data) ^ (|cfg_mgmt_byte_enable) ^ cfg_mgmt_debug_access;
+  rivet_mac #(
+    .MODE            (MODE),
+    .GEN             (GEN),
+    .LANES           (LANES),
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+  ) u_mac (
+    .pclk_i                  (pclk),
+    .rst_ni                  (preset_n),
+    .dll_tx_beat_i           (dll_tx_beat),
+    .dll_tx_valid_i          (dll_tx_valid),
+    .dll_tx_ready_o          (dll_tx_ready),
+    .dll_rx_beat_o           (dll_rx_beat),
+    .dll_rx_valid_o          (dll_rx_valid),
+    .dll_rx_ready_i          (dll_rx_ready),
+    .mac_to_dll_sb_o         (mac_to_dll_sb),
+    .dll_to_mac_sb_i         (dll_to_mac_sb),
+    .ltssm_state_o           (ltssm_state),
+    .link_up_o               (link_up),
+    .pipe_txdata_o           (pipe_txdata),
+    .pipe_txdatak_o          (pipe_txdatak),
+    .pipe_txdata_valid_o     (pipe_txdata_valid),
+    .pipe_txstart_block_o    (pipe_txstart_block),
+    .pipe_txsync_header_o    (pipe_txsync_header),
+    .pipe_rxdata_i           (pipe_rxdata),
+    .pipe_rxdatak_i          (pipe_rxdatak),
+    .pipe_rxdata_valid_i     (pipe_rxdata_valid),
+    .pipe_rxstart_block_i    (pipe_rxstart_block),
+    .pipe_rxsync_header_i    (pipe_rxsync_header),
+    .pipe_txdetectrx_o       (pipe_txdetectrx),
+    .pipe_txelecidle_o       (pipe_txelecidle),
+    .pipe_txcompliance_o     (pipe_txcompliance),
+    .pipe_rxpolarity_o       (pipe_rxpolarity),
+    .pipe_powerdown_o        (pipe_powerdown),
+    .pipe_rate_o             (pipe_rate),
+    .pipe_rxvalid_i          (pipe_rxvalid),
+    .pipe_phystatus_i        (pipe_phystatus),
+    .pipe_phystatus_rst_i    (pipe_phystatus_rst),
+    .pipe_rxelecidle_i       (pipe_rxelecidle),
+    .pipe_rxstatus_i         (pipe_rxstatus),
+    .pipe_txmargin_o         (pipe_txmargin),
+    .pipe_txswing_o          (pipe_txswing),
+    .pipe_txdeemph_o         (pipe_txdeemph),
+    .pipe_txeq_ctrl_o        (pipe_txeq_ctrl),
+    .pipe_txeq_preset_o      (pipe_txeq_preset),
+    .pipe_txeq_coeff_o       (pipe_txeq_coeff),
+    .pipe_txeq_fs_i          (pipe_txeq_fs),
+    .pipe_txeq_lf_i          (pipe_txeq_lf),
+    .pipe_txeq_new_coeff_i   (pipe_txeq_new_coeff),
+    .pipe_txeq_done_i        (pipe_txeq_done),
+    .pipe_rxeq_ctrl_o        (pipe_rxeq_ctrl),
+    .pipe_rxeq_txpreset_o    (pipe_rxeq_txpreset),
+    .pipe_rxeq_preset_sel_i  (pipe_rxeq_preset_sel),
+    .pipe_rxeq_new_txcoeff_i (pipe_rxeq_new_txcoeff),
+    .pipe_rxeq_adapt_done_i  (pipe_rxeq_adapt_done),
+    .pipe_rxeq_done_i        (pipe_rxeq_done),
+    .pipe_as_mac_in_detect_o (pipe_as_mac_in_detect),
+    .pipe_as_cdr_hold_req_o  (pipe_as_cdr_hold_req),
+    .pipe_as_mac_in_L0_o     (pipe_as_mac_in_L0),
+    .pipe_cfg_rx_pm_state_o  (pipe_cfg_rx_pm_state)
+  );
+
+  logic _unused_user;
+  assign _unused_user = user_clk ^ user_resetn ^ (|pcie_cq_np_req) ^
+                        (|cfg_mgmt_addr) ^ (|cfg_mgmt_function_number) ^
+                        (|cfg_mgmt_write_data) ^ (|cfg_mgmt_byte_enable) ^
+                        cfg_mgmt_debug_access ^ dll_tx_ready ^ dll_rx_valid ^
+                        (|mac_to_dll_sb) ^ (|ltssm_state) ^
+                        m_axis_cq_tready ^ m_axis_rc_tready ^
+                        s_axis_cc_tvalid ^ s_axis_rq_tvalid ^
+                        (|s_axis_cc_tdata) ^ (|s_axis_rq_tdata);
 
 endmodule : rivet_pcie_ctrl

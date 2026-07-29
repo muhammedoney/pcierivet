@@ -1,12 +1,13 @@
 # MAC (`rtl/pcie_ctrl/mac`)
 
-Gen2 EP Media Access Control sources.
+Gen2 EP Media Access Control sources. Style: [docs/rtl-style.md](../../../docs/rtl-style.md).
 
-| Planned module | Role |
-|----------------|------|
-| `rivet_ltssm` | LTSSM (PG213 `cfg_ltssm_state` encodings) |
-| `rivet_mac_os_tx` | Ordered-set / TS encode, SKP insert, lane pack toward PIPE |
-| `rivet_mac_os_rx` | Lane unpack, OS/TS detect, classify to DLL + LTSSM events |
-| `rivet_mac_pipe_adapter` | `LANES` × `PIPE_DATA_WIDTH` ↔ `rivet_pipe_if` |
+| Module | Role |
+|--------|------|
+| `rivet_mac` | Wrapper: LTSSM + OS TX/RX + PIPE adapter |
+| `rivet_ltssm` | LTSSM (PG213 encodings); M0 holds Detect.Quiet |
+| `rivet_mac_os_tx` | OS/TS encode + DLL mux (stub) |
+| `rivet_mac_os_rx` | OS/TS detect + classify (stub) |
+| `rivet_mac_pipe_adapter` | Symbol/command ↔ flat PIPE ports |
 
-Follow [docs/mac.md](../../../docs/mac.md) and [docs/pipe-notes.md](../../../docs/pipe-notes.md).
+DLL↔MAC IF: `../dll/rivet_dll_mac_if.sv`. Follow [docs/mac.md](../../../docs/mac.md).
