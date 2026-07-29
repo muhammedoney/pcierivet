@@ -209,8 +209,15 @@ UVM must use an **independent** PIPE peer (not a BFM that peeks DUT LTSSM).
 
 ### M1 — Gen2 ×1 Detect → … → L0
 
-- [ ] `rivet_ltssm` + pipe adapter stubs  
-- [ ] OS TX/RX enough for training ladder  
+Port/state/timer worksheet: [ltssm.xlsx](ltssm.xlsx) (regenerate with
+`python scripts/gen_ltssm_xlsx.py`).
+
+- [ ] LTSSM inputs from PHY: `phystatus`, `rxelecidle`, `rx_detected` (fan out of pipe adapter)
+- [ ] Timer block with sim-abbreviated 12 / 24 / 48 / 2 ms parameters
+- [ ] Per-lane TS detect + consecutive counters (8 RX) and TX counters (1024 TS1, 16 TS2)
+- [ ] `rate_o` = 2.5 GT/s during training (Gen2 only via Recovery.Speed)
+- [ ] `link_up` asserted in Configuration.Idle, not on L0 entry
+- [ ] OS TX field control: Link#/Lane#/PAD, rate ID, lane mask
 - [ ] UVM sequence: peer responds with TS; scoreboard state path  
 - [ ] Gate: `smoke_gen2_x1` reaches L0 (sim timers OK)
 
@@ -265,6 +272,7 @@ Per [verification.md](verification.md) and workspace gates:
 
 | Doc | Why |
 |-----|-----|
+| [ltssm.xlsx](ltssm.xlsx) | LTSSM states, transitions, port list, timers, open findings |
 | [pipe-notes.md](pipe-notes.md) | PIPE TX/RX, EB, PowerDown, RxStatus |
 | [architecture.md](architecture.md) | Stack terminology |
 | [roadmap.md](roadmap.md) | Phase order |
