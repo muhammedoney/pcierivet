@@ -519,6 +519,19 @@ FINDINGS = [
      "narrowing in both Linkwidth substates"],
     ["15", "Gap", "Open", "Lane numbers are always sequential 0..n-1; Lane reversal is "
      "not implemented.", "rivet_ltssm.sv", "M3 with lane grow"],
+    ["16", "Gap", "Open", "No scrambler/descrambler exists. Base spec 4.2.3 puts scrambling "
+     "before 8b/10b encode, and PG239 owns 8b/10b, so this is MAC work. Training is "
+     "scramble-exempt (K codes plus TS1/TS2 D Symbols), which is why the smoke passes, but "
+     "Logical Idle is scrambled 00h: against a real Root Port our raw 00h descrambles to "
+     "garbage, the partner never counts 8 Idle Symbol Times and Configuration.Idle never "
+     "reaches L0.", "rivet_mac_os_tx.sv, rivet_mac_os_rx.sv",
+     "M2: per-Lane LFSR G(X)=X^16+X^5+X^4+X^3+1, seed FFFFh, COM re-seeds, SKP does not "
+     "advance, K and TS bypass, Disable Scrambling bit at end of Config"],
+    ["17", "Gap", "Open", "No packet datapath through the MAC: dll_tx_ready_o is tied 0 and "
+     "dll_rx_valid_o tied 0. STP/SDP/END/EDB framing, byte striping across Lanes, real "
+     "lane-to-lane deskew and L0 SKP scheduling (every 1180-1538 Symbol Times) are all "
+     "absent.", "rivet_mac_os_tx.sv, rivet_mac_os_rx.sv",
+     "M2 prerequisites before any DLL work"],
 ]
 
 SHEETS = [
