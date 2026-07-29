@@ -205,21 +205,32 @@ UVM must use an **independent** PIPE peer (not a BFM that peeks DUT LTSSM).
 - [x] `rivet_ltssm_state_e` with PG213 values (`rivet_pkg`)
 - [x] `rivet_dll_mac_*` structs + `rivet_dll_mac_if`
 - [x] `rivet_mac` / LTSSM / OS TX/RX / PIPE adapter stubs wired in `rivet_pcie_ctrl`
-- [ ] Lint green (`scripts/lint.ps1`) when Verilator available
+- [x] Lint green (`scripts/lint.ps1`) when Verilator available
 
-### M1 — Gen2 ×1 Detect → … → L0
+### M1 — Gen2 ×1 Detect → … → L0 (RTL done)
 
 Port/state/timer worksheet: [ltssm.xlsx](ltssm.xlsx) (regenerate with
 `python scripts/gen_ltssm_xlsx.py`).
 
-- [ ] LTSSM inputs from PHY: `phystatus`, `rxelecidle`, `rx_detected` (fan out of pipe adapter)
-- [ ] Timer block with sim-abbreviated 12 / 24 / 48 / 2 ms parameters
-- [ ] Per-lane TS detect + consecutive counters (8 RX) and TX counters (1024 TS1, 16 TS2)
-- [ ] `rate_o` = 2.5 GT/s during training (Gen2 only via Recovery.Speed)
-- [ ] `link_up` asserted in Configuration.Idle, not on L0 entry
-- [ ] OS TX field control: Link#/Lane#/PAD, rate ID, lane mask
-- [ ] UVM sequence: peer responds with TS; scoreboard state path  
-- [ ] Gate: `smoke_gen2_x1` reaches L0 (sim timers OK)
+- [x] LTSSM inputs from PHY: `phystatus`, `rxelecidle`, `rxvalid`, `rx_detected` (fan out of pipe adapter)
+- [x] `rivet_mac_timer` shared timeout counter, `LTSSM_TIMER_SCALE` shrinks 12 / 24 / 48 / 2 ms for sim
+- [x] Per-lane TS detect + consecutive counters (8 RX) and TX counters (1024 TS1, 16 TS2)
+- [x] `rate` = 2.5 GT/s during training, Gen2 capability advertised in the TS rate ID
+- [x] `link_up` asserted in Configuration.Idle, not on L0 entry
+- [x] OS TX field control: Link#/Lane#/PAD, N_FTS, rate ID, training control, lane mask
+- [x] Gate: Verilator smoke reaches L0 for ×1/×2/×4 (`scripts/sim_ltssm_smoke.ps1`)
+- [ ] UVM sequence: peer responds with TS; scoreboard state path (Questa not installed)
+
+Known simplifications, all revisited in M2–M4:
+
+| Area | Simplification |
+|------|----------------|
+| Idle detection | Counts consecutive non-K Symbol Times rather than descrambled `00h`, so it holds whether or not the PHY scrambles |
+| Lane-to-lane deskew | `deskew_done` = every enabled Lane saw a TS in the same cycle; no per-lane skew correction |
+| Lane numbers | Sequential 0..n-1, no Lane reversal |
+| Recovery | Only `Recovery.RcvrLock` exists, and only so timeouts and RX errors cannot dead-end |
+| EIOS | 4 symbols (2.5 GT/s form); the 8-symbol 5.0 GT/s form lands with Recovery.Speed |
+| Multi-lane exits | Configuration substates use "all enabled Lanes" where the spec allows per-Lane "any" |
 
 ### M2 — DLL stubs at MAC boundary
 
@@ -249,11 +260,12 @@ Port/state/timer worksheet: [ltssm.xlsx](ltssm.xlsx) (regenerate with
 
 Per [verification.md](verification.md) and workspace gates:
 
-1. Verilator lint on touched RTL.  
-2. Questa UVM smoke when installed; else note “UVM deferred — Questa not installed”.  
-3. Vivado BFM optional — never replaces UVM.  
-4. No GPL `pcievhost` sources in `rtl/` or `tb/uvm`.  
-5. No MindShare PDF content committed; keep under `specs/`.
+1. Verilator lint on touched RTL — `scripts/lint_lanes.ps1` covers ×1/×2/×4.  
+2. `scripts/sim_ltssm_smoke.ps1 <lanes>` must reach L0 (hand-written PIPE peer, no UVM).  
+3. Questa UVM smoke when installed; else note “UVM deferred — Questa not installed”.  
+4. Vivado BFM optional — never replaces UVM.  
+5. No GPL `pcievhost` sources in `rtl/` or `tb/uvm`.  
+6. No MindShare PDF content committed; keep under `specs/`.
 
 ---
 

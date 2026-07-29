@@ -13,6 +13,7 @@ during authoring is not redistributable.
 
 from __future__ import annotations
 
+import sys
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -30,19 +31,19 @@ STATES_HDR = [
 ]
 
 STATES = [
-    ["6'h00", "Detect.Quiet", "RIVET_LTSSM_DETECT_QUIET", "M1", "Yes (holds here)",
+    ["6'h00", "Detect.Quiet", "RIVET_LTSSM_DETECT_QUIET", "M1", "Yes",
      "P1", "1", "0", "2.5 GT/s (rate=0)", "Electrical Idle",
      "Detect.Active after 12 ms timeout OR Electrical Idle broken on any Lane. "
      "LinkUp=0; directed_speed_change/upconfigure_capable/idle_to_rlock_transitioned reset. "
      "If entered at non-2.5 GT/s, stay >=1 ms while changing to 2.5 GT/s.",
      "12 ms", "4.2.6.1.1"],
-    ["6'h01", "Detect.Active", "RIVET_LTSSM_DETECT_ACTIVE", "M1", "No",
+    ["6'h01", "Detect.Active", "RIVET_LTSSM_DETECT_ACTIVE", "M1", "Yes",
      "P1", "1", "1", "2.5 GT/s (rate=0)", "Receiver Detection sequence",
      "Polling if a Receiver is detected on ALL un-configured Lanes; Detect.Quiet if none. "
      "If some but not all: wait 12 ms, repeat detection; Polling only if exactly the same "
      "Lanes detect, else Detect.Quiet.",
      "12 ms (partial retry)", "4.2.6.1.2"],
-    ["6'h02", "Polling.Active", "RIVET_LTSSM_POLLING_ACTIVE", "M1", "No",
+    ["6'h02", "Polling.Active", "RIVET_LTSSM_POLLING_ACTIVE", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "TS1, Link#=PAD, Lane#=PAD",
      "Polling.Configuration after >=1024 TS1 transmitted AND all Lanes that detected a "
      "Receiver receive 8 consecutive TS1(PAD, ComplianceRx=0) / TS1(PAD, Loopback=1) / "
@@ -54,54 +55,55 @@ STATES = [
      "Entered when Enter Compliance (Link Control 2 bit 4) = 1. Exit sends 8 EIOS and "
      "1-2 ms Electrical Idle while returning to 2.5 GT/s.",
      "-", "4.2.6.2.2"],
-    ["6'h04", "Polling.Configuration", "RIVET_LTSSM_POLLING_CONFIGURATION", "M1", "No",
+    ["6'h04", "Polling.Configuration", "RIVET_LTSSM_POLLING_CONFIGURATION", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "TS2, Link#=PAD, Lane#=PAD",
      "Configuration after 8 consecutive TS2(PAD) received on any Lane that detected a "
      "Receiver AND 16 TS2 transmitted after receiving one TS2. Receiver must invert "
      "polarity here if needed. Transmit Margin reset to 000b on entry.",
      "48 ms -> Detect", "4.2.6.2.3"],
-    ["6'h05", "Configuration.Linkwidth.Start", "RIVET_LTSSM_CFG_LINKWIDTH_START", "M1", "No",
+    ["6'h05", "Configuration.Linkwidth.Start", "RIVET_LTSSM_CFG_LINKWIDTH_START", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "TS1, Link#=PAD, Lane#=PAD (active Lanes)",
      "If any Lane receives 2 consecutive TS1 with non-PAD Link# and PAD Lane#: select a "
      "single Link#, transmit TS1 with that Link# and PAD Lane# on those Lanes -> "
      "Configuration.Linkwidth.Accept. Left-over Lanes transmit PAD/PAD.",
      "24 ms -> Detect", "4.2.6.3.1.2"],
-    ["6'h06", "Configuration.Linkwidth.Accept", "RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT", "M1", "No",
+    ["6'h06", "Configuration.Linkwidth.Accept", "RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "TS1 with Link# and assigned Lane#",
      "On receiving 2 consecutive TS1 with non-PAD Lane numbers, assign own Lane numbers "
      "(reversed if necessary) -> Configuration.Lanenum.Wait.",
      "24 ms -> Detect", "4.2.6.3.2.2"],
-    ["6'h07", "Configuration.Lanenum.Accept", "RIVET_LTSSM_CFG_LANENUM_ACCEPT", "M1", "No",
+    ["6'h07", "Configuration.Lanenum.Accept", "RIVET_LTSSM_CFG_LANENUM_ACCEPT", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "TS1 with Link#/Lane#",
      "Configuration.Complete if received Lane numbers are acceptable/consistent; "
      "otherwise re-assign Lane numbers -> Configuration.Lanenum.Wait.",
      "24 ms -> Detect", "4.2.6.3.3.2"],
-    ["6'h08", "Configuration.Lanenum.Wait", "RIVET_LTSSM_CFG_LANENUM_WAIT", "M1", "No",
+    ["6'h08", "Configuration.Lanenum.Wait", "RIVET_LTSSM_CFG_LANENUM_WAIT", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "TS1 with Link#/Lane#",
      "Configuration.Lanenum.Accept when 2 consecutive TS1 are received with a non-PAD "
      "Lane number that CHANGED since first entering this substate.",
      "24 ms -> Detect", "4.2.6.3.4.2"],
-    ["6'h09", "Configuration.Complete", "RIVET_LTSSM_CFG_COMPLETE", "M1", "No",
+    ["6'h09", "Configuration.Complete", "RIVET_LTSSM_CFG_COMPLETE", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "TS2 with matching Link#/Lane#",
      "Configuration.Idle after all transmitting Lanes receive 8 consecutive TS2 with "
      "matching non-PAD Link/Lane and identical data rate identifiers, AND 16 TS2 sent "
      "after receiving one. Record remote data rate ID (speed capability). Note N_FTS. "
      "Lane-to-Lane de-skew must be complete on exit. Optional scrambling disable.",
      "2 ms -> Detect", "4.2.6.3.5.2"],
-    ["6'h0A", "Configuration.Idle", "RIVET_LTSSM_CFG_IDLE", "M1", "No",
+    ["6'h0A", "Configuration.Idle", "RIVET_LTSSM_CFG_IDLE", "M1", "Yes",
      "P0", "0", "0", "2.5 GT/s (rate=0)", "Idle data Symbols",
      "LinkUp = 1 in THIS substate (not L0). L0 after 8 consecutive Symbol Times of Idle "
      "received on all configured Lanes AND 16 Idle Symbols sent after receiving one. "
      "Otherwise after min 2 ms: Recovery.RcvrLock if idle_to_rlock_transitioned=0 "
      "(then set it), else Detect.",
      "min 2 ms", "4.2.6.3.6"],
-    ["6'h10", "L0", "RIVET_LTSSM_L0", "M1 (gate)", "No",
+    ["6'h10", "L0", "RIVET_LTSSM_L0", "M1 (gate)", "Yes (Idle only, no DLL traffic)",
      "P0", "0", "0", "2.5 GT/s first, Gen2 only after Recovery.Speed",
      "TLP / DLLP + periodic SKP",
      "Normal operation. Speed change to 5.0 GT/s happens by entering Recovery, never "
      "during initial training (Polling.Speed is unreachable).",
      "-", "4.2.6.4 / 4.2.6.2.4"],
-    ["6'h0B", "Recovery.RcvrLock", "RIVET_LTSSM_RECOVERY_RCVRLOCK", "M2 (minimal)", "No",
+    ["6'h0B", "Recovery.RcvrLock", "RIVET_LTSSM_RECOVERY_RCVRLOCK", "M2 (minimal)",
+     "Partial: sends TS1, timeout -> Detect",
      "P0", "0", "0", "current rate", "TS1",
      "Re-acquire training; entered on RxValid loss, framing/decode errors, retrain, or "
      "Configuration.Idle timeout path.",
@@ -237,68 +239,71 @@ INPUTS = [
     ["pclk_i", "1", "controller (pclk)", "Yes", "all", "PIPE-domain clock", "-"],
     ["rst_ni", "1", "controller (preset_n)", "Yes", "all",
      "Async assert / active-low reset", "-"],
-    ["phystatus_i", "LANES", "pipe adapter (PHY)", "NO",
+    ["phystatus_i", "LANES", "pipe adapter (PHY)", "Yes",
      "Detect.Active, Recovery.Speed, power-state changes",
      "Completion handshake for receiver detect, rate change and power change",
-     "M1 blocker"],
-    ["phystatus_rst_i", "LANES", "pipe adapter (PG239)", "NO", "reset sequence",
-     "PHY reset/ready done (AMD-specific)", "M1"],
-    ["rxelecidle_i", "LANES", "pipe adapter", "NO",
+     "Done"],
+    ["phystatus_rst_i", "LANES", "pipe adapter (PG239)",
+     "Adapter output, not yet consumed", "reset sequence",
+     "PHY reset/ready done (AMD-specific)", "M2"],
+    ["rxelecidle_i", "LANES", "pipe adapter", "Yes",
      "Detect.Quiet, L0s/L1 exit, Recovery",
      "'Electrical Idle broken on any Lane' - the documented Detect.Quiet exit",
-     "M1 blocker"],
-    ["rx_detected_i", "LANES", "pipe adapter (decode rxstatus=011 at phystatus)", "NO",
-     "Detect.Active", "Per-Lane receiver-present map", "M1 blocker"],
-    ["rxvalid_i", "LANES", "pipe adapter", "NO", "L0, Recovery",
-     "Symbol lock; loss triggers Recovery", "M2"],
-    ["rxstatus_skp_add_i / _rem_i", "LANES each", "pipe adapter decode", "NO", "L0",
-     "SKP added/removed (expected, not an error)", "M2"],
-    ["rxstatus_decode_err_i", "LANES", "pipe adapter decode", "NO", "L0 -> Recovery",
-     "8b/10b decode error (rxstatus=100)", "M2"],
-    ["rxstatus_eb_over_i / _under_i", "LANES each", "pipe adapter decode", "NO",
-     "L0 -> Recovery", "Elastic buffer overflow/underflow (101/110)", "M2"],
-    ["rxstatus_disparity_err_i", "LANES", "pipe adapter decode", "NO", "L0 -> Recovery",
-     "Disparity error (rxstatus=111)", "M2"],
-    ["ts1_rx_valid_i / ts2_rx_valid_i", "LANES each", "os_rx",
-     "Partial: 1 bit, tied 0", "Polling, Configuration",
-     "Per-Lane TS reception (currently a single link-wide bit)", "M1 (widen)"],
-    ["ts_rx_consec_cnt_i", "4+ bits per Lane", "os_rx", "NO",
-     "Polling (8 consecutive), Configuration (2 consecutive), Config.Complete (8)",
-     "Consecutive matching-TS counters - the actual exit criteria", "M1 blocker"],
-    ["ts_rx_link_num_i", "8 x LANES", "os_rx", "NO", "Config.Linkwidth.*",
-     "Received Link number", "M1"],
-    ["ts_rx_lane_num_i", "8 x LANES", "os_rx", "NO", "Config.Lanenum.*",
-     "Received Lane number", "M1"],
-    ["ts_rx_link_is_pad_i / lane_is_pad_i", "LANES each", "os_rx", "NO",
-     "Polling, Configuration", "PAD (K23.7) detection - drives most Config decisions",
-     "M1"],
-    ["ts_rx_lane_num_changed_i", "LANES", "os_rx", "NO", "Config.Lanenum.Wait",
-     "Lane number differs from value seen on entry to Wait", "M1"],
-    ["ts_rx_rate_id_i", "8 x LANES", "os_rx", "NO", "Config.Complete",
-     "Remote advertised data rates; recorded for later speed change", "M2"],
-    ["ts_rx_n_fts_i", "8 x LANES", "os_rx", "NO", "Config.Complete -> L0s",
-     "N_FTS must be noted when leaving Config.Complete", "Later"],
-    ["ts_rx_training_ctrl_i", "5 x LANES", "os_rx", "NO",
+     "Done"],
+    ["rx_detected_i", "LANES", "pipe adapter (decode rxstatus=011 at phystatus)", "Yes",
+     "Detect.Active", "Per-Lane receiver-present map", "Done"],
+    ["rxvalid_i", "LANES", "pipe adapter", "Yes", "L0, Recovery",
+     "Symbol lock; loss triggers Recovery", "Done"],
+    ["rx_err_i", "1 (link-level OR)", "os_rx rxstatus decode", "Yes", "L0 -> Recovery",
+     "Decode (100), EB overflow/underflow (101/110) and disparity (111) errors; "
+     "SKP add/remove are not errors",
+     "Done (per-Lane reporting still M2)"],
+    ["ts1_pad_all_i / _any_i", "1 each", "os_rx", "Yes", "Polling.Active",
+     "8 consecutive TS1 with Link and Lane = PAD, reduced over enabled Lanes", "Done"],
+    ["ts2_pad_all_i / _any_i", "1 each", "os_rx", "Yes", "Polling.Configuration",
+     "8 consecutive TS2 with Link and Lane = PAD", "Done"],
+    ["ts1_link_all_i / _any_i", "1 each", "os_rx", "Yes",
+     "Configuration.Linkwidth.Start",
+     "2 consecutive TS1 with non-PAD Link and PAD Lane", "Done"],
+    ["ts1_lane_all_i / _any_i", "1 each", "os_rx", "Yes",
+     "Configuration.Linkwidth.Accept, Lanenum.Wait/Accept",
+     "2 consecutive TS1 with non-PAD Link and Lane", "Done"],
+    ["ts2_cfg_all_i / _any_i", "1 each", "os_rx", "Yes", "Configuration.Complete",
+     "8 consecutive TS2 with non-PAD Link and Lane", "Done"],
+    ["idle_all_i / _any_i", "1 each", "os_rx", "Yes", "Config.Idle, Recovery.Idle",
+     "8 consecutive Idle Symbol Times; counted as non-K Symbol Times so it holds "
+     "whether or not the PHY scrambles",
+     "Done (revisit if a MAC scrambler lands)"],
+    ["rx_link_num_i", "8", "os_rx", "Yes", "Config.Linkwidth.*",
+     "Received Link number", "Done"],
+    ["rx_lane_num_i", "8 x LANES", "os_rx", "Yes", "Config.Lanenum.*",
+     "Received Lane numbers, compared against what we transmit", "Done"],
+    ["rx_lane_num_changed_i", "1", "os_rx",
+     "os_rx drives it; LTSSM uses a match compare instead", "Config.Lanenum.Wait",
+     "Lane number differs from value seen on entry to Wait", "M3"],
+    ["rx_rate_id_i", "8", "os_rx", "Yes", "Config.Complete",
+     "Remote advertised data rates; recorded for the later speed change", "Done"],
+    ["rx_n_fts_i", "8", "os_rx", "Yes", "Config.Complete -> L0s",
+     "N_FTS noted when leaving Config.Complete", "Done (used by L0s later)"],
+    ["rx_train_ctrl_i", "8", "os_rx", "Captured in os_rx, not routed to the LTSSM",
      "Loopback, Disabled, Hot_Reset, Compliance, scrambling",
      "Training Control bits (Symbol 5) incl. Disable Link / Loopback / Hot Reset",
      "Later"],
-    ["polarity_inverted_i", "LANES", "os_rx", "NO", "Polling.Configuration",
-     "Per-Lane polarity inversion needed", "M1"],
-    ["idle_rx_consec_i", "count per Lane", "os_rx", "NO",
-     "Config.Idle, Recovery.Idle",
-     "Consecutive Idle data Symbol Times received (8 required)", "M1"],
-    ["deskew_done_i", "1", "os_rx", "NO", "Config.Complete exit",
-     "Lane-to-Lane de-skew complete (mandatory on exit)", "M1 (x2/x4)"],
-    ["ts_tx_count_i", "11+ bits", "os_tx", "NO",
-     "Polling.Active (1024 TS1), Polling.Config (16 TS2), Config.Complete (16 TS2)",
-     "Transmitted ordered-set counters", "M1 blocker"],
-    ["idle_tx_count_i", "5+ bits", "os_tx", "NO", "Config.Idle (16 Idle Symbols)",
-     "Transmitted Idle Symbol counter", "M1"],
-    ["os_tx_busy_i / done_i", "1 each", "os_tx", "NO", "all TX states",
-     "Handshake that a requested OS burst is in flight / finished", "M1"],
-    ["timer_expired_i", "1 (or per-timer)", "rivet_mac_timer (new)", "NO",
-     "Detect.Quiet, Polling.*, Configuration.*, Recovery.*",
-     "12 / 24 / 48 / 2 ms timeouts; sim-abbreviated by parameter", "M1 blocker"],
+    ["polarity_inverted_i", "LANES", "os_rx", "Yes", "Polling.Configuration",
+     "Per-Lane polarity inversion needed", "Done"],
+    ["deskew_done_i", "1", "os_rx", "Yes (simplified)", "Config.Complete exit",
+     "Lane-to-Lane de-skew complete; today only checks that every enabled Lane saw "
+     "a TS in the same cycle",
+     "M3 (real skew correction)"],
+    ["os_sent_cnt_i", "12", "os_tx", "Yes",
+     "Polling.Active (1024 TS1), Polling.Config (16 TS2), Config.Complete (16 TS2), "
+     "Config.Idle (16 Idle Symbols)",
+     "Ordered sets sent since os_cnt_clr; Idle counts Symbols instead of sets",
+     "Done"],
+    ["timer_expired (internal)", "1", "rivet_mac_timer", "Yes",
+     "Detect.Quiet, Detect.Active retry, Polling.*, Configuration.*, Recovery.*",
+     "12 / 24 / 48 / 2 ms timeouts, divided by LTSSM_TIMER_SCALE for simulation",
+     "Done"],
     ["cfg_link_training_enable_i", "1", "TL / config space", "NO", "leaving Detect",
      "PG213 cfg_link_training_enable gate", "M2"],
     ["cfg_link_disable_i", "1", "TL / config space", "NO", "Disabled",
@@ -328,58 +333,65 @@ INPUTS = [
 OUT_HDR = ["Signal", "Width", "Destination", "In RTL today", "Purpose", "Priority"]
 
 OUTPUTS = [
-    ["txdetectrx_o", "1", "pipe adapter -> PIPE", "Yes (0)",
-     "Receiver detection request (with P1 + TxElecIdle)", "-"],
-    ["txelecidle_o", "LANES", "pipe adapter -> PIPE", "Yes ('1)",
-     "Electrical Idle control per Lane", "-"],
-    ["powerdown_o", "2", "pipe adapter -> PIPE", "Yes (P1)",
-     "P0 / P0s / P1 / P2 selection", "-"],
-    ["rate_o", "3", "pipe adapter -> PIPE", "Yes - HARDCODED Gen2 (3'd1)",
-     "MUST be 2.5 GT/s (0) for Detect..L0; Gen2 only after Recovery.Speed",
-     "FIX in M1"],
+    ["txdetectrx_o", "1", "pipe adapter -> PIPE", "Yes",
+     "Receiver detection request (with P1 + TxElecIdle) in Detect.Active", "Done"],
+    ["txelecidle_o", "LANES", "pipe adapter -> PIPE", "Yes",
+     "Electrical Idle through Detect and on unused Lanes", "Done"],
+    ["powerdown_o", "2", "pipe adapter -> PIPE", "Yes",
+     "P1 in Detect, P0 elsewhere; P0s/P2 arrive with power management", "Done"],
+    ["rate_o", "3", "pipe adapter -> PIPE", "Yes - 2.5 GT/s (3'd0)",
+     "2.5 GT/s for Detect..L0; Gen2 only after Recovery.Speed",
+     "Done (stateful in M4)"],
     ["as_mac_in_detect_o", "1", "pipe adapter -> PG239", "Yes (1)",
      "AMD assist: MAC is in Detect", "-"],
     ["as_cdr_hold_req_o", "1", "pipe adapter -> PG239", "Yes (0)",
      "AMD assist: CDR hold request", "-"],
     ["as_mac_in_L0_o", "1", "pipe adapter -> PG239", "Yes (0)",
      "AMD assist: MAC in L0 (ASPM L0s path)", "-"],
-    ["ltssm_state_o", "6", "rivet_mac -> ctrl", "Yes, but swallowed in ctrl",
-     "PG213 cfg_ltssm_state[5:0]; must become a controller top-level port", "M1"],
-    ["link_up_o", "1", "rivet_mac -> ctrl / DLL", "Yes (constant 0)",
-     "LinkUp: spec sets it in Configuration.Idle, not on L0 entry", "M1"],
-    ["os_req_o", "3", "os_tx", "Yes (NONE)",
-     "Ordered-set type request (TS1/TS2/SKP/EIOS/FTS)", "-"],
-    ["os_req_valid_o", "1", "os_tx", "Yes (0)", "Request valid", "-"],
-    ["os_tx_link_num_o", "8", "os_tx", "NO", "Link number to transmit in TS", "M1"],
-    ["os_tx_lane_num_o", "8 x LANES", "os_tx", "NO", "Per-Lane Lane number to transmit", "M1"],
-    ["os_tx_link_pad_o / lane_pad_o", "1 / LANES", "os_tx", "NO",
-     "Send PAD (K23.7) instead of a number", "M1"],
-    ["os_tx_lane_mask_o", "LANES", "os_tx", "NO",
-     "Which Lanes transmit the requested OS", "M1 (x2/x4)"],
-    ["os_tx_rate_id_o", "8", "os_tx", "NO",
-     "Advertised data rates in TS (Gen1+Gen2 even while training at 2.5 GT/s)", "M1"],
-    ["os_tx_n_fts_o", "8", "os_tx", "NO", "N_FTS advertised in TS", "Later"],
-    ["os_tx_training_ctrl_o", "5", "os_tx", "NO",
+    ["ltssm_state_o", "6", "rivet_mac -> ctrl -> cfg_ltssm_state", "Yes",
+     "PG213 cfg_ltssm_state[5:0], now a port on rivet_pcie_ctrl and rivet_pcie",
+     "Done"],
+    ["link_up_o", "1", "rivet_mac -> ctrl / DLL", "Yes",
+     "LinkUp asserted in Configuration.Idle, cleared in Detect.Quiet", "Done"],
+    ["os_req_o", "3", "os_tx", "Yes",
+     "Ordered-set type request (TS1/TS2/SKP/EIOS/FTS/Idle)", "Done"],
+    ["os_req_valid_o", "1", "os_tx", "Yes", "Request valid", "Done"],
+    ["os_cnt_clr_o", "1", "os_tx", "Yes",
+     "Restart the sent counter on state entry, and hold it clear until the gating "
+     "ordered set has been received",
+     "Done"],
+    ["capture_clr_o", "1", "os_rx", "Yes",
+     "Restart the consecutive counters and field capture on state entry", "Done"],
+    ["tx_link_num_o", "8", "os_tx", "Yes", "Link number to transmit in TS", "Done"],
+    ["tx_lane_num_o", "8 x LANES", "os_tx", "Yes",
+     "Per-Lane Lane number to transmit; sequential 0..n-1, no reversal", "Done (M3: reversal)"],
+    ["tx_link_pad_o / tx_lane_pad_o", "1 each", "os_tx", "Yes",
+     "Send PAD (K23.7) instead of a number", "Done"],
+    ["lane_en_o", "LANES", "os_tx / os_rx", "Yes",
+     "Lanes that form the configured Link; also the reduction mask in os_rx", "Done"],
+    ["tx_rate_id_o", "8", "os_tx", "Yes",
+     "Advertised data rates in TS (2.5 + 5.0 GT/s while training at 2.5)", "Done"],
+    ["tx_n_fts_o", "8", "os_tx", "Yes", "N_FTS advertised in TS (N_FTS_ADV parameter)", "Done"],
+    ["tx_train_ctrl_o", "8", "os_tx", "Yes (constant 0)",
      "Hot Reset / Disable Link / Loopback / Disable Scrambling / Compliance Receive",
      "Later"],
-    ["os_tx_count_req_o", "11", "os_tx", "NO",
-     "How many OS to send (1024 TS1, 16 TS2, 16 Idle)", "M1"],
-    ["rxpolarity_o", "LANES", "pipe adapter -> PIPE", "NO (adapter ties 0)",
-     "Polarity inversion request; decided in Polling.Configuration", "M1"],
+    ["rxpolarity_o", "LANES", "pipe adapter -> PIPE", "Yes",
+     "Polarity inversion request; decided in Polling.Configuration", "Done"],
     ["txcompliance_o", "LANES", "pipe adapter -> PIPE", "NO (adapter ties 0)",
      "Compliance pattern control", "Later"],
     ["txdeemph_o", "1", "pipe adapter -> PIPE", "NO (adapter hardcodes 1)",
      "Gen2 de-emphasis selection (-3.5 / -6 dB); negotiated, not constant", "M4"],
-    ["negotiated_width_o", "3", "DLL sideband / status", "In struct, always 0",
-     "Configured Link width after Configuration", "M1"],
-    ["negotiated_speed_o", "2", "DLL sideband / status", "In struct, always 0",
-     "Current data rate (2.5 GT/s until Recovery.Speed)", "M1"],
-    ["active_lane_mask_o", "LANES", "os_tx / os_rx / DLL", "NO",
-     "Lanes that form the configured Link", "M1 (x2/x4)"],
-    ["accept_dll_tlp_o", "1", "DLL sideband", "In struct, always 0",
-     "Allow DLL traffic (L0 only)", "M2"],
-    ["replay_freeze_o", "1", "DLL sideband", "In struct, always 1",
-     "Freeze DLL replay while not in L0", "M2"],
+    ["negotiated_width_o", "3", "DLL sideband / status", "Yes",
+     "Configured Link width (population count of lane_en)", "Done"],
+    ["negotiated_speed_o", "2", "DLL sideband / status", "Yes (constant 2.5 GT/s)",
+     "Current data rate (2.5 GT/s until Recovery.Speed)", "Done (M4)"],
+    ["remote_rate_id_o / remote_n_fts_o", "8 each", "status", "Yes",
+     "Peer capability captured in Configuration.Complete, for Recovery.Speed and L0s",
+     "Done (consumers later)"],
+    ["accept_dll_tlp_o", "1", "DLL sideband", "Yes (L0 only)",
+     "Allow DLL traffic (L0 only)", "Done"],
+    ["replay_freeze_o", "1", "DLL sideband", "Yes (inverse of accept_dll_tlp)",
+     "Freeze DLL replay while not in L0", "Done"],
     ["cfg_rx_pm_state_o", "2", "pipe adapter -> PG239", "NO (adapter ties 0)",
      "ASPM RX L0s substate reporting", "Later"],
 ]
@@ -401,9 +413,9 @@ TIMERS = [
     ["Detect.Active partial-detect wait", "12 ms", cycles(12, PCLK_GEN1_MHZ),
      cycles(12, PCLK_GEN2_MHZ), "Detect.Active", "T_DETECT_RETRY_CYC", "4.2.6.1.2"],
     ["Polling.Active timeout", "24 ms", cycles(24, PCLK_GEN1_MHZ), cycles(24, PCLK_GEN2_MHZ),
-     "Polling.Active", "T_POLLING_ACTIVE_CYC", "4.2.6.2.1"],
+     "Polling.Active", "T_POLL_ACTIVE_CYC", "4.2.6.2.1"],
     ["Polling.Configuration timeout", "48 ms", cycles(48, PCLK_GEN1_MHZ),
-     cycles(48, PCLK_GEN2_MHZ), "Polling.Configuration", "T_POLLING_CFG_CYC", "4.2.6.2.3"],
+     cycles(48, PCLK_GEN2_MHZ), "Polling.Configuration", "T_POLL_CFG_CYC", "4.2.6.2.3"],
     ["Configuration substate timeout", "24 ms", cycles(24, PCLK_GEN1_MHZ),
      cycles(24, PCLK_GEN2_MHZ), "Linkwidth.Start/Accept, Lanenum.Accept/Wait",
      "T_CONFIG_CYC", "4.2.6.3.1-4"],
@@ -424,54 +436,81 @@ TIMERS = [
     ["TX common mode settle (margin default)", "192 ns", "24", "48",
      "Polling.Active entry", "T_TXMARGIN_NS", "4.2.6.2.1"],
     ["TS1 transmitted before Polling.Config", "1024 TS1", "counter", "counter",
-     "Polling.Active", "N_TS1_MIN", "4.2.6.2.1"],
+     "Polling.Active", "N_TS1_POLLING", "4.2.6.2.1"],
     ["Consecutive TS required (Polling/Complete)", "8", "counter", "counter",
-     "Polling.Active, Polling.Config, Config.Complete", "N_TS_CONSEC", "4.2.6.2.1/3, 4.2.6.3.5"],
+     "Polling.Active, Polling.Config, Config.Complete", "RIVET_N_TS_CONSEC",
+     "4.2.6.2.1/3, 4.2.6.3.5"],
     ["TS2 transmitted after first TS2 RX", "16", "counter", "counter",
-     "Polling.Configuration, Config.Complete", "N_TS2_AFTER_RX", "4.2.6.2.3, 4.2.6.3.5"],
+     "Polling.Configuration, Config.Complete", "RIVET_N_TS_AFTER_RX",
+     "4.2.6.2.3, 4.2.6.3.5"],
     ["Consecutive TS1 for Link/Lane number", "2", "counter", "counter",
-     "Configuration.Linkwidth/Lanenum", "N_TS1_NUM_CONSEC", "4.2.6.3.1-4"],
+     "Configuration.Linkwidth/Lanenum", "RIVET_N_TS_NUM_CONSEC", "4.2.6.3.1-4"],
     ["Idle Symbols received / transmitted", "8 RX / 16 TX", "counter", "counter",
-     "Configuration.Idle, Recovery.Idle", "N_IDLE_RX / N_IDLE_TX", "4.2.6.3.6"],
+     "Configuration.Idle, Recovery.Idle", "RIVET_N_IDLE_CONSEC / RIVET_N_IDLE_TX",
+     "4.2.6.3.6"],
+    ["Simulation divider for every timeout above", "n/a", "limit / scale",
+     "limit / scale", "all timed states",
+     "LTSSM_TIMER_SCALE (rivet_mac / rivet_pcie_ctrl); elaboration checks reject a "
+     "scale that cannot fit the required TX counts",
+     "-"],
 ]
 
 # --------------------------------------------------------------------------
 # Sheet: Findings
 # --------------------------------------------------------------------------
-FIND_HDR = ["#", "Severity", "Finding", "Where", "Action"]
+FIND_HDR = ["#", "Severity", "Status", "Finding", "Where", "Action"]
 
 FINDINGS = [
-    ["1", "Bug", "rate_o is hardcoded to Gen2 (3'd1). The spec requires 2.5 GT/s for "
-     "Detect through L0; Polling.Speed is unreachable and Gen2 is reached only via "
-     "Recovery.Speed.", "rivet_ltssm.sv", "Drive rate=0 during training; add rate change in M4"],
-    ["2", "Blocker", "LTSSM has no phystatus / rxelecidle / rx_detected inputs, so it "
-     "cannot leave Detect for any real reason.",
-     "rivet_ltssm.sv ports; rivet_mac_pipe_adapter.sv unused sink",
-     "Fan PHY status out of the adapter into the LTSSM"],
-    ["3", "Blocker", "No timers exist and no timer parameters are defined.",
-     "rivet_ltssm.sv", "Add rivet_mac_timer with sim-abbreviated parameters"],
-    ["4", "Blocker", "TS detection is a single link-wide bit with no counting; exits need "
-     "per-Lane counts (8 consecutive RX, 1024/16 TX).",
-     "rivet_mac_os_rx.sv, rivet_mac_os_tx.sv", "Widen to per-Lane + counters"],
-    ["5", "Spec detail", "LinkUp = 1 is set in Configuration.Idle, not on L0 entry.",
-     "rivet_ltssm.sv link_up_o", "Assert link_up in Config.Idle"],
-    ["6", "Gap", "cfg_ltssm_state is not a port on rivet_pcie_ctrl or rivet_pcie; the "
-     "internal state is consumed by an unused sink.",
-     "rivet_pcie_ctrl.sv", "Expose as PG213-style status output"],
-    ["7", "Gap", "Polling.Configuration must invert Receiver polarity, but rxpolarity is "
-     "hardcoded to 0 in the adapter.",
-     "rivet_mac_pipe_adapter.sv", "Drive from LTSSM / os_rx"],
-    ["8", "Gap", "Configuration.Complete must record the remote data rate identifier and "
-     "note N_FTS; neither is modelled.", "os_rx / rivet_ltssm.sv",
-     "Add rate-ID and N_FTS capture (M2)"],
-    ["9", "Gap", "Lane-to-Lane de-skew must be complete when leaving Config.Complete.",
-     "rivet_mac_os_rx.sv", "Add deskew_done for x2/x4"],
-    ["10", "Doc risk", "Enum has no L0s (6'h11-16) or L2 (6'h19-1F) codes, and Loopback "
-     "naming may not match PG213 exactly.", "rivet_pkg.sv, docs/mac.md",
+    ["1", "Bug", "Fixed", "rate_o was hardcoded to Gen2 (3'd1). The spec requires "
+     "2.5 GT/s for Detect through L0; Polling.Speed is unreachable and Gen2 is reached "
+     "only via Recovery.Speed.",
+     "rivet_ltssm.sv", "rate is 2.5 GT/s; capability advertised in the TS rate ID"],
+    ["2", "Blocker", "Fixed", "LTSSM had no phystatus / rxelecidle / rx_detected inputs, "
+     "so it could not leave Detect for any real reason.",
+     "rivet_ltssm.sv, rivet_mac_pipe_adapter.sv",
+     "Adapter fans PHY status out and decodes RxStatus=011"],
+    ["3", "Blocker", "Fixed", "No timers existed and no timer parameters were defined.",
+     "rivet_mac_timer.sv, rivet_ltssm.sv",
+     "One shared counter loaded with the limit of the state being entered; "
+     "LTSSM_TIMER_SCALE shrinks it for simulation"],
+    ["4", "Blocker", "Fixed", "TS detection was a single link-wide bit with no counting; "
+     "exits need per-Lane counts (8 consecutive RX, 1024/16 TX).",
+     "rivet_mac_os_rx.sv, rivet_mac_os_tx.sv",
+     "Per-Lane sliding-window TS detect with per-shape consecutive counters, and a "
+     "sent counter in os_tx"],
+    ["5", "Spec detail", "Fixed", "LinkUp = 1 is set in Configuration.Idle, not on L0 "
+     "entry.", "rivet_ltssm.sv", "link_up asserted in Config.Idle, cleared in Detect.Quiet"],
+    ["6", "Gap", "Fixed", "cfg_ltssm_state was not a port on rivet_pcie_ctrl or "
+     "rivet_pcie; the internal state went to an unused sink.",
+     "rivet_pcie_ctrl.sv, rivet_pcie.sv", "Exposed as a PG213-style status output"],
+    ["7", "Gap", "Fixed", "Polling.Configuration must invert Receiver polarity, but "
+     "rxpolarity was hardcoded to 0.",
+     "rivet_mac_pipe_adapter.sv", "Driven from the LTSSM, set from os_rx inversion detect"],
+    ["8", "Gap", "Fixed", "Configuration.Complete must record the remote data rate "
+     "identifier and note N_FTS.", "rivet_ltssm.sv",
+     "remote_rate_id / remote_n_fts captured; consumers land with Recovery and L0s"],
+    ["9", "Gap", "Partial", "Lane-to-Lane de-skew must be complete when leaving "
+     "Config.Complete.", "rivet_mac_os_rx.sv",
+     "deskew_done only checks that every enabled Lane saw a TS in the same cycle; "
+     "real skew correction is M3"],
+    ["10", "Doc risk", "Open", "Enum has no L0s (6'h11-16) or L2 (6'h19-1F) codes, and "
+     "Loopback naming may not match PG213 exactly.", "rivet_pkg.sv, docs/mac.md",
      "Confirm PG213 table before using those codes"],
-    ["11", "Process", "Spec values here come from a local text extract of PCIe Base 2.1; "
-     "the extract is not redistributable and OCR/layout may be imperfect.",
+    ["11", "Process", "Open", "Spec values here come from a local text extract of PCIe "
+     "Base 2.1; the extract is not redistributable and OCR/layout may be imperfect.",
      "this workbook", "Verify against the original PDF before RTL sign-off"],
+    ["12", "Open question", "Open", "Idle detection counts non-K Symbol Times instead of "
+     "descrambled 00h, because it is not yet settled whether PG239 scrambles for "
+     "Gen1/2 or whether the MAC must.",
+     "rivet_mac_os_rx.sv, docs/pipe-notes.md",
+     "Confirm scrambler ownership from PG239 / PIPE, then tighten if the MAC sees "
+     "unscrambled data"],
+    ["13", "Gap", "Open", "Recovery exists only as RcvrLock with a timeout back to "
+     "Detect, so L0 errors do not actually retrain.", "rivet_ltssm.sv",
+     "Full Recovery ladder (RcvrLock / RcvrCfg / Idle / Speed) in M4"],
+    ["14", "Gap", "Open", "Multi-lane Configuration exits use 'all enabled Lanes' where "
+     "the spec allows per-Lane 'any', and Lane numbers are always sequential.",
+     "rivet_ltssm.sv", "Revisit with x2/x4 lane grow and Lane reversal in M3"],
 ]
 
 SHEETS = [
@@ -480,7 +519,7 @@ SHEETS = [
     ("Inputs", IN_HDR, INPUTS, [34, 18, 34, 26, 40, 60, 14]),
     ("Outputs", OUT_HDR, OUTPUTS, [26, 12, 28, 30, 62, 14]),
     ("Timers", TIMER_HDR, TIMERS, [40, 20, 24, 24, 44, 26, 20]),
-    ("Findings", FIND_HDR, FINDINGS, [5, 12, 78, 46, 46]),
+    ("Findings", FIND_HDR, FINDINGS, [5, 14, 10, 74, 40, 52]),
 ]
 
 
@@ -544,7 +583,12 @@ STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def main() -> None:
-    out_path = Path(__file__).resolve().parents[1] / "docs" / "ltssm.xlsx"
+    # Optional argument so the workbook can be regenerated elsewhere while the
+    # committed copy is open in a spreadsheet application.
+    if len(sys.argv) > 1:
+        out_path = Path(sys.argv[1]).resolve()
+    else:
+        out_path = Path(__file__).resolve().parents[1] / "docs" / "ltssm.xlsx"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     content_types = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
