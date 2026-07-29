@@ -64,6 +64,7 @@ third_party/ref/**
 specs/
 
 # IDE / OS
+~$*
 .vscode/
 !.vscode/extensions.json
 .idea/

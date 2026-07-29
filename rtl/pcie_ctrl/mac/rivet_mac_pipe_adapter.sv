@@ -16,6 +16,7 @@ module rivet_mac_pipe_adapter #(
   input  logic                             sym_tx_valid_i,
   input  logic                             txdetectrx_i,
   input  logic [LANES-1:0]                 txelecidle_i,
+  input  logic [LANES-1:0]                 rxpolarity_i,
   input  logic [1:0]                       powerdown_i,
   input  logic [2:0]                       rate_i,
   input  logic                             as_mac_in_detect_i,
@@ -27,6 +28,13 @@ module rivet_mac_pipe_adapter #(
   output logic [2*LANES-1:0]               sym_rx_datak_o,
   output logic [LANES-1:0]                 sym_rx_valid_o,
   output logic [3*LANES-1:0]               rxstatus_o,
+
+  // To LTSSM: PHY handshake and receiver detection
+  output logic [LANES-1:0]                 phystatus_o,
+  output logic [LANES-1:0]                 phystatus_rst_o,
+  output logic [LANES-1:0]                 rxelecidle_o,
+  output logic [LANES-1:0]                 rxvalid_o,
+  output logic [LANES-1:0]                 rx_detected_o,
 
   // Flat PIPE (controller top / PG239)
   output logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_txdata_o,
@@ -82,7 +90,7 @@ module rivet_mac_pipe_adapter #(
   assign pipe_txdetectrx_o       = txdetectrx_i;
   assign pipe_txelecidle_o       = txelecidle_i;
   assign pipe_txcompliance_o     = '0;
-  assign pipe_rxpolarity_o       = '0;
+  assign pipe_rxpolarity_o       = rxpolarity_i;
   assign pipe_powerdown_o        = powerdown_i;
   assign pipe_rate_o             = rate_i;
   assign pipe_txmargin_o         = 3'b000;
@@ -104,11 +112,25 @@ module rivet_mac_pipe_adapter #(
   assign sym_rx_valid_o = pipe_rxvalid_i;
   assign rxstatus_o     = pipe_rxstatus_i;
 
+  // Status toward the LTSSM. A receiver detected during Detect.Active is
+  // reported as RxStatus=011 qualified by the one-cycle PhyStatus handshake.
+  assign phystatus_o     = pipe_phystatus_i;
+  assign phystatus_rst_o = pipe_phystatus_rst_i;
+  assign rxelecidle_o    = pipe_rxelecidle_i;
+  assign rxvalid_o       = pipe_rxvalid_i;
+
+  always_comb begin
+    rx_detected_o = '0;
+    for (int unsigned l = 0; l < LANES; l++) begin
+      rx_detected_o[l] = pipe_phystatus_i[l] &&
+                         (pipe_rxstatus_i[3*l +: 3] == rivet_pkg::RIVET_RXSTATUS_RX_DETECTED);
+    end
+  end
+
   logic _unused_ok;
   assign _unused_ok = rst_ni ^ pclk_i ^ sym_tx_valid_i ^
                       (|pipe_rxdata_valid_i) ^ (|pipe_rxstart_block_i) ^
-                      (|pipe_rxsync_header_i) ^ (|pipe_phystatus_i) ^
-                      (|pipe_phystatus_rst_i) ^ (|pipe_rxelecidle_i) ^
+                      (|pipe_rxsync_header_i) ^
                       (|pipe_txeq_fs_i) ^ (|pipe_txeq_lf_i) ^
                       (|pipe_txeq_new_coeff_i) ^ (|pipe_txeq_done_i) ^
                       (|pipe_rxeq_preset_sel_i) ^ (|pipe_rxeq_new_txcoeff_i) ^

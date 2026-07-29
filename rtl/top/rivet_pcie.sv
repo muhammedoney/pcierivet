@@ -79,6 +79,7 @@ module rivet_pcie #(
   input  logic [LANES-1:0]           pci_exp_rxp,
   input  logic [LANES-1:0]           pci_exp_rxn,
 
+  output logic [5:0]                 cfg_ltssm_state,
   output logic                       link_up
 );
 
@@ -225,6 +226,7 @@ module rivet_pcie #(
     .pipe_as_cdr_hold_req(pipe_as_cdr_hold_req),
     .pipe_as_mac_in_L0(pipe_as_mac_in_L0),
     .pipe_cfg_rx_pm_state(pipe_cfg_rx_pm_state),
+    .cfg_ltssm_state(cfg_ltssm_state),
     .link_up(link_up)
   );
 

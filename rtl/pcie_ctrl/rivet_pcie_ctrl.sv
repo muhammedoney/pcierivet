@@ -15,7 +15,10 @@ module rivet_pcie_ctrl #(
   parameter int unsigned AXI_CC_USER_W   = 33,
   parameter int unsigned AXI_RQ_USER_W   = 85,
   parameter int unsigned AXI_RC_USER_W   = 75,
-  parameter int unsigned PIPE_DATA_WIDTH = 16
+  parameter int unsigned PIPE_DATA_WIDTH = 16,
+  // Simulation knobs forwarded to the LTSSM (see rivet_mac).
+  parameter int unsigned LTSSM_TIMER_SCALE = 1,
+  parameter int unsigned N_TS1_POLLING     = rivet_pkg::RIVET_N_TS1_POLLING
 ) (
   input  logic user_clk,
   input  logic user_resetn,
@@ -121,7 +124,9 @@ module rivet_pcie_ctrl #(
   output logic                             pipe_as_mac_in_L0,
   output logic [1:0]                       pipe_cfg_rx_pm_state,
 
-  output logic link_up
+  // Link status (PG213-style)
+  output logic [5:0] cfg_ltssm_state,
+  output logic       link_up
 );
 
   import rivet_pkg::*;
@@ -188,10 +193,12 @@ module rivet_pcie_ctrl #(
   assign dll_to_mac_sb  = '0;
 
   rivet_mac #(
-    .MODE            (MODE),
-    .GEN             (GEN),
-    .LANES           (LANES),
-    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+    .MODE              (MODE),
+    .GEN               (GEN),
+    .LANES             (LANES),
+    .PIPE_DATA_WIDTH   (PIPE_DATA_WIDTH),
+    .LTSSM_TIMER_SCALE (LTSSM_TIMER_SCALE),
+    .N_TS1_POLLING     (N_TS1_POLLING)
   ) u_mac (
     .pclk_i                  (pclk),
     .rst_ni                  (preset_n),
@@ -248,12 +255,14 @@ module rivet_pcie_ctrl #(
     .pipe_cfg_rx_pm_state_o  (pipe_cfg_rx_pm_state)
   );
 
+  assign cfg_ltssm_state = ltssm_state;
+
   logic _unused_user;
   assign _unused_user = user_clk ^ user_resetn ^ (|pcie_cq_np_req) ^
                         (|cfg_mgmt_addr) ^ (|cfg_mgmt_function_number) ^
                         (|cfg_mgmt_write_data) ^ (|cfg_mgmt_byte_enable) ^
                         cfg_mgmt_debug_access ^ dll_tx_ready ^ dll_rx_valid ^
-                        (|mac_to_dll_sb) ^ (|ltssm_state) ^
+                        (|mac_to_dll_sb) ^
                         m_axis_cq_tready ^ m_axis_rc_tready ^
                         s_axis_cc_tvalid ^ s_axis_rq_tvalid ^
                         (|s_axis_cc_tdata) ^ (|s_axis_rq_tdata);

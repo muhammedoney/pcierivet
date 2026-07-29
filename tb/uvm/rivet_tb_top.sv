@@ -22,6 +22,12 @@ module rivet_tb_top;
   logic pclk;
   logic preset_n;
   logic link_up;
+  logic [5:0] cfg_ltssm_state;
+
+  // Shrink the LTSSM 12/24/48/2 ms timeouts and the 1024 TS1 quota so a smoke
+  // test can reach L0 in a few thousand cycles.
+  localparam int unsigned LTSSM_TIMER_SCALE = 500;
+  localparam int unsigned N_TS1_POLLING     = 32;
 
   initial begin
     user_clk = 0;
@@ -60,7 +66,9 @@ module rivet_tb_top;
     .MODE(0),
     .GEN(2),
     .LANES(LANES),
-    .AXI_DATA_WIDTH(AXI_W)
+    .AXI_DATA_WIDTH(AXI_W),
+    .LTSSM_TIMER_SCALE(LTSSM_TIMER_SCALE),
+    .N_TS1_POLLING(N_TS1_POLLING)
   ) dut (
     .user_clk(user_clk),
     .user_resetn(user_resetn),
@@ -151,6 +159,7 @@ module rivet_tb_top;
     .pipe_as_cdr_hold_req(pipe_if.as_cdr_hold_req),
     .pipe_as_mac_in_L0(pipe_if.as_mac_in_L0),
     .pipe_cfg_rx_pm_state(pipe_if.cfg_rx_pm_state),
+    .cfg_ltssm_state(cfg_ltssm_state),
     .link_up(link_up)
   );
 
