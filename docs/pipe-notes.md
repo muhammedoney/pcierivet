@@ -216,7 +216,7 @@ From 8 GT/s up, EQ is an active MAC↔PHY dialogue (presets, FS/LF, coefficient 
 | Concept | Rivet home |
 |---------|------------|
 | PIPE pins / packing | `rtl/interfaces/rivet_pipe_if.sv` |
-| MAC LTSSM + OS + PIPE drive | Future `rtl/pcie_ctrl/` MAC modules — see [mac.md](mac.md) |
+| MAC LTSSM + OS + PIPE drive | `rtl/pcie_ctrl/mac/` — see [mac.md](mac.md) |
 | PHY PCS/PMA (EB, 8b/10b) | `rivet_pcie_phy_*` → PG239 |
 | Gen/width policy | [gen-evolution.md](gen-evolution.md) |
 | User AXI-ST / cfg | PG213-style — **not** PIPE |

@@ -77,12 +77,13 @@ Phase 0 stubs + PG239-aligned PIPE ports. Phase 1: grow `tb/uvm`, then Gen2 LTSS
 ## Repository layout
 
 ```text
-rtl/pcie_ctrl/   Soft controller (to PIPE)
-rtl/phy/         PG239 family PHY wrappers
-rtl/top/         rivet_pcie = ctrl + phy
-rtl/interfaces/  PIPE, AXI-ST, cfg_mgmt SV interfaces
-tb/uvm/          Primary UVM (DUT = rivet_pcie_ctrl)
-tb/bfm/          Vivado RP/EP BFM side-path
+rtl/pcie_ctrl/        Soft controller top + rivet_pkg (to PIPE)
+  mac/ dll/ tl/       Layer sources (LTSSM/OS, DLLP/FC, TLP/cfg)
+rtl/phy/              PG239 family PHY wrappers
+rtl/top/              rivet_pcie = ctrl + phy
+rtl/interfaces/       PIPE, AXI-ST, cfg_mgmt SV interfaces
+tb/uvm/               Primary UVM (DUT = rivet_pcie_ctrl)
+tb/bfm/               Vivado RP/EP BFM side-path
 ```
 
 ## Target hardware

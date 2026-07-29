@@ -79,7 +79,17 @@ Reference behavior (do **not** copy code): [ref-pcievhost.md](ref-pcievhost.md) 
 
 ## 3. Module split (target RTL)
 
-Under `rtl/pcie_ctrl/` (names locked for follow-on slices):
+Controller layout:
+
+```text
+rtl/pcie_ctrl/
+  rivet_pkg.sv / rivet_pcie_ctrl.sv   # shared pkg + top
+  mac/   # this layer
+  dll/   # Data Link
+  tl/    # Transaction + config
+```
+
+Under `rtl/pcie_ctrl/mac/` (names locked for follow-on slices):
 
 | Module / package | Responsibility |
 |------------------|----------------|
@@ -87,7 +97,7 @@ Under `rtl/pcie_ctrl/` (names locked for follow-on slices):
 | `rivet_mac_os_tx` | Ordered-set / TS encoder → symbol stream to PIPE adapter |
 | `rivet_mac_os_rx` | Symbol stream → OS/TS detect, lane deskew hooks, error flags |
 | `rivet_mac_pipe_adapter` | Pack/unpack `LANES` × `PIPE_DATA_WIDTH`; drive `rivet_pipe_if.mac` |
-| `rivet_dll_mac_if` (pkg or SV IF) | DLL ↔ MAC streams + **control sideband** |
+| `rivet_dll_mac_if` (pkg or SV IF) | DLL ↔ MAC streams + **control sideband** (may live under `dll/`) |
 | (later) `rivet_mac_skp` | SKP insertion policy in L0 |
 
 Keep Gen3+ block-framing and EQ **out** of Gen2 bodies; adapter may have dead ports.

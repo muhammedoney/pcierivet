@@ -31,18 +31,18 @@ Throughput check (1 lane, after 8b/10b):
 | EQ / assist may idle | Drive AMD **custom** EQ (`txeq_*` / `rxeq_*`) per PG239 — not standard PIPE Local FS/LF EQ |
 | Assist: Detect / CDR as needed for Gen2 LTSSM | Same assist model; ASPM L0s ports if enabled |
 
-### `rtl/pcie_ctrl/rivet_pcie_ctrl.sv` (+ future ctrl submodules)
+### `rtl/pcie_ctrl/` (`rivet_pcie_ctrl.sv` + `mac/` / `dll/` / `tl/`)
 
 | Now (Gen2) | Later (Gen3/4) |
 |------------|----------------|
-| Stub / Gen2 LTSSM Detect→Polling→Config→L0 | Add Recovery.Equalization phases; Gen3/4 rate change |
-| 8b/10b ordered sets, SKP, disparity | 128b/130b OS / block sync; ignore DataK path |
-| DLLP / credit / TLP for Gen2 | Same TL/DL with Gen3+ framing on PIPE; wider internal datapath |
+| Stub top; layer folders ready for sources | Add Recovery.Equalization phases; Gen3/4 rate change |
+| 8b/10b ordered sets, SKP, disparity (`mac/`) | 128b/130b OS / block sync; ignore DataK path |
+| DLLP / credit (`dll/`) / TLP (`tl/`) for Gen2 | Same TL/DL with Gen3+ framing on PIPE; wider internal datapath |
 | `pipe_rate = Gen2`; P1/`txelecidle` idle defaults | Dynamic `pipe_rate` Gen1↔Gen2↔Gen3↔Gen4; honor `phystatus` completion |
 | EQ outputs tied off | Full PG239 TX/RX EQ sequences (see PG239 Ch.4) |
 | `$error` if `GEN != 2` | Gate features by `GEN`; widen compile-time checks |
 
-Suggested future splits (still Gen2-first): `ltssm`, `dllp`, `tlp`, `pipe_mac` — each gets a Gen3/4 section in this doc when created.
+Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac_os_tx` / `_rx`, `rivet_mac_pipe_adapter` — each gets a Gen3/4 section in this doc when created.
 
 ### `rtl/pcie_ctrl/rivet_pkg.sv`
 
