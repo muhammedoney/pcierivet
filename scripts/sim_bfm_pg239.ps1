@@ -47,7 +47,7 @@ $QuestaWin64 = Join-Path $env:QUESTA_HOME "win64"
 $env:PATH = "$QuestaWin64;$env:PATH"
 
 if (-not $env:RIVET_PG239_EX) {
-  $env:RIVET_PG239_EX = "C:\Users\tosba\vivado\pcie_phy_0_ex"
+  $env:RIVET_PG239_EX = Join-Path $RepoRoot "third_party\xilinx_ip\pcie_phy_0_ex"
 }
 if (-not $env:RIVET_QUESTA_SIMLIB) {
   $env:RIVET_QUESTA_SIMLIB = Join-Path $env:RIVET_PG239_EX "pcie_phy_0_ex.cache\compile_simlib\questa"
@@ -93,19 +93,12 @@ if ($ResetRun) {
   exit 0
 }
 
-# Junction under third_party for a stable in-repo path (gitignored contents).
-$LinkDir = Join-Path $RepoRoot "third_party\xilinx_ip\pcie_phy_0_ex"
-$LinkParent = Split-Path $LinkDir -Parent
-New-Item -ItemType Directory -Force -Path $LinkParent | Out-Null
-if (-not (Test-Path $LinkDir)) {
-  Write-Host "Creating junction: $LinkDir -> $ExRoot"
-  cmd /c "mklink /J `"$LinkDir`" `"$ExRoot`"" 2>&1 | Out-Host
-  if (-not (Test-Path $LinkDir)) {
-    Write-Warning "Junction failed (need Developer Mode or admin). Using RIVET_PG239_EX directly."
-  }
+# Prefer in-repo copy under third_party/xilinx_ip (gitignored).
+if (-not (Test-Path (Join-Path $ExRoot "imports\board.v"))) {
+  Fail "No board.v under RIVET_PG239_EX. Run .\scripts\sync_xilinx_examples.ps1 or fix local_paths."
 }
 
-$ExForCompile = if (Test-Path $LinkDir) { (Resolve-Path $LinkDir).Path } else { $ExRoot }
+$ExForCompile = (Resolve-Path $ExRoot).Path
 $ExUnix = ($ExForCompile -replace '\\', '/')
 $ImportsUnix = "$ExUnix/imports"
 

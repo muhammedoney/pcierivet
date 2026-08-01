@@ -1,6 +1,6 @@
 # Vivado BFM side-path (non-UVM)
 
-Complementary to UVM / Verilator. Proprietary IP stays under `third_party/xilinx_ip/` (junctions) or external Vivado trees — **never committed**.
+Complementary to UVM / Verilator. Example `board.v` / IP trees sit under `third_party/xilinx_ip/` (**gitignored**, never push). Sync: `.\scripts\sync_xilinx_examples.ps1`.
 
 ## Tracks
 

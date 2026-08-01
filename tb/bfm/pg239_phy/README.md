@@ -62,7 +62,7 @@ IP configuration in the current example project: **×4**, **max Gen2**, **PIPE d
 | Example project | Local Vivado `pcie_phy_0_ex` (proprietary — **not** in git) |
 | `compile_simlib` | Questa libs for UltraScale+ under a local directory |
 
-Proprietary sources stay outside git (or under gitignored `third_party/xilinx_ip/`).
+Proprietary sources live under `third_party/xilinx_ip/` (**gitignored**). Refresh with `.\scripts\sync_xilinx_examples.ps1`.
 
 ## One-time setup
 
@@ -74,9 +74,11 @@ Copy from `scripts/local_paths.example.ps1` and set:
 $env:QUESTA_HOME = "C:\questasim64_2024.1"
 $env:PATH = "$env:QUESTA_HOME\win64;$env:PATH"
 $env:XILINX_VIVADO = "C:\Xilinx\Vivado\2024.2"
-$env:RIVET_PG239_EX = "C:\Users\tosba\vivado\pcie_phy_0_ex"
-$env:RIVET_QUESTA_SIMLIB = "$env:RIVET_PG239_EX\pcie_phy_0_ex.cache\compile_simlib\questa"
+$env:RIVET_PG239_EX = "...\rivet\third_party\xilinx_ip\pcie_phy_0_ex"
+$env:RIVET_QUESTA_SIMLIB = "C:\Users\tosba\vivado\pcie_phy_0_ex\...\compile_simlib\questa"
 ```
+
+Refresh example trees: `.\scripts\sync_xilinx_examples.ps1`
 
 ### 2. Compile simulation libraries (once, long)
 

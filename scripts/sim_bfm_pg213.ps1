@@ -29,7 +29,7 @@ if (-not $env:QUESTA_HOME) { $env:QUESTA_HOME = "C:\questasim64_2024.1" }
 $env:PATH = "$(Join-Path $env:QUESTA_HOME 'win64');$env:PATH"
 
 if (-not $env:RIVET_PG213_EX) {
-  $env:RIVET_PG213_EX = "C:\Users\tosba\vivado\pcie4_uscale_plus_0_ex"
+  $env:RIVET_PG213_EX = Join-Path $RepoRoot "third_party\xilinx_ip\pcie4_uscale_plus_0_ex"
 }
 if (-not $env:RIVET_QUESTA_SIMLIB) {
   # Prefer shared simlib from PG239 bring-up if present.
@@ -68,12 +68,10 @@ if (-not (Get-Command vsim -ErrorAction SilentlyContinue)) {
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
-# Junction for stable in-repo path
+# Junction optional only if in-repo copy missing
 $LinkDir = Join-Path $RepoRoot "third_party\xilinx_ip\pcie4_uscale_plus_0_ex"
-New-Item -ItemType Directory -Force -Path (Split-Path $LinkDir) | Out-Null
-if (-not (Test-Path $LinkDir)) {
-  Write-Host "Creating junction: $LinkDir -> $ExRoot"
-  cmd /c "mklink /J `"$LinkDir`" `"$ExRoot`"" 2>&1 | Out-Host
+if (-not (Test-Path (Join-Path $ExRoot "imports\board.v"))) {
+  Fail "No board.v under RIVET_PG213_EX. Run .\scripts\sync_xilinx_examples.ps1 or fix local_paths."
 }
 
 if ($ResetRun) {

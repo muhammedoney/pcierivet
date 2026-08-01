@@ -1,14 +1,10 @@
 # PG213 EP example — BFM side-path (stage 3)
 
-Vivado **UltraScale+ PCIe Integrated Block (PG213)** example configured as **Endpoint**, with the stock **Root Port model** and **PIO** app. Questa export lives locally under:
+Vivado **UltraScale+ PCIe Integrated Block (PG213)** example configured as **Endpoint**, with the stock **Root Port model** and **PIO** app.
 
-```text
-%RIVET_PG213_EX%   (default: C:\Users\tosba\vivado\pcie4_uscale_plus_0_ex)
-  imports\         board, EP, RP model, PIO, usrapp_*
-  questa\          board.sh / compile.do / …  (export at project root, not sim\questa)
-```
+Local copy (gitignored): `third_party/xilinx_ip/pcie4_uscale_plus_0_ex/` — refresh via `.\scripts\sync_xilinx_examples.ps1`.
 
-Proprietary IP stays **out of git**. Rivet-owned scripts/docs live here.
+Original export also lives under e.g. `C:\Users\tosba\vivado\pcie4_uscale_plus_0_ex` if you prefer `RIVET_PG213_EX` there.
 
 ## Topology (stock)
 
