@@ -22,6 +22,9 @@
 param(
   [ValidateSet("all", "compile", "elaborate", "simulate")]
   [string]$Step = "all",
+  # pattern = Vivado phy_ctrl example; rivet = rivet_pcie_ctrl + PG239 both sides
+  [ValidateSet("pattern", "rivet")]
+  [string]$Dut = "pattern",
   [switch]$Gui,
   [switch]$ResetRun
 )
@@ -133,7 +136,7 @@ function New-CompileDo {
     "gtwizard_ultrascale_v1_7_reset_inv_sync.v"
   ) | ForEach-Object { ('"{0}/pcie_phy_0_ex.ip_user_files/ipstatic/hdl/{1}"' -f $ExUnix, $_) }
 
-  $phy = @(
+  $phyCore = @(
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/ip_0/sim/gtwizard_ultrascale_v1_7_gtye4_channel.v",
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/ip_0/sim/pcie_phy_0_gt_gtye4_channel_wrapper.v",
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/ip_0/sim/gtwizard_ultrascale_v1_7_gtye4_common.v",
@@ -154,24 +157,36 @@ function New-CompileDo {
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_phy_ff_chain.v",
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_phy_pipeline.v",
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_core_top.v",
-    "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/sim/pcie_phy_0.v",
-    "imports/phy_ctrl.v",
-    "imports/phy_ctrl_pat_gen.v",
-    "imports/phy_ctrl_pat_gen_lane.v",
-    "imports/sys_clk_gen.v",
-    "imports/sys_clk_gen_ds.v",
-    "imports/xilinx_pcie_phy_model.v",
-    "imports/xilinx_pcie_phy_top.v",
-    "imports/board.v"
-  ) | ForEach-Object { ('"{0}/{1}"' -f $ExUnix, $_) }
+    "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/sim/pcie_phy_0.v"
+  )
+
+  if ($Dut -eq "pattern") {
+    $tbExtra = @(
+      "imports/phy_ctrl.v",
+      "imports/phy_ctrl_pat_gen.v",
+      "imports/phy_ctrl_pat_gen_lane.v",
+      "imports/sys_clk_gen.v",
+      "imports/sys_clk_gen_ds.v",
+      "imports/xilinx_pcie_phy_model.v",
+      "imports/xilinx_pcie_phy_top.v",
+      "imports/board.v"
+    )
+  } else {
+    $tbExtra = @(
+      "imports/sys_clk_gen.v",
+      "imports/sys_clk_gen_ds.v"
+    )
+  }
+
+  $phy = ($phyCore + $tbExtra) | ForEach-Object { ('"{0}/{1}"' -f $ExUnix, $_) }
 
   $glblSrc = Join-Path $ExRoot "sim\questa\glbl.v"
   Require-Path $glblSrc "Missing sim/questa/glbl.v in example project."
   Copy-Item -Force $glblSrc (Join-Path $WorkDir "glbl.v")
 
+  $repoUnix = ("$RepoRoot" -replace '\\', '/')
   $workUnix = ($WorkDir -replace '\\', '/')
   $sb = New-Object System.Text.StringBuilder
-  # Parent dir must exist before nested vlib paths (Windows Questa).
   [void]$sb.AppendLine("vlib questa_lib")
   [void]$sb.AppendLine("vlib questa_lib/work")
   [void]$sb.AppendLine("vlib questa_lib/msim")
@@ -194,15 +209,43 @@ function New-CompileDo {
   [void]$sb.AppendLine("")
   [void]$sb.AppendLine("vlog -work xil_defaultlib \")
   [void]$sb.AppendLine(('"{0}/glbl.v"' -f $workUnix))
+
+  if ($Dut -eq "rivet") {
+    $rivetSv = @(
+      "rtl/pcie_ctrl/rivet_pkg.sv",
+      "rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv",
+      "rtl/pcie_ctrl/mac/rivet_mac_timer.sv",
+      "rtl/pcie_ctrl/mac/rivet_ltssm.sv",
+      "rtl/pcie_ctrl/mac/rivet_mac_os_tx.sv",
+      "rtl/pcie_ctrl/mac/rivet_mac_os_rx.sv",
+      "rtl/pcie_ctrl/mac/rivet_mac_scrambler.sv",
+      "rtl/pcie_ctrl/mac/rivet_mac_descrambler.sv",
+      "rtl/pcie_ctrl/mac/rivet_mac_pipe_adapter.sv",
+      "rtl/pcie_ctrl/mac/rivet_mac.sv",
+      "rtl/pcie_ctrl/rivet_pcie_ctrl.sv",
+      "rtl/phy/rivet_pipe_pg239_pad.sv",
+      "tb/bfm/pg239_phy/rtl/rivet_pg239_ep.sv",
+      "tb/bfm/pg239_phy/rtl/rivet_pg239_board.sv"
+    ) | ForEach-Object { ('"{0}/{1}"' -f $repoUnix, $_) }
+    [void]$sb.AppendLine("")
+    [void]$sb.AppendLine("vlog -work xil_defaultlib -sv -incr -mfcu \")
+    for ($i = 0; $i -lt $rivetSv.Count; $i++) {
+      $suffix = if ($i -lt $rivetSv.Count - 1) { " \" } else { "" }
+      [void]$sb.AppendLine("$($rivetSv[$i])$suffix")
+    }
+  }
+
   Set-Content -Path (Join-Path $WorkDir "compile.do") -Value $sb.ToString() -Encoding ASCII
 }
 
 Write-Host "PG239 EX : $ExRoot"
 Write-Host "Simlib   : $SimLib"
 Write-Host "Work     : $WorkDir"
+Write-Host "DUT      : $Dut"
 
 Copy-Item -Force (Join-Path $SimLib "modelsim.ini") (Join-Path $WorkDir "modelsim.ini")
-Copy-Item -Force (Join-Path $QuestaTpl "elaborate.do") (Join-Path $WorkDir "elaborate.do")
+$ElabDo = if ($Dut -eq "rivet") { "elaborate_rivet.do" } else { "elaborate.do" }
+Copy-Item -Force (Join-Path $QuestaTpl $ElabDo) (Join-Path $WorkDir "elaborate.do")
 Copy-Item -Force (Join-Path $QuestaTpl "simulate.do") (Join-Path $WorkDir "simulate.do")
 Copy-Item -Force (Join-Path $QuestaTpl "wave.do") (Join-Path $WorkDir "wave.do") -ErrorAction SilentlyContinue
 

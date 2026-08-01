@@ -93,17 +93,36 @@ You should already have generated **PCIe PHY** example design for VU9P / Gen2 / 
 From the Rivet repo root:
 
 ```powershell
+# Stage 1 — Vivado phy_ctrl pattern example (default)
 .\scripts\sim_bfm_pg239.ps1
+
+# Stage 2 — rivet_pcie_ctrl + PG239 on both serial sides
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet
 ```
 
 Options:
 
 ```powershell
-.\scripts\sim_bfm_pg239.ps1 -Step compile
-.\scripts\sim_bfm_pg239.ps1 -Step elaborate
-.\scripts\sim_bfm_pg239.ps1 -Step simulate
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet -Step compile
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet -Step elaborate
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet -Step simulate
 .\scripts\sim_bfm_pg239.ps1 -ResetRun
 .\scripts\sim_bfm_pg239.ps1 -Gui
+```
+
+### Stage 2 topology ( `-Dut rivet` )
+
+```text
+  rivet_pcie_ctrl ──16b── pad ──64b── pcie_phy_0  ══serial══  pcie_phy_0 ──64b── pad ──16b── rivet_pcie_ctrl
+       (EP)                                                    (peer shell; same EP RTL until RC MODE)
+```
+
+Gen2 uses only `[15:0]` of each lane's 64-bit PHY word (`rivet_pipe_pg239_pad`).
+
+PASS string:
+
+```text
+Test Completed Successfully (Rivet+PG239 link_up)
 ```
 
 Work products (logs, `questa_lib`, generated `compile.do`) land in:
@@ -136,12 +155,18 @@ On Windows, prefer `.\scripts\sim_bfm_pg239.ps1`.
 
 ```text
 tb/bfm/pg239_phy/
-  README.md                 ← this file
+  README.md
+  rtl/
+    rivet_pg239_ep.sv       ← pcie_phy_0 + rivet_pcie_ctrl + pad
+    rivet_pg239_board.sv    ← two EP shells over serial ×4
   questa/
-    elaborate.do            ← Rivet-owned (run -all companion)
+    elaborate.do            ← pattern DUT
+    elaborate_rivet.do      ← Rivet DUT
     simulate.do             ← run -all until $finish
     wave.do
   work/                     ← local only (gitignored)
+
+rtl/phy/rivet_pipe_pg239_pad.sv   ← Gen2 16-in-64 map
 
 scripts/sim_bfm_pg239.ps1
 scripts/compile_simlib_pg239.ps1
@@ -153,10 +178,10 @@ Do **not** commit `pcie_phy_0` netlists, encrypted IP, or `compile_simlib` outpu
 
 | Result | Meaning |
 |--------|---------|
-| Script exit 0 + `PASS: Test Completed Successfully` | Gen1+Gen2 PHY traffic path OK |
+| Script exit 0 + `PASS: Test Completed Successfully` | Pattern DUT Gen1+Gen2 traffic OK, or Rivet both-sides `link_up` |
 | Exit 2 | Sim ran but success string missing |
 | Compile / elaborate errors | Paths, simlib, or IP regenerate issue |
 
 ## Relation to Rivet soft controller
 
-Stage 1 still uses Xilinx `phy_ctrl` (pattern generator), **not** `rivet_pcie_ctrl`. Connecting the soft controller to PG239 PIPE is the next slice after this sim is green in your loop.
+`-Dut rivet` replaces Xilinx `phy_ctrl` with `rivet_pcie_ctrl` on both sides of the serial link (peer is a second EP-shaped shell until `MODE=RC` exists). Pattern mode remains the PHY bring-up gate.
