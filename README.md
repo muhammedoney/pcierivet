@@ -111,12 +111,13 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **
 .\scripts\sim_verilator.ps1
 ```
 
-## Quick start (PG239 BFM side-path)
+## Quick start (PG239 / PG213 BFM side-path)
 
-Requires local Vivado `pcie_phy_0_ex` + Questa `compile_simlib`. See [tb/bfm/pg239_phy/README.md](tb/bfm/pg239_phy/README.md).
+Requires local Vivado example projects + Questa `compile_simlib`. See [tb/bfm/README.md](tb/bfm/README.md).
 
 ```powershell
 .\scripts\sim_bfm_pg239.ps1
+.\scripts\sim_bfm_pg213.ps1
 ```
 
 ## Documentation

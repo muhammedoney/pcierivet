@@ -13,10 +13,12 @@ Later stages (not this README):
 
 | Stage | What |
 |-------|------|
-| **1 (this)** | PG239 + `phy_ctrl` pattern ↔ PHY model |
-| **2** | Replace `phy_ctrl` with `rivet_pcie_ctrl` on PIPE |
-| **3** | PG213 EP example → swap EP for Rivet+PG239 (full EP functions) |
+| **1** | PG239 + `phy_ctrl` pattern ↔ PHY model (**PASS**) |
+| **2 (current)** | Replace `phy_ctrl` with `rivet_pcie_ctrl` on PIPE (`-Dut rivet`) |
+| **3** | PG213 EP example → swap EP for Rivet+PG239 — [pg213_ep](../pg213_ep/README.md) |
 | **4** | PG213 RP ↔ Rivet+PG239 (system-level) |
+
+**Known (stage 2):** dual Rivet+PG239 shells compile/elaborate; LTSSM advances then loops (~state 5) without stable `link_up`. Soft-ctrl LTSSM/TL fixes come before expecting green here or on PG213 PIO.
 
 ## What the test does
 

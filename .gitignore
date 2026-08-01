@@ -57,8 +57,9 @@ third_party/bfm/**
 third_party/xilinx_ip/**
 !third_party/xilinx_ip/README.md
 
-# PG239 BFM local work (logs, questa_lib, generated compile.do)
+# PG239 / PG213 BFM local work (logs, questa_lib, generated compile.do)
 tb/bfm/pg239_phy/work/
+tb/bfm/pg213_ep/work/
 # Local reference clones (investigation only; never commit sources)
 third_party/ref/**
 !third_party/ref/README.md

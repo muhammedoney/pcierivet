@@ -17,13 +17,22 @@ Active generation under test: **Gen2**. Gen3/4 TB work is deferred — tracked i
 
 Primary DUT: **`rivet_pcie_ctrl`**. Full IP `rivet_pcie` is for FPGA / BFM bring-up.
 
-### PG239 PHY example (BFM stage 1)
-
-Questa bring-up of the Vivado `pcie_phy_0` example (real PG239 ↔ PHY model, Gen1 then Gen2). See [tb/bfm/pg239_phy/README.md](../tb/bfm/pg239_phy/README.md).
+### PG239 PHY / Rivet ctrl (BFM)
 
 ```powershell
-.\scripts\sim_bfm_pg239.ps1
+.\scripts\sim_bfm_pg239.ps1              # phy_ctrl pattern
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet   # rivet_pcie_ctrl + PG239 (LTSSM WIP)
 ```
+
+### PG213 EP example (BFM)
+
+Stock RP model ↔ Xilinx EP (+ PIO). Rivet EP swap is scaffolded — see [tb/bfm/pg213_ep/README.md](../tb/bfm/pg213_ep/README.md).
+
+```powershell
+.\scripts\sim_bfm_pg213.ps1
+```
+
+Known: Rivet LTSSM on PG239 dual-shell still loops (≈state 5) without stable `link_up` — fix before PIO/system BFM PASS.
 
 ## Phase 1 UVM build-out (priority)
 
