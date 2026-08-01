@@ -17,6 +17,14 @@ Active generation under test: **Gen2**. Gen3/4 TB work is deferred — tracked i
 
 Primary DUT: **`rivet_pcie_ctrl`**. Full IP `rivet_pcie` is for FPGA / BFM bring-up.
 
+### PG239 PHY example (BFM stage 1)
+
+Questa bring-up of the Vivado `pcie_phy_0` example (real PG239 ↔ PHY model, Gen1 then Gen2). See [tb/bfm/pg239_phy/README.md](../tb/bfm/pg239_phy/README.md).
+
+```powershell
+.\scripts\sim_bfm_pg239.ps1
+```
+
 ## Phase 1 UVM build-out (priority)
 
 | Step | Status |

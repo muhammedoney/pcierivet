@@ -56,12 +56,20 @@ third_party/bfm/**
 !third_party/bfm/README.md
 third_party/xilinx_ip/**
 !third_party/xilinx_ip/README.md
+
+# PG239 BFM local work (logs, questa_lib, generated compile.do)
+tb/bfm/pg239_phy/work/
 # Local reference clones (investigation only; never commit sources)
 third_party/ref/**
 !third_party/ref/README.md
 
 # Local proprietary specifications (never commit)
 specs/
+
+# Vivado compile_simlib scratch (if run from repo cwd)
+.cxl.ip/
+.cxl.*/
+*.cxl.*
 
 # IDE / OS
 ~$*

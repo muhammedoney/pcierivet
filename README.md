@@ -83,7 +83,7 @@ rtl/phy/              PG239 family PHY wrappers
 rtl/top/              rivet_pcie = ctrl + phy
 rtl/interfaces/       PIPE, AXI-ST, cfg_mgmt SV interfaces
 tb/uvm/               Primary UVM (DUT = rivet_pcie_ctrl)
-tb/bfm/               Vivado RP/EP BFM side-path
+tb/bfm/               Vivado BFM side-path (PG239 PHY example first)
 ```
 
 ## Target hardware
@@ -109,6 +109,14 @@ PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **
 ```powershell
 .\scripts\lint.ps1
 .\scripts\sim_verilator.ps1
+```
+
+## Quick start (PG239 BFM side-path)
+
+Requires local Vivado `pcie_phy_0_ex` + Questa `compile_simlib`. See [tb/bfm/pg239_phy/README.md](tb/bfm/pg239_phy/README.md).
+
+```powershell
+.\scripts\sim_bfm_pg239.ps1
 ```
 
 ## Documentation
