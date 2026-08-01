@@ -209,4 +209,21 @@ package rivet_pkg;
   localparam int unsigned RIVET_PIPE_DATAK_WIDTH_PER_LANE = 2;
   localparam int unsigned RIVET_PIPE_RXSTATUS_WIDTH_PER_LANE = 3;
 
+  // -------------------------------------------------------------------------
+  // Gen2 scrambler LFSR (Base Spec §4.2.3): G(X)=X^16+X^5+X^4+X^3+1, seed FFFFh.
+  // Advance eight serial steps; return {new_lfsr[15:0], pad[7:0]} (pad bit0 first).
+  // -------------------------------------------------------------------------
+  localparam logic [15:0] RIVET_LFSR_SEED = 16'hFFFF;
+
+  function automatic logic [23:0] rivet_lfsr_step(input logic [15:0] lfsr_in);
+    logic [15:0] lfsr;
+    logic [7:0]  pad;
+    lfsr = lfsr_in;
+    for (int unsigned i = 0; i < 8; i++) begin
+      pad[i] = lfsr[15];
+      lfsr   = {lfsr[14:0], lfsr[15] ^ lfsr[4] ^ lfsr[3] ^ lfsr[2]};
+    end
+    return {lfsr, pad};
+  endfunction
+
 endpackage : rivet_pkg

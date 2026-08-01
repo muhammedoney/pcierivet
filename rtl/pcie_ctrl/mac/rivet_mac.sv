@@ -86,7 +86,14 @@ module rivet_mac #(
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_tx_data;
   logic [2*LANES-1:0]               sym_tx_datak;
+  logic [2*LANES-1:0]               sym_tx_os_d;
   logic                             sym_tx_valid;
+  logic [PIPE_DATA_WIDTH*LANES-1:0] scr_tx_data;
+  logic [2*LANES-1:0]               scr_tx_datak;
+  logic                             scr_tx_valid;
+  logic [PIPE_DATA_WIDTH*LANES-1:0] sym_rx_data_raw;
+  logic [2*LANES-1:0]               sym_rx_datak_raw;
+  logic [LANES-1:0]                 sym_rx_valid_raw;
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_rx_data;
   logic [2*LANES-1:0]               sym_rx_datak;
   logic [LANES-1:0]                 sym_rx_valid;
@@ -225,8 +232,40 @@ module rivet_mac #(
     .dll_tx_ready_o  (dll_tx_ready_o),
     .sym_data_o      (sym_tx_data),
     .sym_datak_o     (sym_tx_datak),
+    .sym_os_d_o      (sym_tx_os_d),
     .sym_valid_o     (sym_tx_valid),
     .os_sent_cnt_o   (os_sent_cnt)
+  );
+
+  rivet_mac_scrambler #(
+    .LANES           (LANES),
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+  ) u_scrambler (
+    .pclk_i    (pclk_i),
+    .rst_ni    (rst_ni),
+    .data_i    (sym_tx_data),
+    .datak_i   (sym_tx_datak),
+    .os_d_i    (sym_tx_os_d),
+    .valid_i   (sym_tx_valid),
+    .lane_en_i (lane_en),
+    .data_o    (scr_tx_data),
+    .datak_o   (scr_tx_datak),
+    .valid_o   (scr_tx_valid)
+  );
+
+  rivet_mac_descrambler #(
+    .LANES           (LANES),
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+  ) u_descrambler (
+    .pclk_i    (pclk_i),
+    .rst_ni    (rst_ni),
+    .data_i    (sym_rx_data_raw),
+    .datak_i   (sym_rx_datak_raw),
+    .valid_i   (sym_rx_valid_raw),
+    .lane_en_i (lane_en),
+    .data_o    (sym_rx_data),
+    .datak_o   (sym_rx_datak),
+    .valid_o   (sym_rx_valid)
   );
 
   rivet_mac_os_rx #(
@@ -273,9 +312,9 @@ module rivet_mac #(
   ) u_pipe_adapter (
     .pclk_i                  (pclk_i),
     .rst_ni                  (rst_ni),
-    .sym_tx_data_i           (sym_tx_data),
-    .sym_tx_datak_i          (sym_tx_datak),
-    .sym_tx_valid_i          (sym_tx_valid),
+    .sym_tx_data_i           (scr_tx_data),
+    .sym_tx_datak_i          (scr_tx_datak),
+    .sym_tx_valid_i          (scr_tx_valid),
     .txdetectrx_i            (txdetectrx),
     .txelecidle_i            (txelecidle),
     .rxpolarity_i            (rxpolarity),
@@ -284,9 +323,9 @@ module rivet_mac #(
     .as_mac_in_detect_i      (as_mac_in_detect),
     .as_cdr_hold_req_i       (as_cdr_hold_req),
     .as_mac_in_L0_i          (as_mac_in_L0),
-    .sym_rx_data_o           (sym_rx_data),
-    .sym_rx_datak_o          (sym_rx_datak),
-    .sym_rx_valid_o          (sym_rx_valid),
+    .sym_rx_data_o           (sym_rx_data_raw),
+    .sym_rx_datak_o          (sym_rx_datak_raw),
+    .sym_rx_valid_o          (sym_rx_valid_raw),
     .rxstatus_o              (rxstatus),
     .phystatus_o             (phystatus),
     .phystatus_rst_o         (phystatus_rst),

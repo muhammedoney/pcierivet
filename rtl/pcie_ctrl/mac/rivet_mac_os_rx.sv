@@ -141,8 +141,10 @@ module rivet_mac_os_rx #(
       // Idle / K activity on the newest symbols of this lane.
       for (int unsigned s = 0; s < SYMS; s++) begin
         if (sym_valid_i[l]) begin
-          if (sym_datak_i[SYMS*l + s]) hit_k[l]    = 1'b1;
-          else                         hit_idle[l] = 1'b1;
+          if (sym_datak_i[SYMS*l + s]) hit_k[l] = 1'b1;
+          else if (sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8] == 8'h00)
+            hit_idle[l] = 1'b1;
+          // Non-zero D after descramble breaks the Idle run (handled via !hit_idle).
         end
       end
 
@@ -292,10 +294,12 @@ module rivet_mac_os_rx #(
           end
         end
 
-        // Idle Symbol Times: any K symbol restarts the run.
-        if (hit_k[l])         c_idle_q[l] <= 4'd0;
-        else if (hit_idle[l]) c_idle_q[l] <= (c_idle_q[l] >= (CNT_MAX - IDLE_STEP)) ? CNT_MAX
-                                                                                    : c_idle_q[l] + IDLE_STEP;
+        // Idle Symbol Times: descrambled 00h only; any K or non-zero D restarts.
+        if (hit_k[l] || (sym_valid_i[l] && !hit_idle[l] && !hit_any_ts[l]))
+          c_idle_q[l] <= 4'd0;
+        else if (hit_idle[l])
+          c_idle_q[l] <= (c_idle_q[l] >= (CNT_MAX - IDLE_STEP)) ? CNT_MAX
+                                                                : c_idle_q[l] + IDLE_STEP;
       end
     end
   end

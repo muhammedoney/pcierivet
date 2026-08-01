@@ -356,6 +356,40 @@ module rivet_ltssm_smoke_tb;
   end
 
   logic [8:0] peer_tmp;
+  logic [7:0] peer_out;
+  logic [15:0] peer_lfsr [LANES];
+
+  // Same LFSR as rivet_pkg::rivet_lfsr_step (keep TB independent of package funcs).
+  function automatic logic [23:0] peer_lfsr_step(input logic [15:0] lfsr_in);
+    logic [15:0] lfsr;
+    logic [7:0]  pad;
+    lfsr = lfsr_in;
+    for (int unsigned i = 0; i < 8; i++) begin
+      pad[i] = lfsr[15];
+      lfsr   = {lfsr[14:0], lfsr[15] ^ lfsr[4] ^ lfsr[3] ^ lfsr[2]};
+    end
+    return {lfsr, pad};
+  endfunction
+
+  function automatic logic [7:0] peer_scramble(
+      input  logic [7:0]  din,
+      input  logic        is_k,
+      input  logic        os_d,
+      inout  logic [15:0] lfsr
+  );
+    logic [23:0] step;
+    if (is_k && (din == SYM_COM)) begin
+      lfsr = 16'hFFFF;
+      return din;
+    end
+    if (is_k && (din == 8'h1C)) begin // SKP
+      return din;
+    end
+    step = peer_lfsr_step(lfsr);
+    lfsr = step[23:8];
+    if (!is_k && !os_d) return din ^ step[7:0];
+    return din;
+  endfunction
 
   always_ff @(posedge pclk or negedge preset_n) begin
     if (!preset_n) begin
@@ -365,20 +399,26 @@ module rivet_ltssm_smoke_tb;
       idle_seen    <= '0;
       pipe_rxdata  <= '0;
       pipe_rxdatak <= '0;
+      for (int unsigned l = 0; l < LANES; l++) peer_lfsr[l] <= 16'hFFFF;
     end else begin
-      // Drive two symbols per cycle on every lane.
+      // Drive two symbols per cycle on every lane (scrambled Logical Idle).
       pipe_rxdata  <= '0;
       pipe_rxdatak <= '0;
       if (peer_active) begin
         for (int unsigned l = 0; l < LANES; l++) begin
+          automatic logic [15:0] lfsr = peer_lfsr[l];
           for (int unsigned s = 0; s < 2; s++) begin
             peer_tmp = send_os ? peer_sym(4'(peer_ptr + 5'(s)), send_ts2,
                                           send_link_pad || (l >= PEER_LANES),
                                           send_lane_pad || (l >= PEER_LANES), 8'(l))
                                : {1'b0, 8'h00};
-            pipe_rxdata[PIPE_W*l + 8*s +: 8] <= peer_tmp[7:0];
+            // TS D symbols are scramble-exempt; Idle D is not.
+            peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8],
+                                     send_os && !peer_tmp[8], lfsr);
+            pipe_rxdata[PIPE_W*l + 8*s +: 8] <= peer_out;
             pipe_rxdatak[2*l + s]            <= peer_tmp[8];
           end
+          peer_lfsr[l] <= lfsr;
         end
 
         if (send_os) begin
@@ -399,6 +439,7 @@ module rivet_ltssm_smoke_tb;
         phase_sets <= '0;
         peer_ptr   <= '0;
         idle_seen  <= '0;
+        for (int unsigned l = 0; l < LANES; l++) peer_lfsr[l] <= 16'hFFFF;
       end else case (phase)
         P_TS1_PAD: if (dut_tx_ts2) begin
           phase      <= P_TS2_PAD;

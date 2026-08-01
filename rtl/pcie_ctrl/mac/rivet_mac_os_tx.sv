@@ -35,9 +35,10 @@ module rivet_mac_os_tx #(
   input  logic                              dll_tx_valid_i,
   output logic                              dll_tx_ready_o,
 
-  // Symbol stream toward pipe adapter (per-link packed)
+  // Symbol stream toward scrambler / pipe adapter (per-link packed)
   output logic [PIPE_DATA_WIDTH*LANES-1:0] sym_data_o,
   output logic [2*LANES-1:0]               sym_datak_o,
+  output logic [2*LANES-1:0]               sym_os_d_o, // 1 = Ordered-Set D (scramble bypass)
   output logic                             sym_valid_o,
 
   // Ordered sets completed (Idle counts symbols) since os_cnt_clr_i
@@ -122,6 +123,7 @@ module rivet_mac_os_tx #(
   always_comb begin
     sym_data_o  = '0;
     sym_datak_o = '0;
+    sym_os_d_o  = '0;
     sym_tmp     = '0;
     for (int unsigned l = 0; l < LANES; l++) begin
       for (int unsigned s = 0; s < SYMS; s++) begin
@@ -129,6 +131,10 @@ module rivet_mac_os_tx #(
         if (lane_en_i[l]) begin
           sym_data_o[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
           sym_datak_o[SYMS*l + s]                  = sym_tmp[8];
+          // TS1/TS2 D symbols are scramble-exempt; Logical Idle is not.
+          if (!sym_tmp[8] &&
+              ((cur == RIVET_MAC_OS_TS1) || (cur == RIVET_MAC_OS_TS2)))
+            sym_os_d_o[SYMS*l + s] = 1'b1;
         end
       end
     end

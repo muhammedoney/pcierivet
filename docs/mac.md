@@ -168,9 +168,10 @@ Implement / scoreboard at least:
 
 Field handling for EP: Link Number, Lane Number, N_FTS, Data Rate ID, Training Control bits — start minimal (enough for ×1 then ×2/×4 width negotiation).
 
-### 6.1 Scrambling (MAC-owned, **not yet implemented**)
+### 6.1 Scrambling (MAC-owned)
 
-No scrambler or descrambler exists in `rtl/` today. Base spec §4.2.3 rules:
+Implemented in `rivet_mac_scrambler` / `rivet_mac_descrambler` (wired in `rivet_mac`).
+Base spec §4.2.3 rules:
 
 | Rule | Value |
 |------|-------|
@@ -178,36 +179,23 @@ No scrambler or descrambler exists in `rtl/` today. Base spec §4.2.3 rules:
 | Seed | `FFFFh`; TX LFSR re-initialises immediately after COM leaves it, RX LFSR every time a COM enters it on **any** Lane |
 | Advance | 8 serial shifts per Symbol, **except SKP** (SKP does not advance it) |
 | Bypass | All K codes; D Symbols inside TS1/TS2; Compliance and Modified Compliance patterns |
-| Multi-lane | One LFSR per Lane, or fewer kept in lock-step — behaviour must be per-Lane identical |
-| Enable | Always on from Detect; may only be disabled at the end of Configuration via the Disable Scrambling training control bit |
+| Multi-lane | One LFSR per Lane |
+| Enable | Always on from Detect; Disable Scrambling training-control bit not yet honored |
 
-**This is not only a DLL-data concern — it blocks interop at the last step of
-link training.** Logical Idle is data byte `00h` *scrambled* (§4.2.2), and
-Configuration.Idle only advances to L0 after eight consecutive Symbol Times of
-Idle data. `rivet_mac_os_tx` currently emits raw unscrambled `00h`, so a real
-Root Port would descramble it into non-zero garbage, never count eight Idle
-Symbol Times, and never leave Configuration.Idle.
-
-Our ×1/×2/×4 smoke passes regardless for two reasons, both of which disappear
-against real hardware:
-
-1. The training path we built is entirely COM + K codes + TS1/TS2 D Symbols, and
-   every one of those is scramble-exempt. Detect → Configuration genuinely needs
-   no scrambler.
-2. The smoke peer is unscrambled too, and `rivet_mac_os_rx` counts any
-   consecutive non-K Symbols as Idle rather than descrambled `00h`, so both
-   directions agree by accident.
+Logical Idle is scrambled `00h`. Configuration.Idle advances on eight consecutive
+descrambled Idle Symbol Times. The LTSSM smoke peer scrambles its Idle stream so
+the loop stays honest against a real Root Port.
 
 ### 6.2 Physical Layer gaps to close before/with DLL
 
 | Item | State | Why the DLL needs it |
 |------|-------|----------------------|
-| Scrambler / descrambler | Missing | §6.1; gates Config.Idle interop and every TLP/DLLP byte |
+| Scrambler / descrambler | Present (M2 start) | §6.1; Config.Idle + every TLP/DLLP byte |
 | STP / SDP / END / EDB framing | Missing | The DLL hands us sequence number + LCRC; delimiting the packet on the wire is ours |
 | Byte striping / un-striping | Missing | ×2/×4 need STP on the right Lane and bytes spread round-robin (§4.2.2) |
 | SKP scheduling in L0 (`rivet_mac_skp`) | Missing | SKP OS every 1180–1538 Symbol Times, never inside a packet; the PHY elastic buffer depends on it |
 | Real lane-to-lane deskew | Hook only | Striped data cannot be reassembled without it |
-| Descrambled-`00h` Idle detect | Simplified | Replaces the "any non-K" count once the descrambler lands |
+| Descrambled-`00h` Idle detect | Done | `rivet_mac_os_rx` counts descrambled `00h` |
 
 `rivet_mac_os_tx` / `rivet_mac_os_rx` already carry the DLL ports, but they are
 tied off (`dll_tx_ready_o = 1'b0`, `dll_rx_valid_o = 1'b0`) — there is no packet
@@ -326,17 +314,16 @@ Known simplifications, all revisited in M2–M4:
 
 ### M2 — Physical Layer datapath, then DLL stubs at MAC boundary
 
-Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll) come
-first: without them the MAC has no packet path for a DLL to talk to, and
-Configuration.Idle cannot interop with real hardware.
+Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 
-- [ ] `rivet_mac_scrambler` / `rivet_mac_descrambler` (per Lane, COM-seeded, SKP does not advance, K and TS bypass)
-- [ ] Scramble Logical Idle, and switch Idle detection to descrambled `00h`
+- [x] `rivet_mac_scrambler` / `rivet_mac_descrambler` (per Lane, COM-seeded, SKP does not advance, K and TS bypass)
+- [x] Scramble Logical Idle, and switch Idle detection to descrambled `00h`
+- [x] Extend the smoke peer to scramble Idle so the loop stays honest
 - [ ] STP/SDP/END/EDB framing insert + strip
 - [ ] Byte striping / un-striping and real deskew for ×2/×4
 - [ ] `rivet_mac_skp` — SKP OS every 1180–1538 Symbol Times, never mid-packet
 - [ ] Untie `dll_tx_ready_o` / `dll_rx_valid_o`; pass-through / idle DLLP hooks in L0
-- [ ] Keep ×2/×4 smokes elaborating; extend the smoke peer to scramble so the loop stays honest
+- [ ] Keep ×2/×4 smokes elaborating after framing lands
 
 ### M3 — Lane grow
 
