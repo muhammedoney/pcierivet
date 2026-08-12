@@ -307,7 +307,8 @@ Known simplifications, all revisited in M2–M4:
 | Scrambling | Not implemented at all — see [§6.1](#61-scrambling-mac-owned-not-yet-implemented); training is scramble-exempt, so this only shows up at Configuration.Idle against a real partner |
 | Idle detection | Counts consecutive non-K Symbol Times rather than descrambled `00h`, which is what lets the unscrambled smoke agree with itself |
 | Lane-to-lane deskew | `deskew_done` = every enabled Lane saw a TS in the same cycle; no per-lane skew correction |
-| Lane numbers | Sequential 0..n-1, no Lane reversal |
+| Lane numbers | Sequential 0..n-1, no Lane reversal; Downstream Port assigns them when `MODE=RC/DSP` |
+| Dual-EP BFM | Fixed: board is EP+RC; Downstream offers Link# at Linkwidth.Start |
 | Recovery | Only `Recovery.RcvrLock` exists, and only so timeouts and RX errors cannot dead-end |
 | EIOS | 4 symbols (2.5 GT/s form); the 8-symbol 5.0 GT/s form lands with Recovery.Speed |
 | Multi-lane exits | Configuration substates use "all enabled Lanes" where the spec allows per-Lane "any", so a partner that configures fewer Lanes than our port width cannot train — see [§7.1](#71-negotiated-width-vs-port-width) |

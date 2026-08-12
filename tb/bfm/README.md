@@ -12,12 +12,12 @@ Complementary to UVM / Verilator. Example `board.v` / IP trees sit under `third_
 ## Roadmap
 
 1. **PG239 pattern** — stock phy_ctrl Gen1/Gen2 traffic (done).
-2. **PG239 + Rivet ctrl** — dual EP shells; LTSSM debug (in progress; state~5 loop known).
+2. **PG239 + Rivet ctrl** — EP + RC shells; Downstream Config (Link# offer) |
 3. **PG213 stock** — RP model ↔ Xilinx EP + PIO (scaffold; run stock first).
 4. **PG213 EP swap** — same RP/PIO, EP = Rivet+PG239 (`rivet_pg213_ep_swap`).
 5. **System** — Xilinx RP PG213 ↔ Rivet+PG239 (later).
 
-Fix Rivet LTSSM / TL before expecting PIO or system PASS on tracks 4–5.
+Fix Rivet TL before expecting PIO PASS on tracks 4–5.
 
 ## Rules
 

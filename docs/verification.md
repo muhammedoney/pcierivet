@@ -21,7 +21,7 @@ Primary DUT: **`rivet_pcie_ctrl`**. Full IP `rivet_pcie` is for FPGA / BFM bring
 
 ```powershell
 .\scripts\sim_bfm_pg239.ps1              # phy_ctrl pattern
-.\scripts\sim_bfm_pg239.ps1 -Dut rivet   # rivet_pcie_ctrl + PG239 (LTSSM WIP)
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet   # rivet EP + RC over PG239
 ```
 
 ### PG213 EP example (BFM)
@@ -32,7 +32,7 @@ Stock RP model ↔ Xilinx EP (+ PIO). Rivet EP swap is scaffolded — see [tb/bf
 .\scripts\sim_bfm_pg213.ps1
 ```
 
-Known: Rivet LTSSM on PG239 dual-shell still loops (≈state 5) without stable `link_up` — fix before PIO/system BFM PASS.
+Known: PG239 stage-2 uses EP+RC shells; re-check link_up after Downstream Config lands. PIO/system BFM still needs TL.
 
 ## Phase 1 UVM build-out (priority)
 

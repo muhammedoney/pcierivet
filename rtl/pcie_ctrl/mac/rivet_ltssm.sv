@@ -1,8 +1,11 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Gen2 Endpoint LTSSM: Detect -> Polling -> Configuration -> L0.
+// Gen2 LTSSM: Detect -> Polling -> Configuration -> L0.
 // Encodings: rivet_pkg::rivet_ltssm_state_e (PG213 cfg_ltssm_state).
+//
+// MODE=EP/USP: Upstream Port Config (adopt Link# / Lane# from Downstream).
+// MODE=RC/DSP: Downstream Port Config (offer Link# then assign Lane#).
 //
 // The link always trains at 2.5 GT/s regardless of GEN; 5.0 GT/s is reached
 // only by entering Recovery.Speed from L0 (Base 2.1 §4.2.6.2.4), which is not
@@ -102,8 +105,9 @@ module rivet_ltssm #(
 
 `ifndef SYNTHESIS
   initial begin
-    if (MODE != RIVET_MODE_EP)
-      $error("rivet_ltssm: MODE=EP only (got %0d)", MODE);
+    if (!(MODE == RIVET_MODE_EP || MODE == RIVET_MODE_RC ||
+          MODE == RIVET_MODE_USP || MODE == RIVET_MODE_DSP))
+      $error("rivet_ltssm: MODE must be EP/RC/USP/DSP (got %0d)", MODE);
     if (GEN != RIVET_GEN2)
       $error("rivet_ltssm: GEN=2 only (got %0d)", GEN);
     if (!rivet_lanes_legal(LANES))
@@ -121,6 +125,20 @@ module rivet_ltssm #(
              T_CFG_COMPLETE_CYC, RIVET_N_TS_AFTER_RX);
   end
 `endif
+
+  // Downstream Port offers Link# / Lane#; Upstream adopts them.
+  localparam bit IS_DOWNSTREAM =
+      (MODE == RIVET_MODE_RC) || (MODE == RIVET_MODE_DSP);
+
+  // Fixed Link number offered by Downstream Port Config (single-link soft IP).
+  localparam logic [7:0] DP_LINK_NUM = 8'h00;
+
+  // Sequential Lane numbers 0..n-1 (also the Downstream assignment).
+  logic [8*LANES-1:0] default_lane_num;
+  always_comb begin
+    default_lane_num = '0;
+    for (int unsigned l = 0; l < LANES; l++) default_lane_num[8*l +: 8] = 8'(l);
+  end
 
   rivet_ltssm_state_e state_q, state_d;
 
@@ -286,38 +304,63 @@ module rivet_ltssm #(
       RIVET_LTSSM_CFG_LINKWIDTH_START: begin
         os_req_o = RIVET_MAC_OS_TS1;
 
-        // Upstream Port: adopt the Link number offered by the Downstream Port,
-        // then transmit it with the Lane number still PAD.
-        if (ts1_link_any_i) begin
-          link_num_d = rx_link_num_i;
+        if (IS_DOWNSTREAM) begin
+          // Downstream Port: offer a Link number with Lane# still PAD.
+          link_num_d = DP_LINK_NUM;
           link_pad_d = 1'b0;
-          state_d    = RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT;
-        end else if (timer_expired) begin
-          state_d = RIVET_LTSSM_DETECT_QUIET;
+          if (ts1_link_all_i && (rx_link_num_i == DP_LINK_NUM))
+            state_d = RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT;
+          else if (timer_expired)
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+        end else begin
+          // Upstream Port: adopt the Link number offered by the Downstream Port,
+          // then transmit it with the Lane number still PAD.
+          if (ts1_link_any_i) begin
+            link_num_d = rx_link_num_i;
+            link_pad_d = 1'b0;
+            state_d    = RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT;
+          end else if (timer_expired) begin
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+          end
         end
       end
 
       RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT: begin
         os_req_o = RIVET_MAC_OS_TS1;
 
-        if (ts1_lane_all_i) begin
-          lane_num_d = rx_lane_num_i; // no Lane reversal in this milestone
+        if (IS_DOWNSTREAM) begin
+          // Downstream Port: assign sequential Lane numbers on enabled Lanes.
+          // Also accept TS2 with numbers — the Upstream Port may already have
+          // raced into Configuration.Complete while we were still here.
+          lane_num_d = default_lane_num;
           lane_pad_d = 1'b0;
-          state_d    = RIVET_LTSSM_CFG_LANENUM_WAIT;
-        end else if (timer_expired) begin
-          state_d = RIVET_LTSSM_DETECT_QUIET;
+          if (lane_num_match && (ts1_lane_all_i || ts2_cfg_all_i))
+            state_d = RIVET_LTSSM_CFG_LANENUM_WAIT;
+          else if (timer_expired)
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+        end else begin
+          if (ts1_lane_all_i) begin
+            lane_num_d = rx_lane_num_i; // no Lane reversal in this milestone
+            lane_pad_d = 1'b0;
+            state_d    = RIVET_LTSSM_CFG_LANENUM_WAIT;
+          end else if (timer_expired) begin
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+          end
         end
       end
 
       RIVET_LTSSM_CFG_LANENUM_WAIT: begin
         os_req_o = RIVET_MAC_OS_TS1;
 
-        if (ts1_lane_all_i && lane_num_match)
+        // ts2_cfg: peer reached Complete first; numbers still latch in os_rx.
+        if (lane_num_match && (ts1_lane_all_i || ts2_cfg_all_i)) begin
           state_d = RIVET_LTSSM_CFG_LANENUM_ACCEPT;
-        else if (ts1_lane_all_i && !lane_num_match)
-          lane_num_d = rx_lane_num_i;
-        else if (timer_expired)
+        end else if (ts1_lane_all_i && !lane_num_match) begin
+          // Upstream may be told a new set; Downstream keeps its assignment.
+          if (!IS_DOWNSTREAM) lane_num_d = rx_lane_num_i;
+        end else if (timer_expired) begin
           state_d = RIVET_LTSSM_DETECT_QUIET;
+        end
       end
 
       RIVET_LTSSM_CFG_LANENUM_ACCEPT: begin
@@ -325,11 +368,15 @@ module rivet_ltssm #(
 
         // Only act on fresh evidence, so a mismatch cannot ping-pong with
         // Lanenum.Wait at zero delay and reload the timeout forever.
-        if (ts1_lane_all_i && lane_num_match) begin
+        // Accept TS2 numbered sets so a peer that already entered Complete
+        // cannot leave us stranded on TS1-only exits.
+        if (lane_num_match && (ts1_lane_all_i || ts2_cfg_all_i)) begin
           state_d = RIVET_LTSSM_CFG_COMPLETE;
         end else if (ts1_lane_all_i && !lane_num_match) begin
-          lane_num_d = rx_lane_num_i;
-          state_d    = RIVET_LTSSM_CFG_LANENUM_WAIT;
+          if (!IS_DOWNSTREAM) begin
+            lane_num_d = rx_lane_num_i;
+            state_d    = RIVET_LTSSM_CFG_LANENUM_WAIT;
+          end
         end else if (timer_expired) begin
           state_d = RIVET_LTSSM_DETECT_QUIET;
         end
@@ -490,14 +537,6 @@ module rivet_ltssm #(
   logic in_detect;
   assign in_detect = (state_q == RIVET_LTSSM_DETECT_QUIET) ||
                      (state_q == RIVET_LTSSM_DETECT_ACTIVE);
-
-  // Sequential Lane numbers 0..n-1: what we transmit before the Downstream Port
-  // hands out numbers, and the fallback while the Lane number is still PAD.
-  logic [8*LANES-1:0] default_lane_num;
-  always_comb begin
-    default_lane_num = '0;
-    for (int unsigned l = 0; l < LANES; l++) default_lane_num[8*l +: 8] = 8'(l);
-  end
 
   assign ltssm_state_o  = state_q;
   assign link_up_o      = link_up_q;

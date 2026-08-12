@@ -32,10 +32,10 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`
 
 | Mode | `MODE` | Status |
 |------|--------|--------|
-| Endpoint (EP) | 0 | Active development |
-| Root Complex / Root Port (RC) | 1 | Reserved |
-| Switch Upstream Port (USP) | 2 | Reserved |
-| Switch Downstream Port (DSP) | 3 | Reserved |
+| Endpoint (EP) | 0 | Active — Upstream Port Config |
+| Root Complex / Root Port (RC) | 1 | Gen2 Config Downstream (BFM peer) |
+| Switch Upstream Port (USP) | 2 | Same Config path as EP (reserved otherwise) |
+| Switch Downstream Port (DSP) | 3 | Same Config path as RC (reserved otherwise) |
 
 Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
 
@@ -53,7 +53,7 @@ Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-
 
 | Parameter | Values | Notes |
 |-----------|--------|-------|
-| `MODE` | EP first | RC/USP/DSP compile-gated later |
+| `MODE` | EP / RC (Config) | USP/DSP share UP/DP Config paths; full RC TL later |
 | `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 3+ |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
 | `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only; primary bring-up **VCU118 / XCVU9P** (US+) |

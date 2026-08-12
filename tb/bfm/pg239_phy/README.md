@@ -14,11 +14,11 @@ Later stages (not this README):
 | Stage | What |
 |-------|------|
 | **1** | PG239 + `phy_ctrl` pattern ↔ PHY model (**PASS**) |
-| **2 (current)** | Replace `phy_ctrl` with `rivet_pcie_ctrl` on PIPE (`-Dut rivet`) |
+| **2 (current)** | EP + RC Rivet shells on PIPE (`-Dut rivet`) — Downstream Config offers Link# |
 | **3** | PG213 EP example → swap EP for Rivet+PG239 — [pg213_ep](../pg213_ep/README.md) |
 | **4** | PG213 RP ↔ Rivet+PG239 (system-level) |
 
-**Known (stage 2):** dual Rivet+PG239 shells compile/elaborate; LTSSM advances then loops (~state 5) without stable `link_up`. Soft-ctrl LTSSM/TL fixes come before expecting green here or on PG213 PIO.
+**Stage 2 note:** Earlier dual-EP topology stuck at Configuration.Linkwidth.Start (`0x05`) because neither side offered a Link number. The board now pairs `MODE=EP` with `MODE=RC`.
 
 ## What the test does
 
@@ -117,8 +117,8 @@ Options:
 ### Stage 2 topology ( `-Dut rivet` )
 
 ```text
-  rivet_pcie_ctrl ──16b── pad ──64b── pcie_phy_0  ══serial══  pcie_phy_0 ──64b── pad ──16b── rivet_pcie_ctrl
-       (EP)                                                    (peer shell; same EP RTL until RC MODE)
+  rivet_pcie_ctrl(EP) ──16b── pad ──64b── pcie_phy_0  ══serial══  pcie_phy_0 ──64b── pad ──16b── rivet_pcie_ctrl(RC)
+       Upstream Port                                              Downstream Port (offers Link# / Lane#)
 ```
 
 Gen2 uses only `[15:0]` of each lane's 64-bit PHY word (`rivet_pipe_pg239_pad`).
@@ -188,4 +188,4 @@ Do **not** commit `pcie_phy_0` netlists, encrypted IP, or `compile_simlib` outpu
 
 ## Relation to Rivet soft controller
 
-`-Dut rivet` replaces Xilinx `phy_ctrl` with `rivet_pcie_ctrl` on both sides of the serial link (peer is a second EP-shaped shell until `MODE=RC` exists). Pattern mode remains the PHY bring-up gate.
+`-Dut rivet` pairs an EP shell with an RC shell over serial (Downstream Config offers Link# / Lane#). Pattern mode remains the PHY bring-up gate.

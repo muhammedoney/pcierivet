@@ -8,6 +8,7 @@
 `timescale 1ps/1ps
 
 module rivet_pg239_ep #(
+  parameter int unsigned MODE              = 0, // rivet_pkg::RIVET_MODE_*
   parameter int unsigned LANES             = 4,
   parameter int unsigned PIPE_DATA_WIDTH   = 16,
   parameter int unsigned PHY_DATA_WIDTH    = 64,
@@ -189,7 +190,7 @@ module rivet_pg239_ep #(
   );
 
   rivet_pcie_ctrl #(
-    .MODE              (0),
+    .MODE              (MODE),
     .GEN               (2),
     .LANES             (LANES),
     .PIPE_DATA_WIDTH   (PIPE_DATA_WIDTH),

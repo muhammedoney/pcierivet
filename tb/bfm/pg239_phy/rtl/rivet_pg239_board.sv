@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// BFM stage-2 board: two rivet_pg239_ep instances (each = PG239 + rivet_pcie_ctrl)
+// BFM stage-2 board: EP (Upstream) + RC (Downstream) Rivet+PG239 shells
 // linked over serial ×4. PASS when both report link_up (Config.Idle / L0 path).
 
 `timescale 1ps/1ps
@@ -44,6 +44,7 @@ module rivet_pg239_board;
   );
 
   rivet_pg239_ep #(
+    .MODE  (0), // EP / Upstream
     .LANES (LANES)
   ) u_ep (
     .sys_clk_p       (ep_sys_clk_p),
@@ -60,10 +61,11 @@ module rivet_pg239_board;
     .user_clk_o      ()
   );
 
-  // Second Endpoint-shaped shell as serial peer (training peer until RP MODE exists).
+  // Root Port shell: Downstream Port Config (offers Link# / Lane#).
   rivet_pg239_ep #(
+    .MODE  (1), // RC / Downstream
     .LANES (LANES)
-  ) u_peer (
+  ) u_rp (
     .sys_clk_p       (rp_sys_clk_p),
     .sys_clk_n       (rp_sys_clk_n),
     .sys_rst_n       (sys_rst_n),
@@ -96,14 +98,14 @@ module rivet_pg239_board;
       begin
         wait (ep_link_up && rp_link_up);
         #10000;
-        $display("[%t] : EP ltssm=%0h peer ltssm=%0h", $realtime, ep_ltssm, rp_ltssm);
+        $display("[%t] : EP ltssm=%0h RP ltssm=%0h", $realtime, ep_ltssm, rp_ltssm);
         $display("[%t] : Test Completed Successfully (Rivet+PG239 link_up)", $realtime);
         $finish;
       end
       begin
-        // 5 ms @ 1ps timescale.
-        #(64'd5000000000);
-        $display("[%t] : TIMEOUT — EP link_up=%0b ltssm=%0h peer link_up=%0b ltssm=%0h",
+        // 500 ms @ 1ps timescale — PG239 bring-up + scaled LTSSM need headroom.
+        #(64'd500000000000);
+        $display("[%t] : TIMEOUT — EP link_up=%0b ltssm=%0h RP link_up=%0b ltssm=%0h",
                  $realtime, ep_link_up, ep_ltssm, rp_link_up, rp_ltssm);
         $fatal(1, "Rivet+PG239 link training timeout");
       end
@@ -111,7 +113,7 @@ module rivet_pg239_board;
   end
 
   always @(ep_ltssm or rp_ltssm) begin
-    $display("[%t] : LTSSM ep=%0h peer=%0h link_up ep=%0b peer=%0b",
+    $display("[%t] : LTSSM ep=%0h rp=%0h link_up ep=%0b rp=%0b",
              $realtime, ep_ltssm, rp_ltssm, ep_link_up, rp_link_up);
   end
 
