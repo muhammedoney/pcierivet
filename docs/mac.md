@@ -4,7 +4,7 @@
 **Active target:** `MODE=EP`, **Gen2**, `LANES` ∈ {1,2,4}, PIPE to PG239-aligned `rivet_pipe_if`.  
 **Do not** implement Gen3/4 protocol behavior while Gen2 is active ([roadmap.md](roadmap.md), [gen-evolution.md](gen-evolution.md)).
 
-This is the checklist doc for MAC work. PIPE signal meaning: [pipe-notes.md](pipe-notes.md). User IF: [pg213-interface.md](pg213-interface.md).
+This is the checklist doc for MAC work. PIPE signal meaning: [pipe-notes.md](pipe-notes.md). User IF: [pg213-interface.md](pg213-interface.md). DLL / FC: [dll.md](dll.md).
 
 ---
 
