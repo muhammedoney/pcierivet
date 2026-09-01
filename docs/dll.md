@@ -48,8 +48,14 @@ figures into the repo.
    and the TX credit gate allows it. UpdateFC runs continuously after init.
 3. **Minimal TL for FC is required now** (buffer sizes + credit-allocated /
    credit-freed events). Full TLP assemble/decode waits until after FC works.
-4. **DLL↔MAC datapath width is parameterized** and should grow with `LANES`
-   (see [§5](#5-parametric-datapath-width)).
+4. **DLL↔MAC width follows the PIPE wire:** `DLL_DATA_W = LANES * PIPE_DATA_WIDTH`
+   (Gen2 → `LANES*16` **bits**). User AXI-ST width is **independent**
+   (`AXI_DATA_WIDTH` ∈ {64,128,256,512} per PG213). TL owns the gear box.
+   See [§5](#5-parametric-datapath-width).
+5. **MAC framing (incl. SDP) proceeds in parallel** with DLL D0/D1 — not a serial
+   gate on offline DLLP/CRC work.
+6. **Smoke FC ads:** PH/NPH/PD/NPD = large finite (cap below protocol maxima);
+   **CPLH/CPLD = infinite** (`00h` / `000h`) for EP. See [§4.1](#41-infinite-vs-finite-credits).
 
 ---
 
@@ -94,8 +100,59 @@ Credit **units** (Base 2.1 Ch.2 FC):
 - Data credit unit = **4 DW** (16 bytes).
 - Header credit unit = one max-size header (digest-capable); Rivet Gen2 EP starts
   with the common non-prefix header size model.
-- EP receivers typically advertise **infinite Completion** credits; PH/NPH/PD/NPD
-  are finite from real RX buffer sizes.
+
+### 4.1 Infinite vs finite credits
+
+**Infinite** is advertised at FC init as **all zeros** in the credit field:
+
+| Field | Width | Infinite encoding |
+|-------|-------|-------------------|
+| HdrFC (PH / NPH / CPLH) | 8 bits | `00h` |
+| DataFC (PD / NPD / CPLD) | 12 bits | `000h` |
+
+Transmitter treats that type as never throttled. UpdateFC for an infinite field
+must carry zeros (receiver ignores). Finite types still need UpdateFC on the
+Base schedule.
+
+**Who must advertise infinite Completion (EP focus):**
+
+- Endpoint: **CPLH + CPLD = infinite** (Base minimum for EP).
+- Root Complex without peer-to-peer between all RPs: same.
+- Switch / RC with P2P: may use finite CPL (deadlock care) — **out of Rivet EP scope**.
+
+P / NP header and data are normally **finite** (real RX buffers). Protocol also
+caps outstanding unused ads (~127 header / ~2047 data cumulative) — do not
+spam “max” beyond that.
+
+**Smoke / sim defaults (Rivet):**
+
+| Type | Init advertisement |
+|------|--------------------|
+| PH, NPH | Finite max useful for sim (e.g. `7Fh` header = 127) |
+| PD, NPD | Finite large but ≤ 2047 (`7FFh` ok) |
+| CPLH, CPLD | **Infinite** (`00h` / `000h`) |
+
+“Max credit” for smoke means **max legal finite** for P/NP, not infinite on
+those types unless we deliberately test infinite-P paths later.
+
+### 4.2 What is CPL?
+
+**CPL = Completion** traffic class in flow control (not a DLLP name by itself).
+
+PCIe splits TLP traffic into three FC types:
+
+| FC type | Abbrev | Examples |
+|---------|--------|----------|
+| Posted | P | Memory Write, Message (no response required) |
+| Non-Posted | NP | Memory Read, Cfg/IO Read/Write (needs a Completion) |
+| Completion | **Cpl** | Completion / Completion with Data — the **response** to an NP |
+
+So **CPLH / CPLD** are header/data credit pools for Completions the peer will
+send us (when we issued NP requests) or that we must accept. An Endpoint almost
+always gives the link partner **infinite CPL credits** so completions for our
+reads are never blocked by FC.
+
+DLLP names: `InitFC*-Cpl`, `UpdateFC-Cpl` carry those CPLH/CPLD values.
 
 Type encodings and CRC polynomial / bit order: implement from Base 2.1 §3.4
 (tables for DLLP Type and CRC). Do not copy tables into git.
@@ -140,44 +197,55 @@ for timers, minima, and infinite-credit edge cases.
 
 ## 5. Parametric datapath width
 
-### 5.1 Is lane-scaled width possible with LCRC / DLLP CRC?
+### 5.1 User AXI vs DLL/MAC width (PG213)
 
-**Yes.** Protocol CRCs and FC math are **not** tied to AXI or PIPE beat width:
+PG213 UltraScale+ supports **configurable 64 / 128 / 256 / 512-bit** AXI-ST
+datapaths. **64-bit is valid** (own tables for 64/128/256; 512 has different
+`tuser` / straddle rules). Rivet already targets 64-bit first; wider later.
+
+These user widths are **not** the same knob as link width (`LANES`):
+
+| Knob | Values | Owner |
+|------|--------|-------|
+| `AXI_DATA_WIDTH` | 64 / 128 / 256 / (512 later) | TL ↔ user |
+| `DLL_DATA_W` | `LANES * PIPE_DATA_WIDTH` bits | DLL ↔ MAC |
+| `PIPE_DATA_WIDTH` | 16 (Gen2 now) | MAC ↔ PHY |
+
+Example Gen2 (`PIPE_DATA_WIDTH=16`):
+
+| LANES | Wire / pclk | `DLL_DATA_W` |
+|-------|-------------|--------------|
+| 1 | 16 bits (2 symbols) | 16 |
+| 2 | 32 bits | 32 |
+| 4 | 64 bits | 64 |
+
+Changing user IF from 64→256 only touches TL packing; DLL/MAC stay
+lane-scaled. Forcing DLL to equal AXI width would **fight** striping and still
+need a gear box when `LANES` and `AXI_DATA_WIDTH` disagree — so we **do not**
+tie DLL to AXI.
+
+### 5.2 CRC / FC vs beat width
 
 | Concern | Width coupling |
 |---------|----------------|
-| DLLP CRC-16 | Byte-stream over the 6 DLLP body bytes; fixed packet |
-| TLP LCRC-32 | Byte-stream over Seq# + TLP (+ digest if present) |
-| FC credits | Header / DW units, independent of internal bus |
-| MAC striping | **Does** scale with `LANES` (and PIPE bytes/lane/clk) |
+| DLLP CRC-16 | Byte-stream; fixed 8-byte DLLP |
+| TLP LCRC-32 | Byte-stream over Seq# + TLP |
+| FC credits | Header / DW units |
+| MAC striping | Scales with `LANES` + PIPE |
 
-So: implement CRC and FC as **streaming / sequential** engines (byte or DW
-step). Do **not** invent a CRC that “runs once per lane”. Parameterize only the
-**parallel beat** that carries bytes between TL↔DLL↔MAC.
+CRC/FC engines stay streaming (byte or DW). Parallel beats only move payload.
 
-### 5.2 Rivet recommendation
+### 5.3 Locked formula
 
 ```text
   parameter int unsigned LANES = ...;
-  // Gen2 Original PIPE: 16 bits/lane → 2 symbols/lane/pclk
-  localparam int unsigned SYM_PER_LANE = PIPE_DATA_WIDTH / 8; // 2 for width=16
-  parameter int unsigned DLL_DATA_W =
-      (LANES * SYM_PER_LANE * 8);  // x1→16B, x2→32B, x4→64B  — or next power-of-two
+  parameter int unsigned PIPE_DATA_WIDTH = 16;           // Gen2
+  parameter int unsigned DLL_DATA_W = LANES * PIPE_DATA_WIDTH;  // bits
+  // AXI_DATA_WIDTH independent: 64 / 128 / 256 / 512 (PG213)
 ```
 
-Practical policy for Phase 1:
-
-1. Put `DLL_DATA_W` (and matching `keep` width) on `rivet_dll_mac_*_beat_t`
-   **or** keep packed beats in `rivet_pkg` with a `parameter`ized wrapper IF.
-2. Default mapping for Gen2 16-bit PIPE: **64 / 128 / 256** bit beats for
-   ×1 / ×2 / ×4 if we prefer AXI-like widths; or exact `LANES*16` bytes.
-   Prefer **power-of-two ≥ wire bytes/pclk** so striping packs cleanly.
-3. CRC blocks take a byte (or DW) stream with `valid`/`last` — width-agnostic.
-4. First bring-up may temporarily force `DLL_DATA_W=64` for all lane configs
-   **if** MAC framing is still ×1-oriented; grow width when striping lands.
-
-Open micro-choice (decide at D0 RTL): exact formula `LANES*16` bytes vs
-`64<<$clog2(LANES)`. Document the pick in the IF header comment.
+`keep` width tracks `DLL_DATA_W/8` (or DW-granular later if we mirror PG213
+`tkeep` style on the internal IF — decide at D0; either is fine if documented).
 
 ---
 
@@ -223,7 +291,8 @@ Suggested types (names illustrative — finalize in `rivet_pkg` or `rivet_dll_pk
 |------|-------------------|
 | PH / NPH | ≥ 1 (finite from RX header FIFO depth) |
 | PD / NPD | From payload FIFO / Max_Payload_Size |
-| CPLH / CPLD | **Infinite** (typical Endpoint) |
+| CPLH / CPLD | **Infinite** (`00h` / `000h`) — required EP policy |
+| PH / NPH / PD / NPD | Finite from parameterized RX depths (smoke: large legal max) |
 
 TL stub can hardcode these sizes with parameters — no AXI-ST traffic required yet.
 
@@ -326,12 +395,17 @@ Scoreboard hooks: DLLP type timeline, CA/CL/CC snapshots, `fc_init_done`.
 
 ---
 
-## 12. Open questions (decide before / during D0)
+## 12. Resolved / remaining decisions
 
-1. Exact `DLL_DATA_W` formula: `LANES*16` bytes vs `64<<clog2(LANES)`?  
-2. First on-wire FC test: real MAC SDP vs behavioral MAC harness?  
-3. Initial RX buffer sizes (parameters) for smoke vs silicon-intent?  
-4. Infinite CPL only, or also allow finite CPL for switch-like modes later?
+| Topic | Decision |
+|-------|----------|
+| `DLL_DATA_W` | `LANES * PIPE_DATA_WIDTH` bits (Gen2: `LANES*16`) |
+| User AXI width | Independent; **64 supported** by PG213; Rivet starts at 64 |
+| MAC SDP | Parallel with DLL D0; required for on-wire D1 |
+| Smoke credits | P/NP large finite; **CPL infinite** |
+| Finite CPL mode | Deferred (switch / P2P RC only) |
+
+Still pick at D0 RTL: internal `keep` byte vs DW granularity on DLL↔MAC beats.
 
 ---
 
