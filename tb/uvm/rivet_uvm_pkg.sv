@@ -9,6 +9,7 @@ package rivet_uvm_pkg;
   `define RIVET_TB_LANES 1
 `endif
   typedef virtual rivet_pipe_if #(.LANES(`RIVET_TB_LANES), .PIPE_DATA_WIDTH(16)) rivet_pipe_vif;
+  typedef virtual rivet_link_status_if rivet_link_status_vif;
   typedef virtual rivet_axi_st_if #(
     .DATA_WIDTH(64), .KEEP_WIDTH(2), .USER_WIDTH(88), .READY_WIDTH(4)
   ) rivet_axi_st_vif;
@@ -31,6 +32,7 @@ package rivet_uvm_pkg;
   `include "agents/rivet_pipe_driver.svh"
   `include "agents/rivet_pipe_monitor.svh"
   `include "agents/rivet_pipe_agent.svh"
+  `include "agents/rivet_pipe_ltssm_peer.svh"
   `include "agents/rivet_axi_st_sequencer.svh"
   `include "agents/rivet_axi_st_driver.svh"
   `include "agents/rivet_axi_st_monitor.svh"
@@ -42,10 +44,12 @@ package rivet_uvm_pkg;
   `include "agents/rivet_companion_monitor.svh"
   `include "env/rivet_virtual_sequencer.svh"
   `include "seq/rivet_idle_smoke_vseq.svh"
+  `include "seq/rivet_ltssm_l0_vseq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
   `include "env/rivet_env.svh"
   `include "tests/rivet_base_test.svh"
   `include "tests/smoke_gen2_x1.svh"
   `include "tests/smoke_gen2_x2_x4.svh"
+  `include "tests/ltssm_l0_gen2.svh"
 endpackage : rivet_uvm_pkg

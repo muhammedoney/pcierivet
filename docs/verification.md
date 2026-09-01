@@ -44,7 +44,14 @@ Known: PG239 stage-2 uses EP+RC shells; re-check link_up after Downstream Config
 | Virtual sequencer + shared idle vseq | Done |
 | Smokes ×2 / ×4 | Done (`smoke_gen2_x2`, `smoke_gen2_x4`) |
 | Coverage (PIPE idle + lanes) | Started |
-| LTSSM / DLLP sequences as RTL lands | Next |
+| LTSSM L0 (Questa, Downstream peer) | Done (`ltssm_l0_gen2_x1/x2/x4`) |
+| DLLP sequences / TLP scoreboard | Next |
+
+```powershell
+.\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
+.\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
+.\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
+```
 
 Do not block UVM progress on Gen3/4 features. Keep Gen3+ PIPE fields in the interface unused/idle in Gen2 tests.
 
@@ -56,6 +63,9 @@ Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then:
 .\scripts\sim_questa.ps1 smoke_gen2_x1 1
 .\scripts\sim_questa.ps1 smoke_gen2_x2 2
 .\scripts\sim_questa.ps1 smoke_gen2_x4 4
+.\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
+.\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
+.\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
 ```
 
 Uses built-in `-L mtiUvm` (match `UVM_HOME` to uvm-1.1d). Lane width is a **compile-time** `+define+RIVET_TB_LANES=N`.

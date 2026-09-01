@@ -298,7 +298,7 @@ Port/state/timer worksheet: [ltssm.xlsx](ltssm.xlsx) (regenerate with
 - [x] `link_up` asserted in Configuration.Idle, not on L0 entry
 - [x] OS TX field control: Link#/Lane#/PAD, N_FTS, rate ID, training control, lane mask
 - [x] Gate: Verilator smoke reaches L0 for ×1/×2/×4 (`scripts/sim_ltssm_smoke.ps1`)
-- [ ] UVM sequence: peer responds with TS; scoreboard state path (Questa not installed)
+- [x] Questa UVM: Downstream PIPE peer → L0 (`ltssm_l0_gen2_x1/x2/x4`)
 
 Known simplifications, all revisited in M2–M4:
 
