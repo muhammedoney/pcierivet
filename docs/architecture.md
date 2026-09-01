@@ -61,7 +61,7 @@ Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-
 
 ## MAC and PIPE
 
-Controller MAC (LTSSM, ordered sets, PIPE adapter) sits between DLL and PIPE. Implementation checklist: [mac.md](mac.md). PIPE TX/RX / elastic-buffer concepts for Rivet: [pipe-notes.md](pipe-notes.md).
+Controller MAC (LTSSM, ordered sets, PIPE adapter) sits between DLL and PIPE. Implementation checklist: [mac.md](mac.md). PIPE TX/RX / elastic-buffer concepts for Rivet: [pipe-notes.md](pipe-notes.md). Data Link (DLLP, FC, LCRC): [dll.md](dll.md).
 
 Layer sources live under `rtl/pcie_ctrl/mac/`, `dll/`, and `tl/`; `rivet_pcie_ctrl.sv` remains the integrating top.
 

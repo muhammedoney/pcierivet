@@ -9,4 +9,4 @@ rtl/pcie_ctrl/
   tl/                    Transaction Layer + config space (AXI-ST toward user)
 ```
 
-No vendor cells in this tree. See [docs/mac.md](../../docs/mac.md), [docs/architecture.md](../../docs/architecture.md).
+No vendor cells in this tree. See [docs/mac.md](../../docs/mac.md), [docs/dll.md](../../docs/dll.md), [docs/architecture.md](../../docs/architecture.md).
