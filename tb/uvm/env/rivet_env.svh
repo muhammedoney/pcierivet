@@ -5,6 +5,7 @@ class rivet_env extends uvm_env;
   `uvm_component_utils(rivet_env)
 
   rivet_pipe_agent         pipe_agent;
+  rivet_pipe_ltssm_peer    ltssm_peer;
   rivet_axi_st_agent       cq_agent, cc_agent, rq_agent, rc_agent;
   rivet_cfg_mgmt_agent     cfg_agent;
   rivet_companion_monitor  companion_mon;
@@ -29,6 +30,7 @@ class rivet_env extends uvm_env;
     uvm_config_db#(bit)::set(this, "rq_agent*", "is_master", 1'b1);
 
     pipe_agent    = rivet_pipe_agent::type_id::create("pipe_agent", this);
+    ltssm_peer    = rivet_pipe_ltssm_peer::type_id::create("ltssm_peer", this);
     cq_agent      = rivet_axi_st_agent::type_id::create("cq_agent", this);
     cc_agent      = rivet_axi_st_agent::type_id::create("cc_agent", this);
     rq_agent      = rivet_axi_st_agent::type_id::create("rq_agent", this);

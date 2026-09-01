@@ -15,6 +15,7 @@ class rivet_scoreboard extends uvm_scoreboard;
   int unsigned cfg_sample_count, cfg_idle_ok, cfg_unexpected;
   int unsigned comp_sample_count, comp_idle_ok, comp_unexpected;
   bit pipe_checked, axi_checked, cfg_checked, comp_checked;
+  bit ltssm_l0_mode;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -22,6 +23,7 @@ class rivet_scoreboard extends uvm_scoreboard;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
+    void'(uvm_config_db#(bit)::get(this, "", "ltssm_l0_mode", ltssm_l0_mode));
     pipe_imp = new("pipe_imp", this);
     axi_imp  = new("axi_imp", this);
     cfg_imp  = new("cfg_imp", this);
@@ -30,6 +32,10 @@ class rivet_scoreboard extends uvm_scoreboard;
 
   function void write_pipe(rivet_pipe_item t);
     pipe_sample_count++;
+    if (ltssm_l0_mode) begin
+      pipe_checked = 1;
+      return;
+    end
     if (pipe_sample_count < 5) return;
     if (t.txelecidle !== 1'b1)
       `uvm_error(get_type_name(), $sformatf("MAC txelecidle=%0b expected 1", t.txelecidle))
@@ -85,6 +91,10 @@ class rivet_scoreboard extends uvm_scoreboard;
 
   function void check_phase(uvm_phase phase);
     super.check_phase(phase);
+    if (ltssm_l0_mode) begin
+      `uvm_info(get_type_name(), "LTSSM L0 mode — idle PIPE checks skipped (vseq owns L0)", UVM_LOW)
+      return;
+    end
     if (!pipe_checked || mac_idle_ok == 0)
       `uvm_error(get_type_name(), "No successful PIPE idle samples")
     else

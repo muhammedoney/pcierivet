@@ -11,6 +11,7 @@ rtl/pcie_ctrl/mac/rivet_mac_pipe_adapter.sv
 rtl/pcie_ctrl/mac/rivet_mac.sv
 rtl/pcie_ctrl/rivet_pcie_ctrl.sv
 rtl/interfaces/rivet_pipe_if.sv
+rtl/interfaces/rivet_link_status_if.sv
 rtl/interfaces/rivet_axi_st_if.sv
 rtl/interfaces/rivet_cfg_mgmt_if.sv
 rtl/interfaces/rivet_companion_if.sv

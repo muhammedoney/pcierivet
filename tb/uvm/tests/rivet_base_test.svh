@@ -33,6 +33,17 @@ class rivet_base_test extends uvm_test;
     phase.drop_objection(this);
   endtask
 
+  // Downstream PIPE peer trains Detect -> L0 (pipe agent must be PASSIVE).
+  task run_ltssm_l0(uvm_phase phase);
+    rivet_ltssm_l0_vseq vseq;
+    phase.raise_objection(this);
+    `uvm_info(get_type_name(),
+              $sformatf("Gen%0d x%0d LTSSM L0", gen, lanes), UVM_LOW)
+    vseq = rivet_ltssm_l0_vseq::type_id::create("ltssm_l0_vseq");
+    vseq.start(env.vsqr);
+    phase.drop_objection(this);
+  endtask
+
   task run_phase(uvm_phase phase);
     run_idle_smoke(phase, 20);
   endtask

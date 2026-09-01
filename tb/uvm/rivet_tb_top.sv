@@ -48,6 +48,7 @@ module rivet_tb_top;
   end
 
   rivet_pipe_if #(.LANES(LANES), .PIPE_DATA_WIDTH(16)) pipe_if (.pclk(pclk), .preset_n(preset_n));
+  rivet_link_status_if status_if (.pclk(pclk), .preset_n(preset_n));
   rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
     cq_if (.aclk(user_clk), .aresetn(user_resetn));
   rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
@@ -163,8 +164,13 @@ module rivet_tb_top;
     .link_up(link_up)
   );
 
+  assign status_if.link_up         = link_up;
+  assign status_if.cfg_ltssm_state = cfg_ltssm_state;
+
   initial begin
     uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent*", "vif", pipe_if);
+    uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.ltssm_peer*", "vif", pipe_if);
+    uvm_config_db#(rivet_link_status_vif)::set(null, "uvm_test_top", "status_vif", status_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.cq_agent*", "vif", cq_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.cc_agent*", "vif", cc_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rq_agent*", "vif", rq_if);
