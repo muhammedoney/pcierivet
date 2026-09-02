@@ -338,11 +338,11 @@ Folder README stays thin; this file is the checklist.
 
 ### D1 — VC0 InitFC exchange
 
-- [ ] `rivet_dll_fc` FC_INIT1 / FC_INIT2 state machine  
-- [ ] Drive InitFC1/2 only when MAC `accept_dll_tlp`  
-- [ ] Capture peer credits into CL; publish `fc_init_done`  
-- [ ] Depends on MAC framing SDP path **or** MAC behavioral stub in TB  
-- [ ] Gate: UVM/smoke peer completes InitFC both directions → DL_Active  
+- [x] `rivet_dll_fc` FC_INIT1 / FC_INIT2 state machine  
+- [x] Drive InitFC1/2 only when MAC `accept_dll_tlp`  
+- [x] Capture peer credits into CL; publish `fc_init_done`  
+- [x] Dual-DLL Verilator TB (`scripts/sim_dll_fc_init.ps1`) — beat cross-connect (no MAC)  
+- [x] Gate: Verilator `sim_dll_fc_init` + Questa `ltssm_l0_gen2_x{1,2,4}` (FC UVM peer later)  
 
 ### D2 — UpdateFC + credit return
 
