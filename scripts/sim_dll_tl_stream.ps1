@@ -1,11 +1,11 @@
 # Copyright 2026 Rivet contributors
-# Verilator: TX credit gate starvation / restore
+# Verilator: dual-DLL multi-beat TL stream (D5)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-$Warn = "-Wall -Wno-DECLFILENAME -Wno-UNUSED -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD -Wno-PINCONNECTEMPTY"
+$Warn = "-Wall -Wno-DECLFILENAME -Wno-UNUSED -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD -Wno-UNOPTFLAT -Wno-PINCONNECTEMPTY -Wno-MULTIDRIVEN"
 $Sources = @"
 rtl/pcie_ctrl/rivet_pkg.sv
 rtl/pcie_ctrl/dll/rivet_dll_crc16.sv
@@ -21,19 +21,19 @@ rtl/pcie_ctrl/dll/rivet_dll_tl_pack.sv
 rtl/pcie_ctrl/dll/rivet_dll_tl_unpack.sv
 rtl/pcie_ctrl/dll/rivet_dll.sv
 rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv
-tb/smoke/rivet_dll_fc_gate_tb.sv
---top-module rivet_dll_fc_gate_tb
+tb/smoke/rivet_dll_tl_stream_tb.sv
+--top-module rivet_dll_tl_stream_tb
 "@ -replace "`r`n"," " -replace "`n"," "
 
 if (Get-Command verilator -ErrorAction SilentlyContinue) {
-  $Out = Join-Path $Root "build/fc_gate"
-  & verilator --binary $Warn.Split(" ") $Sources.Split(" ") -Mdir $Out -o fc_gate
+  $Out = Join-Path $Root "build/tl_stream"
+  & verilator --binary $Warn.Split(" ") $Sources.Split(" ") -Mdir $Out -o tl_stream
   if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: build" }
-  & (Join-Path $Out "fc_gate")
+  & (Join-Path $Out "tl_stream")
 } else {
   $WslRoot = (wsl wslpath -a ($Root -replace '\\', '/'))
-  $Out = "/tmp/rivet_fc_gate"
-  wsl -e bash -lc "cd '$WslRoot' && rm -rf $Out && verilator --binary $Warn $Sources -Mdir $Out -o fc_gate && $Out/fc_gate"
+  $Out = "/tmp/rivet_tl_stream"
+  wsl -e bash -lc "cd '$WslRoot' && rm -rf $Out && verilator --binary $Warn $Sources -Mdir $Out -o tl_stream && $Out/tl_stream"
 }
-if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: dll_fc_gate_tb" }
-Write-Host "PASS: dll_fc_gate_tb"
+if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: dll_tl_stream_tb" }
+Write-Host "PASS: dll_tl_stream_tb"

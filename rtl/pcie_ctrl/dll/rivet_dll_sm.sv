@@ -1,7 +1,9 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Data Link Layer feature SM: Inactive → Init (FC) → Active ↔ Replay.
+// Data Link Layer feature SM (Rivet subset of DLCMSM):
+//   Inactive → Init (FC) → Active ↔ Replay
+// Side status: dl_up = Active | Replay.
 
 module rivet_dll_sm (
   input  logic pclk_i,
@@ -13,9 +15,10 @@ module rivet_dll_sm (
   input  logic                         replay_done_i,  // buffer drained this bout
 
   output rivet_pkg::rivet_dl_state_e   state_o,
+  output logic                         dl_up_o,        // Active or Replay
   output logic                         tlp_tx_en_o,    // Active only
   output logic                         replay_en_o,    // Replay state
-  output logic                         fc_en_o         // Init or Active
+  output logic                         fc_en_o         // Init / Active / Replay
 );
 
   import rivet_pkg::*;
@@ -48,7 +51,8 @@ module rivet_dll_sm (
     else state_q <= state_d;
   end
 
-  assign state_o    = state_q;
+  assign state_o     = state_q;
+  assign dl_up_o     = (state_q == RIVET_DL_ACTIVE) || (state_q == RIVET_DL_REPLAY);
   assign tlp_tx_en_o = (state_q == RIVET_DL_ACTIVE);
   assign replay_en_o = (state_q == RIVET_DL_REPLAY);
   assign fc_en_o     = (state_q == RIVET_DL_INIT) || (state_q == RIVET_DL_ACTIVE) ||

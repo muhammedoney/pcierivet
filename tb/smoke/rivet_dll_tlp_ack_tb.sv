@@ -1,7 +1,8 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Dual-DLL: after InitFC, TLP + ACK; corrupt one TLP → NAK → clean replay.
+// Dual-DLL: after InitFC, streamed TLP + ACK; corrupt one TLP → NAK → clean replay.
+// Also checks dl_up on MAC/TL sidebands.
 
 `timescale 1ns/1ps
 
@@ -9,7 +10,6 @@ module rivet_dll_tlp_ack_tb;
   import rivet_pkg::*;
 
   localparam int unsigned SLOT = 32;
-  localparam int unsigned DATA_W = SLOT * 8;
 
   logic clk, rst_n;
   logic corrupt_arm;
@@ -26,7 +26,6 @@ module rivet_dll_tlp_ack_tb;
 
   always_comb begin
     rx_b.data = tx_a.data;
-    // Flip seq byte1 so LCRC and seq check both fail.
     if (corrupt_arm && txv_a && (tx_a.pkt_type == RIVET_MAC_PKT_TLP))
       rx_b.data[15:8] = tx_a.data[15:8] ^ 8'hFF;
     rx_b.keep = tx_a.keep; rx_b.sop = tx_a.sop;
@@ -38,13 +37,15 @@ module rivet_dll_tlp_ack_tb;
     rxv_a = txv_b; txr_b = rxr_a;
   end
 
-  logic                    tlv_a, tlr_a, rxv_tl_b, rxr_tl_b;
-  logic [DATA_W-1:0]       tld_a, rxd_tl_b;
-  logic [15:0]             tllen_a, rxlen_tl_b;
-  logic [11:0]             rxseq_tl_b;
-  logic unused_a_rxv, unused_b_tlr;
-  logic [DATA_W-1:0] unused_a_rxd;
-  logic [15:0] unused_a_rxl;
+  logic [63:0] txd_a, rxd_b;
+  logic [7:0]  txk_a, rxk_b;
+  logic        txl_a, txv_tl_a, txr_tl_a;
+  logic        rxl_b, rxv_tl_b, rxr_tl_b;
+  logic [11:0] rxseq_b;
+  logic        unused_a_rxv, unused_b_txr;
+  logic [63:0] unused_a_rxd;
+  logic [7:0]  unused_a_rxk;
+  logic        unused_a_rxl;
   logic [11:0] unused_a_rxs;
 
   rivet_tl_fc_stub #(.PH_CRED(8'h08), .NPH_CRED(8'h04)) u_tl_a (
@@ -90,11 +91,11 @@ module rivet_dll_tlp_ack_tb;
     .dll_rx_beat_i(rx_a), .dll_rx_valid_i(rxv_a), .dll_rx_ready_o(rxr_a),
     .mac_to_dll_sb_i(mac_a), .dll_to_mac_sb_o(dll_mac_a),
     .tl_to_dll_fc_i(tl_a), .dll_to_tl_fc_o(dll_tl_a),
-    .tl_tlp_valid_i(tlv_a), .tl_tlp_ready_o(tlr_a),
-    .tl_tlp_data_i(tld_a), .tl_tlp_len_i(tllen_a),
-    .tl_tlp_rx_valid_o(unused_a_rxv), .tl_tlp_rx_ready_i(1'b1),
-    .tl_tlp_rx_data_o(unused_a_rxd), .tl_tlp_rx_len_o(unused_a_rxl),
-    .tl_tlp_rx_seq_o(unused_a_rxs)
+    .tl_tx_tdata_i(txd_a), .tl_tx_tkeep_i(txk_a), .tl_tx_tlast_i(txl_a),
+    .tl_tx_tvalid_i(txv_tl_a), .tl_tx_tready_o(txr_tl_a),
+    .tl_rx_tdata_o(unused_a_rxd), .tl_rx_tkeep_o(unused_a_rxk),
+    .tl_rx_tlast_o(unused_a_rxl), .tl_rx_tvalid_o(unused_a_rxv),
+    .tl_rx_tready_i(1'b1), .tl_rx_seq_o(unused_a_rxs)
   );
 
   rivet_dll #(
@@ -107,26 +108,25 @@ module rivet_dll_tlp_ack_tb;
     .dll_rx_beat_i(rx_b), .dll_rx_valid_i(rxv_b), .dll_rx_ready_o(rxr_b),
     .mac_to_dll_sb_i(mac_b), .dll_to_mac_sb_o(dll_mac_b),
     .tl_to_dll_fc_i(tl_b), .dll_to_tl_fc_o(dll_tl_b),
-    .tl_tlp_valid_i(1'b0), .tl_tlp_ready_o(unused_b_tlr),
-    .tl_tlp_data_i('0), .tl_tlp_len_i(16'd0),
-    .tl_tlp_rx_valid_o(rxv_tl_b), .tl_tlp_rx_ready_i(rxr_tl_b),
-    .tl_tlp_rx_data_o(rxd_tl_b), .tl_tlp_rx_len_o(rxlen_tl_b),
-    .tl_tlp_rx_seq_o(rxseq_tl_b)
+    .tl_tx_tdata_i(64'd0), .tl_tx_tkeep_i(8'd0), .tl_tx_tlast_i(1'b0),
+    .tl_tx_tvalid_i(1'b0), .tl_tx_tready_o(unused_b_txr),
+    .tl_rx_tdata_o(rxd_b), .tl_rx_tkeep_o(rxk_b), .tl_rx_tlast_o(rxl_b),
+    .tl_rx_tvalid_o(rxv_tl_b), .tl_rx_tready_i(rxr_tl_b), .tl_rx_seq_o(rxseq_b)
   );
 
   initial clk = 1'b0;
   always #4 clk = ~clk;
 
-  task automatic send_tlp(input logic [7:0] tag, input logic [15:0] len);
-    int unsigned i;
+  task automatic send_tlp(input logic [7:0] tag);
     int unsigned guard;
     @(negedge clk);
-    tld_a = '0;
-    for (i = 0; i < len; i++) tld_a[8*i +: 8] = tag + i[7:0];
-    tllen_a = len;
-    tlv_a = 1'b1;
-    do @(negedge clk); while (!tlr_a);
-    tlv_a = 1'b0;
+    txd_a = {32'h0, (tag + 8'd3), (tag + 8'd2), (tag + 8'd1), tag};
+    txk_a = 8'h0F;
+    txl_a = 1'b1;
+    txv_tl_a = 1'b1;
+    do @(negedge clk); while (!txr_tl_a);
+    txv_tl_a = 1'b0;
+    txl_a = 1'b0;
     guard = 0;
     while (guard < 200) begin
       @(posedge clk);
@@ -140,17 +140,20 @@ module rivet_dll_tlp_ack_tb;
                          input int unsigned max_cyc);
     int unsigned guard;
     guard = 0;
-    while (!rxv_tl_b) begin
+    forever begin
       @(posedge clk);
       guard++;
+      if (rxv_tl_b) break;
       if (guard >= max_cyc) begin
         $error("timeout waiting RX seq=%0d", exp_seq);
         $fatal(1);
       end
     end
-    @(posedge clk);
-    if (rxseq_tl_b !== exp_seq || rxd_tl_b[7:0] !== exp_b0 || rxlen_tl_b !== 16'd4) begin
-      $error("RX mismatch seq=%0d d0=%h len=%0d", rxseq_tl_b, rxd_tl_b[7:0], rxlen_tl_b);
+    // Sample on the cycle where tvalid is high (ready may retire it next).
+    if (rxseq_b !== exp_seq || rxd_b[7:0] !== exp_b0 || !rxl_b ||
+        (rxk_b !== 8'h0F)) begin
+      $error("RX mismatch seq=%0d d0=%h last=%0b keep=%h",
+             rxseq_b, rxd_b[7:0], rxl_b, rxk_b);
       $fatal(1);
     end
   endtask
@@ -160,9 +163,10 @@ module rivet_dll_tlp_ack_tb;
     mac_a = '0;
     mac_b = '0;
     corrupt_arm = 1'b0;
-    tlv_a = 1'b0;
-    tld_a = '0;
-    tllen_a = '0;
+    txv_tl_a = 1'b0;
+    txd_a = '0;
+    txk_a = '0;
+    txl_a = 1'b0;
     rxr_tl_b = 1'b1;
     repeat (5) @(posedge clk);
     rst_n = 1'b1;
@@ -173,25 +177,29 @@ module rivet_dll_tlp_ack_tb;
     mac_b.link_up        = 1'b1;
 
     wait (dll_tl_a.fc_init_done && dll_tl_b.fc_init_done);
+    wait (dll_tl_a.dl_up && dll_tl_b.dl_up && dll_mac_a.dl_up && dll_mac_b.dl_up);
+    if (!dll_tl_a.dl_active) begin
+      $error("dl_active should track dl_up");
+      $fatal(1);
+    end
     repeat (4) @(posedge clk);
 
     fork
-      send_tlp(8'h10, 16'd4);
+      send_tlp(8'h10);
       wait_rx(12'd0, 8'h10, 4000);
     join
     repeat (30) @(posedge clk);
 
     fork
-      send_tlp(8'hA0, 16'd4);
+      send_tlp(8'hA0);
       wait_rx(12'd1, 8'hA0, 4000);
     join
     repeat (30) @(posedge clk);
 
-    // Corrupt the next on-wire TLP; drop corruption after its EOP so replay is clean.
     corrupt_arm = 1'b1;
     fork
       begin
-        send_tlp(8'hB0, 16'd4);
+        send_tlp(8'hB0);
         corrupt_arm = 1'b0;
       end
       begin
@@ -214,9 +222,9 @@ module rivet_dll_tlp_ack_tb;
           $error("timeout RX seq2 after NAK");
           $fatal(1);
         end
-        @(posedge clk);
-        if (rxseq_tl_b !== 12'd2 || rxd_tl_b[7:0] !== 8'hB0) begin
-          $error("replay RX mismatch seq=%0d d0=%h", rxseq_tl_b, rxd_tl_b[7:0]);
+        if (rxseq_b !== 12'd2 || rxd_b[7:0] !== 8'hB0 || !rxl_b) begin
+          $error("replay RX mismatch seq=%0d d0=%h last=%0b",
+                 rxseq_b, rxd_b[7:0], rxl_b);
           $fatal(1);
         end
       end

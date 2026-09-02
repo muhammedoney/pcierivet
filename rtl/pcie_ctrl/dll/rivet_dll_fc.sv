@@ -361,7 +361,9 @@ module rivet_dll_fc #(
   assign dll_tl_fc_o.cc            = cc_q;
   assign dll_tl_fc_o.av            = av_c;
   assign dll_tl_fc_o.fc_init_done  = (state_q == ST_ACTIVE);
-  assign dll_tl_fc_o.dl_active     = (state_q == ST_ACTIVE);
+  // dl_up / dl_active are owned by rivet_dll (DL SM); leave unset here.
+  assign dll_tl_fc_o.dl_up         = 1'b0;
+  assign dll_tl_fc_o.dl_active     = 1'b0;
   assign dll_tl_fc_o.tx_gate_ready = (state_q == ST_ACTIVE);
   assign dll_tl_fc_o.ph_ok =
       rivet_fc_hdr_ok(cl_q.ph, cc_q.ph, cl_q.ph_inf, 8'd1);

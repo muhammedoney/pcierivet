@@ -17,6 +17,8 @@ rtl/pcie_ctrl/dll/rivet_dll_sm.sv
 rtl/pcie_ctrl/dll/rivet_dll_replay.sv
 rtl/pcie_ctrl/dll/rivet_dll_tlp_tx.sv
 rtl/pcie_ctrl/dll/rivet_dll_tlp_rx.sv
+rtl/pcie_ctrl/dll/rivet_dll_tl_pack.sv
+rtl/pcie_ctrl/dll/rivet_dll_tl_unpack.sv
 rtl/pcie_ctrl/dll/rivet_dll.sv
 rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv
 tb/smoke/rivet_dll_tlp_ack_tb.sv
