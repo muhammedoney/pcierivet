@@ -33,10 +33,24 @@ module rivet_dll_fc_init_tb;
   end
 
   rivet_tl_fc_stub #(.PH_CRED(8'h05), .NPH_CRED(8'h03)) u_tl_a (
-    .clk_i(clk), .rst_ni(rst_n), .tl_to_dll_fc_o(tl_a), .dll_to_tl_fc_i(dll_tl_a)
+    .clk_i(clk), .rst_ni(rst_n),
+    .free_ph_i(1'b0), .free_pd_i(1'b0),
+    .free_nph_i(1'b0), .free_npd_i(1'b0),
+    .free_cplh_i(1'b0), .free_cpld_i(1'b0),
+    .free_ph_amt_i(8'd0), .free_pd_amt_i(12'd0),
+    .free_nph_amt_i(8'd0), .free_npd_amt_i(12'd0),
+    .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
+    .tl_to_dll_fc_o(tl_a), .dll_to_tl_fc_i(dll_tl_a)
   );
   rivet_tl_fc_stub #(.PH_CRED(8'h11), .NPH_CRED(8'h07)) u_tl_b (
-    .clk_i(clk), .rst_ni(rst_n), .tl_to_dll_fc_o(tl_b), .dll_to_tl_fc_i(dll_tl_b)
+    .clk_i(clk), .rst_ni(rst_n),
+    .free_ph_i(1'b0), .free_pd_i(1'b0),
+    .free_nph_i(1'b0), .free_npd_i(1'b0),
+    .free_cplh_i(1'b0), .free_cpld_i(1'b0),
+    .free_ph_amt_i(8'd0), .free_pd_amt_i(12'd0),
+    .free_nph_amt_i(8'd0), .free_npd_amt_i(12'd0),
+    .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
+    .tl_to_dll_fc_o(tl_b), .dll_to_tl_fc_i(dll_tl_b)
   );
 
   rivet_dll #(.INITFC_GAP_CYC(2)) u_dll_a (
