@@ -313,6 +313,12 @@ package rivet_pkg;
   endfunction
 
 
+  function automatic logic [7:0] rivet_dllp_fc_type_byte(
+      input rivet_dllp_fc_kind_e kind,
+      input logic [2:0] vc);
+    return {kind, 1'b0, vc};
+  endfunction
+
   // Soft request into dllp_tx (before CRC).
   typedef struct packed {
     rivet_dllp_kind_e     kind;
@@ -334,10 +340,43 @@ package rivet_pkg;
     logic                 crc_ok;
   } rivet_dllp_dec_t;
 
-  function automatic logic [7:0] rivet_dllp_fc_type_byte(
-      input rivet_dllp_fc_kind_e kind,
-      input logic [2:0] vc);
-    return {kind, 1'b0, vc};
+  // DLL TLP framing sizes (seq + LCRC around TL payload).
+  localparam int unsigned RIVET_TLP_SEQ_BYTES  = 2;
+  localparam int unsigned RIVET_TLP_LCRC_BYTES = 4;
+
+  function automatic logic [15:0] rivet_tlp_seq_bytes(input logic [11:0] seq);
+    // Byte0: {Rsvd[3:0], Seq[11:8]}; Byte1: Seq[7:0]
+    return {seq[7:0], 4'h0, seq[11:8]};
+  endfunction
+
+  // Combinational LCRC (same algorithm as rivet_dll_lcrc32 streaming core).
+  // Argument width covers default REPLAY_SLOT_BYTES (160).
+  function automatic logic [31:0] rivet_lcrc32_calc(
+      input logic [8*160-1:0] bytes_le, // byte0 in [7:0]
+      input int unsigned      nbytes);
+    logic [31:0] crc;
+    logic [7:0]  b;
+    logic        din;
+    logic        fb;
+    int unsigned bi, bit_i;
+    logic [31:0] c;
+    crc = 32'hFFFF_FFFF;
+    for (bi = 0; bi < nbytes; bi++) begin
+      b = bytes_le[8*bi +: 8];
+      for (bit_i = 0; bit_i < 8; bit_i++) begin
+        din = b[bit_i];
+        fb  = crc[0] ^ din;
+        crc = {1'b0, crc[31:1]};
+        if (fb) crc = crc ^ 32'hEDB88320;
+      end
+    end
+    c = ~crc;
+    return {
+      c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
+      c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23],
+      c[ 8], c[ 9], c[10], c[11], c[12], c[13], c[14], c[15],
+      c[ 0], c[ 1], c[ 2], c[ 3], c[ 4], c[ 5], c[ 6], c[ 7]
+    };
   endfunction
 
   function automatic bit rivet_lanes_legal(int unsigned lanes);

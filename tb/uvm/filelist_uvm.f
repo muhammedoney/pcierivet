@@ -8,6 +8,8 @@ rtl/pcie_ctrl/dll/rivet_dllp_rx.sv
 rtl/pcie_ctrl/dll/rivet_dll_fc.sv
 rtl/pcie_ctrl/dll/rivet_dll_sm.sv
 rtl/pcie_ctrl/dll/rivet_dll_replay.sv
+rtl/pcie_ctrl/dll/rivet_dll_tlp_tx.sv
+rtl/pcie_ctrl/dll/rivet_dll_tlp_rx.sv
 rtl/pcie_ctrl/dll/rivet_dll.sv
 rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv
 rtl/pcie_ctrl/mac/rivet_mac_timer.sv

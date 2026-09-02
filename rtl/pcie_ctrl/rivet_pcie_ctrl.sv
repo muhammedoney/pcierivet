@@ -243,7 +243,16 @@ module rivet_pcie_ctrl #(
     .mac_to_dll_sb_i (mac_to_dll_sb),
     .dll_to_mac_sb_o (dll_to_mac_sb),
     .tl_to_dll_fc_i (tl_to_dll_fc),
-    .dll_to_tl_fc_o (dll_to_tl_fc)
+    .dll_to_tl_fc_o (dll_to_tl_fc),
+    .tl_tlp_valid_i (1'b0),
+    .tl_tlp_ready_o (),
+    .tl_tlp_data_i  ('0),
+    .tl_tlp_len_i   (16'd0),
+    .tl_tlp_rx_valid_o (),
+    .tl_tlp_rx_ready_i (1'b1),
+    .tl_tlp_rx_data_o  (),
+    .tl_tlp_rx_len_o   (),
+    .tl_tlp_rx_seq_o   ()
   );
 
   // PG213 tfc: NP TX credit availability (0 = none … 15 = 15+)

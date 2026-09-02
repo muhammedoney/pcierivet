@@ -70,7 +70,10 @@ module rivet_dll_fc_init_tb;
     .dll_tx_beat_o(tx_a), .dll_tx_valid_o(txv_a), .dll_tx_ready_i(txr_a),
     .dll_rx_beat_i(rx_a), .dll_rx_valid_i(rxv_a), .dll_rx_ready_o(rxr_a),
     .mac_to_dll_sb_i(mac_a), .dll_to_mac_sb_o(dll_mac_a),
-    .tl_to_dll_fc_i(tl_a), .dll_to_tl_fc_o(dll_tl_a)
+    .tl_to_dll_fc_i(tl_a), .dll_to_tl_fc_o(dll_tl_a),
+    .tl_tlp_valid_i(1'b0), .tl_tlp_ready_o(), .tl_tlp_data_i('0), .tl_tlp_len_i(16'd0),
+    .tl_tlp_rx_valid_o(), .tl_tlp_rx_ready_i(1'b1),
+    .tl_tlp_rx_data_o(), .tl_tlp_rx_len_o(), .tl_tlp_rx_seq_o()
   );
 
   rivet_dll #(.INITFC_GAP_CYC(2)) u_dll_b (
@@ -78,7 +81,10 @@ module rivet_dll_fc_init_tb;
     .dll_tx_beat_o(tx_b), .dll_tx_valid_o(txv_b), .dll_tx_ready_i(txr_b),
     .dll_rx_beat_i(rx_b), .dll_rx_valid_i(rxv_b), .dll_rx_ready_o(rxr_b),
     .mac_to_dll_sb_i(mac_b), .dll_to_mac_sb_o(dll_mac_b),
-    .tl_to_dll_fc_i(tl_b), .dll_to_tl_fc_o(dll_tl_b)
+    .tl_to_dll_fc_i(tl_b), .dll_to_tl_fc_o(dll_tl_b),
+    .tl_tlp_valid_i(1'b0), .tl_tlp_ready_o(), .tl_tlp_data_i('0), .tl_tlp_len_i(16'd0),
+    .tl_tlp_rx_valid_o(), .tl_tlp_rx_ready_i(1'b1),
+    .tl_tlp_rx_data_o(), .tl_tlp_rx_len_o(), .tl_tlp_rx_seq_o()
   );
 
   initial clk = 1'b0;

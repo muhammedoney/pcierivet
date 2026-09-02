@@ -78,7 +78,7 @@ module rivet_dll_replay_tb;
 
     ack_seq = 12'h2;
     ack_v = 1'b1;
-    repeat (4) @(posedge clk);
+    @(posedge clk);
     ack_v = 1'b0;
     @(posedge clk);
     if (occ !== 16'd1) begin
