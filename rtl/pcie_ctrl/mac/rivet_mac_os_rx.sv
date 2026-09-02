@@ -387,11 +387,149 @@ module rivet_mac_os_rx #(
     end
   end
 
-  // DLL RX path is not driven yet.
-  assign dll_rx_beat_o  = '0;
-  assign dll_rx_valid_o = 1'b0;
+  // ---------------------------------------------------------------------------
+  // DLLP framing RX (×1 only): SDP + 8 D-bytes + END → one dll_rx beat
+  // ---------------------------------------------------------------------------
+  localparam bit PKT_RX_OK = (LANES == 1) && (PIPE_DATA_WIDTH == 16);
 
-  logic _unused_ok;
-  assign _unused_ok = dll_rx_ready_i;
+  typedef enum logic [1:0] {
+    RX_IDLE = 2'b00,
+    RX_BODY = 2'b01,
+    RX_HOLD = 2'b10
+  } rx_pkt_e;
+
+  rx_pkt_e       rx_pkt_q, rx_pkt_d;
+  logic [63:0]   rx_body_q, rx_body_d;
+  logic [3:0]    rx_cnt_q, rx_cnt_d; // D-bytes captured (0..8)
+  logic          rx_err_pkt_q, rx_err_pkt_d;
+  logic          dll_beat_valid_q, dll_beat_valid_d;
+  rivet_dll_mac_rx_beat_t dll_beat_q, dll_beat_d;
+
+  logic [7:0] sym0, sym1;
+  logic       k0, k1;
+  logic       v0;
+
+  assign sym0 = sym_data_i[7:0];
+  assign sym1 = sym_data_i[15:8];
+  assign k0   = sym_datak_i[0];
+  assign k1   = sym_datak_i[1];
+  assign v0   = sym_valid_i[0];
+
+  always_comb begin
+    rx_pkt_d        = rx_pkt_q;
+    rx_body_d       = rx_body_q;
+    rx_cnt_d        = rx_cnt_q;
+    rx_err_pkt_d    = rx_err_pkt_q;
+    dll_beat_valid_d = dll_beat_valid_q;
+    dll_beat_d      = dll_beat_q;
+
+    if (dll_beat_valid_q && dll_rx_ready_i) dll_beat_valid_d = 1'b0;
+
+    if (PKT_RX_OK && v0 && lane_en_i[0]) begin
+      unique case (rx_pkt_q)
+        RX_IDLE: begin
+          if (k0 && (sym0 == RIVET_SYM_SDP) && !k1) begin
+            rx_pkt_d     = RX_BODY;
+            rx_body_d    = {56'b0, sym1};
+            rx_cnt_d     = 4'd1;
+            rx_err_pkt_d = 1'b0;
+          end else if (k0 && (sym0 == RIVET_SYM_SDP) && k1 && (sym1 == RIVET_SYM_END)) begin
+            // Illegal empty — drop
+            rx_pkt_d = RX_IDLE;
+          end
+        end
+        RX_BODY: begin
+          // Consume up to 2 symbols per cycle toward 8 data bytes, then END.
+          automatic logic [3:0] c = rx_cnt_q;
+          automatic logic [63:0] b = rx_body_q;
+          automatic logic        err = rx_err_pkt_q;
+          automatic logic        done = 1'b0;
+          automatic logic        nullified = 1'b0;
+
+          for (int unsigned s = 0; s < SYMS; s++) begin
+            automatic logic [7:0] sy = (s == 0) ? sym0 : sym1;
+            automatic logic       ky = (s == 0) ? k0 : k1;
+            if (done) begin
+              // ignore trailing symbol in same beat
+            end else if (c < 4'd8) begin
+              if (ky) begin
+                err  = 1'b1;
+                done = 1'b1;
+              end else begin
+                b[8*c +: 8] = sy;
+                c = c + 4'd1;
+              end
+            end else begin
+              // expect END / EDB
+              if (ky && (sy == RIVET_SYM_END)) begin
+                done = 1'b1;
+              end else if (ky && (sy == RIVET_SYM_EDB)) begin
+                nullified = 1'b1;
+                done      = 1'b1;
+              end else begin
+                err  = 1'b1;
+                done = 1'b1;
+              end
+            end
+          end
+
+          rx_body_d    = b;
+          rx_cnt_d     = c;
+          rx_err_pkt_d = err;
+
+          if (done) begin
+            if (!dll_beat_valid_q || dll_rx_ready_i) begin
+              dll_beat_d.data     = b;
+              dll_beat_d.keep     = 8'hFF;
+              dll_beat_d.sop      = 1'b1;
+              dll_beat_d.eop      = 1'b1;
+              dll_beat_d.err      = err | nullified;
+              dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
+              dll_beat_valid_d    = 1'b1;
+              rx_pkt_d            = RX_IDLE;
+              rx_cnt_d            = 4'd0;
+            end else begin
+              rx_pkt_d = RX_HOLD;
+            end
+          end
+        end
+        RX_HOLD: begin
+          if (dll_rx_ready_i) begin
+            dll_beat_d.data     = rx_body_q;
+            dll_beat_d.keep     = 8'hFF;
+            dll_beat_d.sop      = 1'b1;
+            dll_beat_d.eop      = 1'b1;
+            dll_beat_d.err      = rx_err_pkt_q;
+            dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
+            dll_beat_valid_d    = 1'b1;
+            rx_pkt_d            = RX_IDLE;
+            rx_cnt_d            = 4'd0;
+          end
+        end
+        default: rx_pkt_d = RX_IDLE;
+      endcase
+    end
+  end
+
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      rx_pkt_q         <= RX_IDLE;
+      rx_body_q        <= '0;
+      rx_cnt_q         <= '0;
+      rx_err_pkt_q     <= 1'b0;
+      dll_beat_valid_q <= 1'b0;
+      dll_beat_q       <= '0;
+    end else begin
+      rx_pkt_q         <= rx_pkt_d;
+      rx_body_q        <= rx_body_d;
+      rx_cnt_q         <= rx_cnt_d;
+      rx_err_pkt_q     <= rx_err_pkt_d;
+      dll_beat_valid_q <= dll_beat_valid_d;
+      dll_beat_q       <= dll_beat_d;
+    end
+  end
+
+  assign dll_rx_beat_o  = dll_beat_q;
+  assign dll_rx_valid_o = dll_beat_valid_q;
 
 endmodule : rivet_mac_os_rx

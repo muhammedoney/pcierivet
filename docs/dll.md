@@ -329,8 +329,8 @@ Folder README stays thin; this file is the checklist.
 
 ### D0 — Types, CRC16, DLLP codec (no wire yet)
 
+- [x] `rivet_dll_crc16` + Verilator TB (`scripts/sim_dll_crc16.ps1`)
 - [ ] Parameter `DLL_DATA_W` (lane-linked) + widen / parameterize beats if needed  
-- [ ] `rivet_dll_crc16` + directed tests (known vectors from Base examples / self-check)  
 - [ ] `rivet_dllp_tx` / `rivet_dllp_rx` for FC + Ack encodings (Ack path dormant)  
 - [ ] TL↔DLL FC sideband structs; TL stub module with parameterized CA  
 - [ ] Gate: Verilator unit TB for CRC + round-trip DLLP encode/decode  

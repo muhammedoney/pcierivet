@@ -191,16 +191,14 @@ the loop stays honest against a real Root Port.
 | Item | State | Why the DLL needs it |
 |------|-------|----------------------|
 | Scrambler / descrambler | Present (M2 start) | §6.1; Config.Idle + every TLP/DLLP byte |
-| STP / SDP / END / EDB framing | Missing | The DLL hands us sequence number + LCRC; delimiting the packet on the wire is ours |
-| Byte striping / un-striping | Missing | ×2/×4 need STP on the right Lane and bytes spread round-robin (§4.2.2) |
-| SKP scheduling in L0 (`rivet_mac_skp`) | Missing | SKP OS every 1180–1538 Symbol Times, never inside a packet; the PHY elastic buffer depends on it |
-| Real lane-to-lane deskew | Hook only | Striped data cannot be reassembled without it |
-| Descrambled-`00h` Idle detect | Done | `rivet_mac_os_rx` counts descrambled `00h` |
+| STP / SDP / END / EDB framing | **SDP×1 done** (STP/EDB/multi-lane later) | DLLP delimiters |
+| Byte striping / un-striping | Missing (×1 only for packets) | ×2/×4 |
+| SKP scheduling in L0 (`rivet_mac_skp`) | Missing | SKP OS every 1180–1538 Symbol Times |
+| Real lane-to-lane deskew | Hook only | Striped data reassembly |
+| Descrambled-`00h` Idle detect | Done | `rivet_mac_os_rx` |
 
-`rivet_mac_os_tx` / `rivet_mac_os_rx` already carry the DLL ports, but they are
-tied off (`dll_tx_ready_o = 1'b0`, `dll_rx_valid_o = 1'b0`) — there is no packet
-datapath through the MAC yet, only the training path.
-
+`rivet_mac_os_tx` / `rivet_mac_os_rx`: ×1 DLLP path untied when `pkt_en` (L0
+`accept_dll_tlp`). Verilator: `scripts/sim_sdp_loop.ps1`.
 ---
 
 ## 7. Lane matrix
@@ -320,11 +318,11 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 - [x] `rivet_mac_scrambler` / `rivet_mac_descrambler` (per Lane, COM-seeded, SKP does not advance, K and TS bypass)
 - [x] Scramble Logical Idle, and switch Idle detection to descrambled `00h`
 - [x] Extend the smoke peer to scramble Idle so the loop stays honest
-- [ ] STP/SDP/END/EDB framing insert + strip
-- [ ] Byte striping / un-striping and real deskew for ×2/×4
+- [x] **SDP + END framing for DLLP on ×1** (`os_tx` / `os_rx`); STP/EDB/stripe later
+- [x] Untie `dll_tx_ready_o` / `dll_rx_valid_o` for ×1 DLLP in L0
+- [ ] STP/EDB + byte striping / un-striping for ×2/×4
 - [ ] `rivet_mac_skp` — SKP OS every 1180–1538 Symbol Times, never mid-packet
-- [ ] Untie `dll_tx_ready_o` / `dll_rx_valid_o`; pass-through / idle DLLP hooks in L0
-- [ ] Keep ×2/×4 smokes elaborating after framing lands
+- [ ] Keep ×2/×4 packet smokes after striping lands
 
 ### M3 — Lane grow
 
