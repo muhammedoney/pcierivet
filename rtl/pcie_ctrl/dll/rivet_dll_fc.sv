@@ -36,6 +36,7 @@ module rivet_dll_fc #(
   fc_state_e state_q, state_d;
 
   rivet_fc_credit_set_t cl_q, cl_d;
+  rivet_fc_credit_set_t cc_q, cc_d;
   logic got_i1_p_q, got_i1_np_q, got_i1_cpl_q;
   logic got_i1_p_d, got_i1_np_d, got_i1_cpl_d;
   logic got_i2_p_q, got_i2_np_q, got_i2_cpl_q;
@@ -174,6 +175,7 @@ module rivet_dll_fc #(
   always_comb begin
     state_d        = state_q;
     cl_d           = cl_q;
+    cc_d           = cc_q;
     got_i1_p_d     = got_i1_p_q;
     got_i1_np_d    = got_i1_np_q;
     got_i1_cpl_d   = got_i1_cpl_q;
@@ -189,6 +191,7 @@ module rivet_dll_fc #(
 
     if (!mac_sb_i.accept_dll_tlp) begin
       state_d       = ST_IDLE;
+      cc_d          = '0;
       got_i1_p_d    = 1'b0;
       got_i1_np_d   = 1'b0;
       got_i1_cpl_d  = 1'b0;
@@ -218,6 +221,26 @@ module rivet_dll_fc #(
           default: ;
         endcase
       end
+
+      // TL consume bumps CC when gate allows (API for future TLP TX).
+      if (tl_fc_i.consume_ph &&
+          rivet_fc_hdr_ok(cl_q.ph, cc_q.ph, cl_q.ph_inf, tl_fc_i.consume_ph_amt))
+        cc_d.ph = cc_q.ph + tl_fc_i.consume_ph_amt;
+      if (tl_fc_i.consume_pd &&
+          rivet_fc_data_ok(cl_q.pd, cc_q.pd, cl_q.pd_inf, tl_fc_i.consume_pd_amt))
+        cc_d.pd = cc_q.pd + tl_fc_i.consume_pd_amt;
+      if (tl_fc_i.consume_nph &&
+          rivet_fc_hdr_ok(cl_q.nph, cc_q.nph, cl_q.nph_inf, tl_fc_i.consume_nph_amt))
+        cc_d.nph = cc_q.nph + tl_fc_i.consume_nph_amt;
+      if (tl_fc_i.consume_npd &&
+          rivet_fc_data_ok(cl_q.npd, cc_q.npd, cl_q.npd_inf, tl_fc_i.consume_npd_amt))
+        cc_d.npd = cc_q.npd + tl_fc_i.consume_npd_amt;
+      if (tl_fc_i.consume_cplh &&
+          rivet_fc_hdr_ok(cl_q.cplh, cc_q.cplh, cl_q.cplh_inf, tl_fc_i.consume_cplh_amt))
+        cc_d.cplh = cc_q.cplh + tl_fc_i.consume_cplh_amt;
+      if (tl_fc_i.consume_cpld &&
+          rivet_fc_data_ok(cl_q.cpld, cc_q.cpld, cl_q.cpld_inf, tl_fc_i.consume_cpld_amt))
+        cc_d.cpld = cc_q.cpld + tl_fc_i.consume_cpld_amt;
 
       // TL credit-return pulses schedule UpdateFC for that traffic class.
       if (tl_fc_i.ph_freed || tl_fc_i.pd_freed) pend_p_d = 1'b1;
@@ -285,6 +308,7 @@ module rivet_dll_fc #(
     if (!rst_ni) begin
       state_q       <= ST_IDLE;
       cl_q          <= '0;
+      cc_q          <= '0;
       got_i1_p_q    <= 1'b0;
       got_i1_np_q   <= 1'b0;
       got_i1_cpl_q  <= 1'b0;
@@ -300,6 +324,7 @@ module rivet_dll_fc #(
     end else begin
       state_q       <= state_d;
       cl_q          <= cl_d;
+      cc_q          <= cc_d;
       got_i1_p_q    <= got_i1_p_d;
       got_i1_np_q   <= got_i1_np_d;
       got_i1_cpl_q  <= got_i1_cpl_d;
@@ -315,8 +340,40 @@ module rivet_dll_fc #(
     end
   end
 
-  assign dll_tl_fc_o.cl           = cl_q;
-  assign dll_tl_fc_o.fc_init_done = (state_q == ST_ACTIVE);
-  assign dll_tl_fc_o.dl_active    = (state_q == ST_ACTIVE);
+  rivet_fc_credit_set_t av_c;
+  always_comb begin
+    av_c = '0;
+    av_c.ph_inf   = cl_q.ph_inf;
+    av_c.pd_inf   = cl_q.pd_inf;
+    av_c.nph_inf  = cl_q.nph_inf;
+    av_c.npd_inf  = cl_q.npd_inf;
+    av_c.cplh_inf = cl_q.cplh_inf;
+    av_c.cpld_inf = cl_q.cpld_inf;
+    av_c.ph   = cl_q.ph_inf   ? 8'h00  : (cl_q.ph   - cc_q.ph);
+    av_c.pd   = cl_q.pd_inf   ? 12'h000 : (cl_q.pd   - cc_q.pd);
+    av_c.nph  = cl_q.nph_inf  ? 8'h00  : (cl_q.nph  - cc_q.nph);
+    av_c.npd  = cl_q.npd_inf  ? 12'h000 : (cl_q.npd  - cc_q.npd);
+    av_c.cplh = cl_q.cplh_inf ? 8'h00  : (cl_q.cplh - cc_q.cplh);
+    av_c.cpld = cl_q.cpld_inf ? 12'h000 : (cl_q.cpld - cc_q.cpld);
+  end
+
+  assign dll_tl_fc_o.cl            = cl_q;
+  assign dll_tl_fc_o.cc            = cc_q;
+  assign dll_tl_fc_o.av            = av_c;
+  assign dll_tl_fc_o.fc_init_done  = (state_q == ST_ACTIVE);
+  assign dll_tl_fc_o.dl_active     = (state_q == ST_ACTIVE);
+  assign dll_tl_fc_o.tx_gate_ready = (state_q == ST_ACTIVE);
+  assign dll_tl_fc_o.ph_ok =
+      rivet_fc_hdr_ok(cl_q.ph, cc_q.ph, cl_q.ph_inf, 8'd1);
+  assign dll_tl_fc_o.pd_ok =
+      rivet_fc_data_ok(cl_q.pd, cc_q.pd, cl_q.pd_inf, 12'd1);
+  assign dll_tl_fc_o.nph_ok =
+      rivet_fc_hdr_ok(cl_q.nph, cc_q.nph, cl_q.nph_inf, 8'd1);
+  assign dll_tl_fc_o.npd_ok =
+      rivet_fc_data_ok(cl_q.npd, cc_q.npd, cl_q.npd_inf, 12'd1);
+  assign dll_tl_fc_o.cplh_ok =
+      rivet_fc_hdr_ok(cl_q.cplh, cc_q.cplh, cl_q.cplh_inf, 8'd1);
+  assign dll_tl_fc_o.cpld_ok =
+      rivet_fc_data_ok(cl_q.cpld, cc_q.cpld, cl_q.cpld_inf, 12'd1);
 
 endmodule : rivet_dll_fc

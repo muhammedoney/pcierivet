@@ -181,6 +181,14 @@ module rivet_ltssm_smoke_tb;
     .pcie_tfc_nph_av          (pcie_tfc_nph_av),
     .pcie_tfc_npd_av          (pcie_tfc_npd_av),
 
+    .cfg_fc_ph                (),
+    .cfg_fc_pd                (),
+    .cfg_fc_nph               (),
+    .cfg_fc_npd               (),
+    .cfg_fc_cplh              (),
+    .cfg_fc_cpld              (),
+    .cfg_fc_sel               (3'b100),
+
     .cfg_mgmt_addr            ('0),
     .cfg_mgmt_function_number ('0),
     .cfg_mgmt_write           (1'b0),

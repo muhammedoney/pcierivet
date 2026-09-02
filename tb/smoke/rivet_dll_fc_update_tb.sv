@@ -41,6 +41,12 @@ module rivet_dll_fc_update_tb;
     .free_ph_amt_i(8'd2), .free_pd_amt_i(12'd0),
     .free_nph_amt_i(8'd1), .free_npd_amt_i(12'd0),
     .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
+    .consume_ph_i(1'b0), .consume_pd_i(1'b0),
+    .consume_nph_i(1'b0), .consume_npd_i(1'b0),
+    .consume_cplh_i(1'b0), .consume_cpld_i(1'b0),
+    .consume_ph_amt_i(8'd0), .consume_pd_amt_i(12'd0),
+    .consume_nph_amt_i(8'd0), .consume_npd_amt_i(12'd0),
+    .consume_cplh_amt_i(8'd0), .consume_cpld_amt_i(12'd0),
     .tl_to_dll_fc_o(tl_a), .dll_to_tl_fc_i(dll_tl_a)
   );
 
@@ -52,6 +58,12 @@ module rivet_dll_fc_update_tb;
     .free_ph_amt_i(8'd0), .free_pd_amt_i(12'd0),
     .free_nph_amt_i(8'd0), .free_npd_amt_i(12'd0),
     .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
+    .consume_ph_i(1'b0), .consume_pd_i(1'b0),
+    .consume_nph_i(1'b0), .consume_npd_i(1'b0),
+    .consume_cplh_i(1'b0), .consume_cpld_i(1'b0),
+    .consume_ph_amt_i(8'd0), .consume_pd_amt_i(12'd0),
+    .consume_nph_amt_i(8'd0), .consume_npd_amt_i(12'd0),
+    .consume_cplh_amt_i(8'd0), .consume_cpld_amt_i(12'd0),
     .tl_to_dll_fc_o(tl_b), .dll_to_tl_fc_i(dll_tl_b)
   );
 
