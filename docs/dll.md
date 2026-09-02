@@ -62,17 +62,26 @@ figures into the repo.
 ## 2. DL feature states (DLL view)
 
 Physical Layer reaching L0 (`link_up`, `accept_dll_tlp`) is necessary but not
-sufficient for TLP traffic. Data Link then roughly:
+sufficient for TLP traffic. Rivet owns an explicit **Data Link SM** (do not
+collapse into FC-only logic):
 
 ```text
-  DL_Inactive → DL_Feature (omit / stub for Gen2 EP VC0) → DL_Init
-       → FC_INIT1 (exchange InitFC1) → FC_INIT2 (exchange InitFC2)
-       → DL_Active  (UpdateFC + later TLP/ACK)
+  DL_Inactive  — !accept_dll_tlp / !link_up; clear seq / freeze replay
+       ↓ accept
+  DL_Init      — FC_INIT1 → FC_INIT2 (rivet_dll_fc); no application TLP
+       ↓ fc_init_done
+  DL_Active    — UpdateFC + TLP TX/RX + ACK/NAK; REPLAY_TIMER armed
+       ↓ NAK or REPLAY_TIMER expiry (while Active)
+  DL_Replay    — retransmit from replay buffer; then return to Active
+       ↓ accept drops / REPLAY_NUM overflow → LTSSM retrain hint
+  DL_Inactive
 ```
 
-Rivet Phase-1 focus: **VC0 only**, autonomous hardware init (no software VC enable).
-Exit / re-init when MAC drops `accept_dll_tlp` / `link_up` (replay freeze already
-on sideband).
+`DL_Feature` (Gen2 EP VC0) is **omitted / stubbed**. Exit / re-init when MAC
+drops `accept_dll_tlp` / `link_up` (`replay_freeze` already on sideband).
+
+FC SM (`rivet_dll_fc`) remains nested under `DL_Init` / `DL_Active`. Reliability
+(seq, LCRC, ACK/NAK, replay) runs only in `DL_Active` / `DL_Replay`.
 
 ---
 
@@ -311,17 +320,40 @@ Internal DLL counters remain authoritative; these ports are a **projection**.
 
 ```text
 rivet_dll
-├── rivet_dll_crc16          # DLLP CRC (streaming)
-├── rivet_dll_lcrc32         # TLP LCRC (streaming) — after FC milestones
-├── rivet_dllp_tx            # Serialize DLLP + CRC; arb vs TLP later
+├── rivet_dll_sm             # DL_Inactive / Init / Active / Replay
+├── rivet_dll_crc16          # DLLP CRC
+├── rivet_dll_lcrc32         # TLP LCRC (seq + TLP bytes)
+├── rivet_dllp_tx            # Serialize DLLP + CRC; arb vs TLP
 ├── rivet_dllp_rx            # Parse DLLP; CRC check; demux by type
-├── rivet_dll_fc             # CA/CL/CC, InitFC1/2 SM, UpdateFC scheduler
-├── rivet_dll_tlp_tx         # Seq#, LCRC append, replay push (later)
-├── rivet_dll_tlp_rx         # LCRC/seq check, ACK/NAK request (later)
-└── rivet_dll_replay         # Retry buffer (later)
+├── rivet_dll_fc             # CA/CL/CC, InitFC1/2, UpdateFC
+├── rivet_dll_tlp_tx         # Seq#, LCRC append, replay push
+├── rivet_dll_tlp_rx         # LCRC/seq check, ACK/NAK request
+└── rivet_dll_replay         # Retry buffer (parametric)
 ```
 
 Folder README stays thin; this file is the checklist.
+
+### 8.1 Replay buffer sizing (locked for Phase 1)
+
+Spec does **not** mandate a fixed byte count. Size so the buffer can hold all
+in-flight TLPs for one ACK round-trip without stalling under max payload:
+
+```text
+depth_bytes ≈ f(LANES, wire_rate, MPS, AckLatency, InternalDelay, SafetyFactor)
+```
+
+| Knob | Phase-1 default |
+|------|-----------------|
+| Wire rate | Gen1 training / L0 (2.5 GT/s) until Recovery.Speed exists |
+| `LANES` | 1 / 2 / 4 |
+| `MPS_BYTES` | **128** (cfg may raise later) |
+| `REPLAY_TLP_SLOTS` | **16** (sim-friendly; each slot holds one max TLP) |
+| `REPLAY_SLOT_BYTES` | `MPS_BYTES + 32` (seq + hdr + LCRC + margin) |
+| Safety | ~1.5–2× vs theoretical AckLatency occupancy |
+| REPLAY_TIMER | ~3× AckLatency band (exact Base table later) |
+
+Override via module parameters. Too small → early TX stall; too large → BRAM
+only. Directed tests may shrink slots (e.g. 4) for fast fill/starve cases.
 
 ---
 
@@ -360,10 +392,22 @@ Folder README stays thin; this file is the checklist.
 - [x] Gate: Verilator `sim_dll_fc_gate` (starve → peer UpdateFC restore)  
 - [x] Gate: Questa `smoke_gen2_x1` + `ltssm_l0_gen2_x{1,2,4}`  
 
-### D4 — TLP reliability (after framing + FC proven)
+### D4 — TLP reliability (DL SM + ACK/NAK + replay)
 
-- [ ] Seq# / LCRC TX+RX, ACK/NAK DLLPs, replay buffer  
-- [ ] Only then enable real TL TLP transfer  
+Split: **D4a** infrastructure → **D4b** on-wire TLP path.
+
+#### D4a — SM, LCRC, replay core (no full TL yet)
+
+- [x] `rivet_dll_sm`: Inactive / Init / Active / Replay  
+- [x] `rivet_dll_lcrc32` + Verilator TB  
+- [x] `rivet_dll_replay` parametric slots; ACK purge / NAK replay API  
+- [x] Gate: Verilator LCRC + SM + replay + FC regress; Questa smoke + L0  
+
+#### D4b — Seq/LCRC on TLP beats + ACK/NAK scheduling
+
+- [ ] `rivet_dll_tlp_tx` / `rivet_dll_tlp_rx`  
+- [ ] ACK/NAK DLLP schedule from RX; REPLAY_TIMER / REPLAY_NUM  
+- [ ] Gate: dual-DLL TLP + ACK purge / NAK replay; then real TL hook (D5)  
 
 ### D5 — Hook full TL
 
@@ -408,6 +452,8 @@ Scoreboard hooks: DLLP type timeline, CA/CL/CC snapshots, `fc_init_done`.
 | MAC SDP | Parallel with DLL D0; required for on-wire D1 |
 | Smoke credits | P/NP large finite; **CPL infinite** |
 | Finite CPL mode | Deferred (switch / P2P RC only) |
+| Replay depth | Parametric; default **16×(MPS+32)** @ MPS=128 |
+| DL SM | Explicit Inactive/Init/Active/Replay (not FC-only) |
 
 Still pick at D0 RTL: internal `keep` byte vs DW granularity on DLL↔MAC beats.
 
