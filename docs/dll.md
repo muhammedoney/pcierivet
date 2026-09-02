@@ -267,7 +267,7 @@ Defined today in `rivet_pkg` + `rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv`:
 | DLL TX → MAC | `data/keep/sop/eop/pkt_type` — DLLP or TLP bytes **after** DLLP-CRC or LCRC |
 | MAC RX → DLL | Same + `err` (framing / symbol abort) |
 | MAC → DLL SB | `link_up`, `ltssm_state`, width/speed, `accept_dll_tlp`, `replay_freeze` |
-| DLL → MAC SB | `replay_timer_expired`, `nak_storm`, `tx_idle_req` (grow later) |
+| DLL → MAC SB | `dl_up`, `replay_timer_expired`, `nak_storm`, `tx_idle_req` |
 
 **Prerequisite:** MAC M2 framing (SDP for DLLP, STP/END for TLP) + L0 datapath
 untie. Until then DLL can be unit-tested against a behavioral MAC harness.
@@ -285,7 +285,7 @@ Full TL TLP path is **later**. For FC we still need a thin TL credit face:
   rx_credits_freed_*        →   bump CA + schedule UpdateFC
   tx_credits_available_*    ←   from CL − CC (gate)
   tx_tlp_consume_*          →   bump CC when a TLP is accepted (later)
-  fc_init_done / dl_active  ←   status
+  fc_init_done / dl_up / dl_active  ←   status (dl_* from DL SM)
 ```
 
 Suggested types (names illustrative — finalize in `rivet_pkg` or `rivet_dll_pkg`):
@@ -320,12 +320,14 @@ Internal DLL counters remain authoritative; these ports are a **projection**.
 
 ```text
 rivet_dll
-├── rivet_dll_sm             # DL_Inactive / Init / Active / Replay
+├── rivet_dll_sm             # DL_Inactive / Init / Active / Replay (+ dl_up)
 ├── rivet_dll_crc16          # DLLP CRC
 ├── rivet_dll_lcrc32         # TLP LCRC (seq + TLP bytes)
 ├── rivet_dllp_tx            # Serialize DLLP + CRC; arb vs TLP
 ├── rivet_dllp_rx            # Parse DLLP; CRC check; demux by type
 ├── rivet_dll_fc             # CA/CL/CC, InitFC1/2, UpdateFC
+├── rivet_dll_tl_pack        # TL AXI-ST-like → whole TLP payload
+├── rivet_dll_tl_unpack      # whole TLP payload → TL AXI-ST-like
 ├── rivet_dll_tlp_tx         # Seq#, LCRC append, replay push
 ├── rivet_dll_tlp_rx         # LCRC/seq check, ACK/NAK request
 └── rivet_dll_replay         # Retry buffer (parametric)
@@ -408,11 +410,15 @@ Split: **D4a** infrastructure → **D4b** on-wire TLP path.
 - [x] `rivet_dll_tlp_tx` / `rivet_dll_tlp_rx`  
 - [x] ACK/NAK DLLP schedule from RX; REPLAY_TIMER / REPLAY_NUM  
 - [x] Gate: dual-DLL TLP + ACK purge / NAK replay (`scripts/sim_dll_tlp_ack.ps1`)  
-- [ ] Full streaming TL AXI-ST hook (D5)  
+- [x] Streaming TL AXI-ST-like hook (D5)  
 
-### D5 — Hook full TL
+### D5 — Hook TL stream
 
-- [ ] Discuss when D1–D3 green; see `rtl/pcie_ctrl/tl/README.md`  
+- [x] `rivet_dll_tl_pack` / `rivet_dll_tl_unpack` (64-bit byte-keep stream)  
+- [x] `dl_up` / `dl_active` from DL SM (MAC + TL sidebands)  
+- [x] Gate: Verilator `sim_dll_tl_stream` + `sim_dll_tlp_ack` (stream ports)  
+- [x] Gate: Questa `smoke_gen2_x1` + `ltssm_l0_gen2_x{1,2,4}` when available  
+- [ ] User AXI-ST CQ/CC/RQ/RC assemble/decode (TL proper; beyond DLL stream)  
 
 **MAC dependency:** D1 on-wire needs MAC M2 SDP (and later STP). Prefer parallel
 tracks: D0 CRC/DLLP offline while MAC framing is built.
@@ -454,12 +460,13 @@ Scoreboard hooks: DLLP type timeline, CA/CL/CC snapshots, `fc_init_done`.
 | Smoke credits | P/NP large finite; **CPL infinite** |
 | Finite CPL mode | Deferred (switch / P2P RC only) |
 | Replay depth | Parametric; default **16×(MPS+32)** @ MPS=128 |
-| DL SM | Explicit Inactive/Init/Active/Replay (not FC-only) |
+| DL SM | Explicit Inactive/Init/Active/Replay (not FC-only); `dl_up` = Active\|Replay |
 
 Still pick at D0 RTL: internal `keep` byte vs DW granularity on DLL↔MAC beats.
 
-D4b notes: whole-TLP inject ports on `rivet_dll` (`tl_tlp_*`) are the D4b smoke
-API; D5 replaces them with streaming AXI-ST from TL.
+D5 notes: `rivet_dll` exposes a 64-bit TL↔DLL stream (`tl_tx_*` / `tl_rx_*` +
+`tl_rx_seq`). Pack/unpack sits above whole-TLP seq/LCRC path. User CQ/CC/RQ/RC
+header formatting remains a TL milestone.
 
 ---
 

@@ -12,7 +12,7 @@ module rivet_dll_sm_tb;
   rivet_mac_dll_sb_t mac;
   logic fc_done, replay_req, replay_done;
   rivet_dl_state_e state;
-  logic tlp_en, replay_en, fc_en;
+  logic dl_up, tlp_en, replay_en, fc_en;
 
   rivet_dll_sm u_dut (
     .pclk_i(clk), .rst_ni(rst_n),
@@ -21,6 +21,7 @@ module rivet_dll_sm_tb;
     .replay_req_i(replay_req),
     .replay_done_i(replay_done),
     .state_o(state),
+    .dl_up_o(dl_up),
     .tlp_tx_en_o(tlp_en),
     .replay_en_o(replay_en),
     .fc_en_o(fc_en)
@@ -49,24 +50,24 @@ module rivet_dll_sm_tb;
     fc_done = 1'b1;
     @(posedge clk);
     @(posedge clk);
-    if (state !== RIVET_DL_ACTIVE || !tlp_en) $fatal(1, "expect Active");
+    if (state !== RIVET_DL_ACTIVE || !tlp_en || !dl_up) $fatal(1, "expect Active+dl_up");
 
     replay_req = 1'b1;
     @(posedge clk);
     replay_req = 1'b0;
     @(posedge clk);
-    if (state !== RIVET_DL_REPLAY || !replay_en) $fatal(1, "expect Replay");
+    if (state !== RIVET_DL_REPLAY || !replay_en || !dl_up) $fatal(1, "expect Replay+dl_up");
 
     replay_done = 1'b1;
     @(posedge clk);
     replay_done = 1'b0;
     @(posedge clk);
-    if (state !== RIVET_DL_ACTIVE) $fatal(1, "expect Active after replay");
+    if (state !== RIVET_DL_ACTIVE || !dl_up) $fatal(1, "expect Active after replay");
 
     mac.accept_dll_tlp = 1'b0;
     @(posedge clk);
     @(posedge clk);
-    if (state !== RIVET_DL_INACTIVE) $fatal(1, "expect Inactive on drop");
+    if (state !== RIVET_DL_INACTIVE || dl_up) $fatal(1, "expect Inactive on drop");
 
     $display("PASS: rivet_dll_sm_tb");
     $finish;

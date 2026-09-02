@@ -171,6 +171,7 @@ package rivet_pkg;
 
   // DLL -> MAC/LTSSM control sideband.
   typedef struct packed {
+    logic                 dl_up;                 // Active or Replay
     logic                 replay_timer_expired;
     logic                 nak_storm;
     logic                 tx_idle_req;
@@ -254,13 +255,14 @@ package rivet_pkg;
     logic [11:0]          consume_cpld_amt;
   } rivet_tl_dll_fc_sb_t;
 
-  // DLL -> TL: peer CL, consumed, available, gate status.
+  // DLL -> TL: peer CL, consumed, available, gate status + DL feature status.
   typedef struct packed {
     rivet_fc_credit_set_t cl;
     rivet_fc_credit_set_t cc;
     rivet_fc_credit_set_t av; // CL-CC (finite); *_inf mirrors CL infinite
     logic                 fc_init_done;
-    logic                 dl_active;
+    logic                 dl_up;         // DL SM Active or Replay (from rivet_dll)
+    logic                 dl_active;     // alias of dl_up (TL readiness)
     logic                 tx_gate_ready; // fc_init_done; TLP TX may use av
     logic                 ph_ok;         // >=1 hdr credit (or inf)
     logic                 pd_ok;
@@ -269,6 +271,10 @@ package rivet_pkg;
     logic                 cplh_ok;
     logic                 cpld_ok;
   } rivet_dll_tl_fc_sb_t;
+
+  // TL <-> DLL TLP stream (internal; not user AXI-ST). Byte-granular keep.
+  localparam int unsigned RIVET_TL_DLL_DATA_W  = 64;
+  localparam int unsigned RIVET_TL_DLL_KEEP_W  = RIVET_TL_DLL_DATA_W / 8;
 
   // PG213 cfg_fc_sel (UltraScale+ Table 32 subset we implement).
   localparam logic [2:0] RIVET_CFG_FC_SEL_RX_AVAIL  = 3'b000;
