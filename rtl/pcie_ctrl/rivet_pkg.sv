@@ -176,6 +176,14 @@ package rivet_pkg;
     logic                 tx_idle_req;
   } rivet_dll_mac_sb_t;
 
+  // Data Link feature SM states (D4).
+  typedef enum logic [1:0] {
+    RIVET_DL_INACTIVE = 2'd0,
+    RIVET_DL_INIT     = 2'd1,
+    RIVET_DL_ACTIVE   = 2'd2,
+    RIVET_DL_REPLAY   = 2'd3
+  } rivet_dl_state_e;
+
   // -------------------------------------------------------------------------
   // DLLP / flow-control types (Base 2.1 §3.4). DLLP is always an 8-byte beat on
   // the DLL↔MAC IF (fits in the 64-bit beat). Link wire rate LANES*PIPE_DATA_W

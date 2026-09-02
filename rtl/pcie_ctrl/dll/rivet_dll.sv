@@ -1,13 +1,15 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Data Link Layer top: DLLP codec + VC0 InitFC / UpdateFC (D2).
+// Data Link Layer top: FC + DL SM (D4a). TLP path / replay wire-up is D4b.
 
 module rivet_dll #(
   parameter int unsigned LANES            = 1,
   parameter int unsigned PIPE_DATA_WIDTH  = 16,
   parameter int unsigned INITFC_GAP_CYC   = 8,
-  parameter int unsigned UPDATEFC_GAP_CYC = 32
+  parameter int unsigned UPDATEFC_GAP_CYC = 32,
+  parameter int unsigned REPLAY_TLP_SLOTS = 16,
+  parameter int unsigned REPLAY_SLOT_BYTES = 160
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
@@ -42,6 +44,31 @@ module rivet_dll #(
   logic            dec_valid;
   logic            dec_ready;
 
+  rivet_dll_tl_fc_sb_t fc_sb;
+  rivet_dl_state_e     dl_state;
+  logic                tlp_tx_en;
+  logic                replay_en;
+  logic                fc_en;
+  logic                replay_req;
+  logic                replay_done;
+
+  // D4a: no NAK/timer source yet — held idle (D4b).
+  assign replay_req  = 1'b0;
+  assign replay_done = 1'b0;
+
+  rivet_dll_sm u_sm (
+    .pclk_i          (pclk_i),
+    .rst_ni          (rst_ni),
+    .mac_sb_i        (mac_to_dll_sb_i),
+    .fc_init_done_i  (fc_sb.fc_init_done),
+    .replay_req_i    (replay_req),
+    .replay_done_i   (replay_done),
+    .state_o         (dl_state),
+    .tlp_tx_en_o     (tlp_tx_en),
+    .replay_en_o     (replay_en),
+    .fc_en_o         (fc_en)
+  );
+
   rivet_dll_fc #(
     .INITFC_GAP_CYC   (INITFC_GAP_CYC),
     .UPDATEFC_GAP_CYC (UPDATEFC_GAP_CYC)
@@ -56,14 +83,16 @@ module rivet_dll #(
     .dec_i        (dec),
     .dec_valid_i  (dec_valid),
     .dec_ready_o  (dec_ready),
-    .dll_tl_fc_o  (dll_to_tl_fc_o)
+    .dll_tl_fc_o  (fc_sb)
   );
+
+  assign dll_to_tl_fc_o = fc_sb;
 
   rivet_dllp_tx u_dllp_tx (
     .clk_i        (pclk_i),
     .rst_ni       (rst_ni),
     .req_i        (req),
-    .req_valid_i  (req_valid),
+    .req_valid_i  (req_valid && fc_en),
     .req_ready_o  (req_ready),
     .beat_o       (dll_tx_beat_o),
     .beat_valid_o (dll_tx_valid_o),
@@ -84,6 +113,7 @@ module rivet_dll #(
   assign dll_to_mac_sb_o = '0;
 
   logic _unused;
-  assign _unused = |PIPE_DATA_WIDTH;
+  assign _unused = |PIPE_DATA_WIDTH | tlp_tx_en | replay_en | (|dl_state) |
+                   (|REPLAY_TLP_SLOTS) | (|REPLAY_SLOT_BYTES);
 
 endmodule : rivet_dll
