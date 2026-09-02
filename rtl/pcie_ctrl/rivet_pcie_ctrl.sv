@@ -176,7 +176,7 @@ module rivet_pcie_ctrl #(
   assign cfg_mgmt_read_write_done = cfg_mgmt_read || cfg_mgmt_write;
 
   // -------------------------------------------------------------------------
-  // DLL stubs on pclk (no traffic yet)
+  // DLL + TL FC stub (pclk)
   // -------------------------------------------------------------------------
   rivet_dll_mac_tx_beat_t dll_tx_beat;
   logic                   dll_tx_valid;
@@ -187,11 +187,33 @@ module rivet_pcie_ctrl #(
   rivet_mac_dll_sb_t      mac_to_dll_sb;
   rivet_dll_mac_sb_t      dll_to_mac_sb;
   rivet_ltssm_state_e     ltssm_state;
+  rivet_tl_dll_fc_sb_t    tl_to_dll_fc;
+  rivet_dll_tl_fc_sb_t    dll_to_tl_fc;
 
-  assign dll_tx_beat    = '0;
-  assign dll_tx_valid   = 1'b0;
-  assign dll_rx_ready   = 1'b1;
-  assign dll_to_mac_sb  = '0;
+  rivet_tl_fc_stub u_tl_fc (
+    .clk_i          (pclk),
+    .rst_ni         (preset_n),
+    .tl_to_dll_fc_o (tl_to_dll_fc),
+    .dll_to_tl_fc_i (dll_to_tl_fc)
+  );
+
+  rivet_dll #(
+    .LANES           (LANES),
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+  ) u_dll (
+    .pclk_i         (pclk),
+    .rst_ni         (preset_n),
+    .dll_tx_beat_o  (dll_tx_beat),
+    .dll_tx_valid_o (dll_tx_valid),
+    .dll_tx_ready_i (dll_tx_ready),
+    .dll_rx_beat_i  (dll_rx_beat),
+    .dll_rx_valid_i (dll_rx_valid),
+    .dll_rx_ready_o (dll_rx_ready),
+    .mac_to_dll_sb_i (mac_to_dll_sb),
+    .dll_to_mac_sb_o (dll_to_mac_sb),
+    .tl_to_dll_fc_i (tl_to_dll_fc),
+    .dll_to_tl_fc_o (dll_to_tl_fc)
+  );
 
   rivet_mac #(
     .MODE              (MODE),

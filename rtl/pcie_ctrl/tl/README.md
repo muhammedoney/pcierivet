@@ -4,7 +4,7 @@ Transaction Layer and configuration-space sources.
 
 | Planned area | Role |
 |--------------|------|
-| FC buffer stub | Advertise CA / free credits to DLL **before** TLP path ([docs/dll.md](../../../docs/dll.md)) |
+| `rivet_tl_fc_stub` | Advertise CA / free credits to DLL (**present**, D0) |
 | TLP assemble / decode | Toward DLL; user-facing AXI-ST CQ/CC/RQ/RC (after FC) |
 | Config space | Type 0 (EP) + caps; `cfg_mgmt_*` (PG213-style) |
 | Completions / tags | Requester/completer tracking (grow with Phase 2) |
