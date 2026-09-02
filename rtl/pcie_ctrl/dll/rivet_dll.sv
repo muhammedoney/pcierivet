@@ -1,12 +1,13 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Data Link Layer top: DLLP codec + VC0 FC init (D1). UpdateFC is D2.
+// Data Link Layer top: DLLP codec + VC0 InitFC / UpdateFC (D2).
 
 module rivet_dll #(
-  parameter int unsigned LANES           = 1,
-  parameter int unsigned PIPE_DATA_WIDTH = 16,
-  parameter int unsigned INITFC_GAP_CYC  = 8
+  parameter int unsigned LANES            = 1,
+  parameter int unsigned PIPE_DATA_WIDTH  = 16,
+  parameter int unsigned INITFC_GAP_CYC   = 8,
+  parameter int unsigned UPDATEFC_GAP_CYC = 32
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
@@ -42,7 +43,8 @@ module rivet_dll #(
   logic            dec_ready;
 
   rivet_dll_fc #(
-    .INITFC_GAP_CYC (INITFC_GAP_CYC)
+    .INITFC_GAP_CYC   (INITFC_GAP_CYC),
+    .UPDATEFC_GAP_CYC (UPDATEFC_GAP_CYC)
   ) u_fc (
     .pclk_i       (pclk_i),
     .rst_ni       (rst_ni),

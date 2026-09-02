@@ -346,10 +346,11 @@ Folder README stays thin; this file is the checklist.
 
 ### D2 — UpdateFC + credit return
 
-- [ ] Periodic UpdateFC-P/NP/Cpl from CA  
-- [ ] TL `credits_freed` increments CA and schedules UpdateFC  
-- [ ] Still **no** application TLP  
-- [ ] Gate: peer CL tracks freed credits; infinite CPL fields handled  
+- [x] Periodic UpdateFC-P/NP/Cpl from CA  
+- [x] TL `credits_freed` increments CA and schedules UpdateFC  
+- [x] Still **no** application TLP  
+- [x] Gate: Verilator `sim_dll_fc_update` (peer CL tracks free; infinite CPL sticky)  
+- [x] Gate: Questa `ltssm_l0_gen2_x{1,2,4}`  
 
 ### D3 — TX gate + PG213 FC stubs
 

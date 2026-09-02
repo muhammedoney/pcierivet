@@ -191,10 +191,22 @@ module rivet_pcie_ctrl #(
   rivet_dll_tl_fc_sb_t    dll_to_tl_fc;
 
   rivet_tl_fc_stub u_tl_fc (
-    .clk_i          (pclk),
-    .rst_ni         (preset_n),
-    .tl_to_dll_fc_o (tl_to_dll_fc),
-    .dll_to_tl_fc_i (dll_to_tl_fc)
+    .clk_i            (pclk),
+    .rst_ni           (preset_n),
+    .free_ph_i        (1'b0),
+    .free_pd_i        (1'b0),
+    .free_nph_i       (1'b0),
+    .free_npd_i       (1'b0),
+    .free_cplh_i      (1'b0),
+    .free_cpld_i      (1'b0),
+    .free_ph_amt_i    (8'd0),
+    .free_pd_amt_i    (12'd0),
+    .free_nph_amt_i   (8'd0),
+    .free_npd_amt_i   (12'd0),
+    .free_cplh_amt_i  (8'd0),
+    .free_cpld_amt_i  (12'd0),
+    .tl_to_dll_fc_o   (tl_to_dll_fc),
+    .dll_to_tl_fc_i   (dll_to_tl_fc)
   );
 
   rivet_dll #(

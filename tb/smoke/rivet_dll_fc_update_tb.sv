@@ -1,11 +1,11 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Two rivet_dll instances exchange InitFC over a crossed DLLP beat path.
+// Dual-DLL InitFC then UpdateFC after TL credit free; peer CL tracks CA.
 
 `timescale 1ns/1ps
 
-module rivet_dll_fc_init_tb;
+module rivet_dll_fc_update_tb;
   import rivet_pkg::*;
 
   logic clk;
@@ -21,7 +21,8 @@ module rivet_dll_fc_init_tb;
   rivet_dll_mac_rx_beat_t rx_a, rx_b;
   logic                   rxv_a, rxv_b, rxr_a, rxr_b;
 
-  // Cross-connect framed beats (no MAC)
+  logic free_ph_a, free_nph_a, free_cplh_a;
+
   always_comb begin
     rx_b.data = tx_a.data; rx_b.keep = tx_a.keep; rx_b.sop = tx_a.sop;
     rx_b.eop = tx_a.eop; rx_b.err = 1'b0; rx_b.pkt_type = tx_a.pkt_type;
@@ -34,14 +35,15 @@ module rivet_dll_fc_init_tb;
 
   rivet_tl_fc_stub #(.PH_CRED(8'h05), .NPH_CRED(8'h03)) u_tl_a (
     .clk_i(clk), .rst_ni(rst_n),
-    .free_ph_i(1'b0), .free_pd_i(1'b0),
-    .free_nph_i(1'b0), .free_npd_i(1'b0),
-    .free_cplh_i(1'b0), .free_cpld_i(1'b0),
-    .free_ph_amt_i(8'd0), .free_pd_amt_i(12'd0),
-    .free_nph_amt_i(8'd0), .free_npd_amt_i(12'd0),
+    .free_ph_i(free_ph_a), .free_pd_i(1'b0),
+    .free_nph_i(free_nph_a), .free_npd_i(1'b0),
+    .free_cplh_i(free_cplh_a), .free_cpld_i(1'b0),
+    .free_ph_amt_i(8'd2), .free_pd_amt_i(12'd0),
+    .free_nph_amt_i(8'd1), .free_npd_amt_i(12'd0),
     .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
     .tl_to_dll_fc_o(tl_a), .dll_to_tl_fc_i(dll_tl_a)
   );
+
   rivet_tl_fc_stub #(.PH_CRED(8'h11), .NPH_CRED(8'h07)) u_tl_b (
     .clk_i(clk), .rst_ni(rst_n),
     .free_ph_i(1'b0), .free_pd_i(1'b0),
@@ -53,7 +55,7 @@ module rivet_dll_fc_init_tb;
     .tl_to_dll_fc_o(tl_b), .dll_to_tl_fc_i(dll_tl_b)
   );
 
-  rivet_dll #(.INITFC_GAP_CYC(2)) u_dll_a (
+  rivet_dll #(.INITFC_GAP_CYC(2), .UPDATEFC_GAP_CYC(4)) u_dll_a (
     .pclk_i(clk), .rst_ni(rst_n),
     .dll_tx_beat_o(tx_a), .dll_tx_valid_o(txv_a), .dll_tx_ready_i(txr_a),
     .dll_rx_beat_i(rx_a), .dll_rx_valid_i(rxv_a), .dll_rx_ready_o(rxr_a),
@@ -61,7 +63,7 @@ module rivet_dll_fc_init_tb;
     .tl_to_dll_fc_i(tl_a), .dll_to_tl_fc_o(dll_tl_a)
   );
 
-  rivet_dll #(.INITFC_GAP_CYC(2)) u_dll_b (
+  rivet_dll #(.INITFC_GAP_CYC(2), .UPDATEFC_GAP_CYC(4)) u_dll_b (
     .pclk_i(clk), .rst_ni(rst_n),
     .dll_tx_beat_o(tx_b), .dll_tx_valid_o(txv_b), .dll_tx_ready_i(txr_b),
     .dll_rx_beat_i(rx_b), .dll_rx_valid_i(rxv_b), .dll_rx_ready_o(rxr_b),
@@ -76,6 +78,9 @@ module rivet_dll_fc_init_tb;
     rst_n = 1'b0;
     mac_a = '0;
     mac_b = '0;
+    free_ph_a = 1'b0;
+    free_nph_a = 1'b0;
+    free_cplh_a = 1'b0;
     repeat (5) @(posedge clk);
     rst_n = 1'b1;
     @(posedge clk);
@@ -87,26 +92,51 @@ module rivet_dll_fc_init_tb;
     wait (dll_tl_a.fc_init_done && dll_tl_b.fc_init_done);
     @(posedge clk);
 
-    if (dll_tl_a.cl.ph !== 8'h11 || dll_tl_a.cl.nph !== 8'h07) begin
-      $error("A CL mismatch ph=%h nph=%h", dll_tl_a.cl.ph, dll_tl_a.cl.nph);
-      $fatal(1);
-    end
-    if (dll_tl_b.cl.ph !== 8'h05 || dll_tl_b.cl.nph !== 8'h03) begin
-      $error("B CL mismatch ph=%h nph=%h", dll_tl_b.cl.ph, dll_tl_b.cl.nph);
-      $fatal(1);
-    end
-    if (!dll_tl_a.cl.cplh_inf || !dll_tl_b.cl.cplh_inf) begin
-      $error("CPL should be infinite");
+    if (dll_tl_b.cl.ph !== 8'h05) begin
+      $error("pre-update B CL.ph=%h", dll_tl_b.cl.ph);
       $fatal(1);
     end
 
-    $display("PASS: rivet_dll_fc_init_tb");
+    // Free PH on A: CA.ph 5→7; peer B CL must follow via UpdateFC-P.
+    @(posedge clk);
+    free_ph_a = 1'b1;
+    @(posedge clk);
+    free_ph_a = 1'b0;
+
+    wait (dll_tl_b.cl.ph === 8'h07);
+    @(posedge clk);
+
+    if (tl_a.ca.ph !== 8'h07) begin
+      $error("A CA.ph not bumped: %h", tl_a.ca.ph);
+      $fatal(1);
+    end
+
+    // Free NPH: 3→4
+    @(posedge clk);
+    free_nph_a = 1'b1;
+    @(posedge clk);
+    free_nph_a = 1'b0;
+    wait (dll_tl_b.cl.nph === 8'h04);
+
+    // Infinite CPL: free pulse must not clear cplh_inf / invent finite credits.
+    @(posedge clk);
+    free_cplh_a = 1'b1;
+    @(posedge clk);
+    free_cplh_a = 1'b0;
+    repeat (40) @(posedge clk);
+    if (!dll_tl_b.cl.cplh_inf || (dll_tl_b.cl.cplh !== 8'h00)) begin
+      $error("CPL infinite broken after UpdateFC cplh=%h inf=%0b",
+             dll_tl_b.cl.cplh, dll_tl_b.cl.cplh_inf);
+      $fatal(1);
+    end
+
+    $display("PASS: rivet_dll_fc_update_tb");
     $finish;
   end
 
   initial begin
-    #200000;
-    $error("timeout fc_init_done a=%0b b=%0b", dll_tl_a.fc_init_done, dll_tl_b.fc_init_done);
+    #500000;
+    $error("timeout ph=%h nph=%h", dll_tl_b.cl.ph, dll_tl_b.cl.nph);
     $fatal(1);
   end
-endmodule : rivet_dll_fc_init_tb
+endmodule : rivet_dll_fc_update_tb
