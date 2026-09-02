@@ -139,6 +139,35 @@ module rivet_pg239_board;
             $display("[%t] : FC RESULT  FAIL — FC init / dl_up incomplete", $realtime);
             $fatal(1, "Rivet+PG239 FC init failed after link_up");
           end
+
+          // After InitFC: count RC→EP UpdateFC for a short window (default gap=32 pclk).
+          begin
+            automatic int unsigned rp_upd_tx, ep_upd_rx, j;
+            automatic logic [3:0] k;
+            rp_upd_tx = 0;
+            ep_upd_rx = 0;
+            for (j = 0; j < 512; j++) begin
+              @(posedge u_ep.pipe_clk_o);
+              if (u_rp.u_ctrl.u_dll.u_fc.state_q == 2'd3 &&
+                  u_rp.u_ctrl.u_dll.fc_req_valid &&
+                  u_rp.u_ctrl.u_dll.fc_req_ready) begin
+                k = u_rp.u_ctrl.u_dll.u_fc.req_o.fc_kind;
+                if (k == 4'h8 || k == 4'h9 || k == 4'hA) rp_upd_tx++;
+              end
+              if (u_ep.u_ctrl.u_dll.dec_valid &&
+                  u_ep.u_ctrl.u_dll.dec.crc_ok &&
+                  (u_ep.u_ctrl.u_dll.dec.kind == rivet_pkg::RIVET_DLLP_KIND_FC)) begin
+                k = u_ep.u_ctrl.u_dll.dec.fc_kind;
+                if (k == 4'h8 || k == 4'h9 || k == 4'hA) ep_upd_rx++;
+              end
+            end
+            $display("[%t] : UPDATEFC   RC_tx_accept=%0d EP_rx_decode=%0d (512 pclk window)",
+                     $realtime, rp_upd_tx, ep_upd_rx);
+            if (rp_upd_tx == 0 || ep_upd_rx == 0)
+              $display("[%t] : UPDATEFC   NOTE — none observed in window", $realtime);
+            else
+              $display("[%t] : UPDATEFC   PASS — periodic UpdateFC seen RC→EP", $realtime);
+          end
         end
         $finish;
       end
