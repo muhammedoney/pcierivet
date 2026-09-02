@@ -5,12 +5,14 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-if (-not (Get-Command verilator -ErrorAction SilentlyContinue)) {
-  Write-Error "verilator not found in PATH"
+$Warn = "-Wall -Wno-DECLFILENAME -Wno-UNUSED -Wno-PINCONNECTEMPTY"
+
+if (Get-Command verilator -ErrorAction SilentlyContinue) {
+  & verilator --lint-only $Warn.Split(" ") -f rtl/filelist_core.f --top-module rivet_pcie_ctrl
+  if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: lint" }
+} else {
+  $WslRoot = (wsl wslpath -a ($Root -replace '\\', '/'))
+  wsl -e bash -lc "cd '$WslRoot' && verilator --lint-only $Warn -f rtl/filelist_core.f --top-module rivet_pcie_ctrl"
+  if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: lint" }
 }
-
-& verilator --lint-only -Wall -Wno-DECLFILENAME -Wno-UNUSED `
-  -f rtl/filelist_core.f `
-  --top-module rivet_pcie_ctrl
-
 Write-Host "PASS: Verilator lint (controller)"

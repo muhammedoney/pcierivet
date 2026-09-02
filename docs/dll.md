@@ -405,9 +405,10 @@ Split: **D4a** infrastructure → **D4b** on-wire TLP path.
 
 #### D4b — Seq/LCRC on TLP beats + ACK/NAK scheduling
 
-- [ ] `rivet_dll_tlp_tx` / `rivet_dll_tlp_rx`  
-- [ ] ACK/NAK DLLP schedule from RX; REPLAY_TIMER / REPLAY_NUM  
-- [ ] Gate: dual-DLL TLP + ACK purge / NAK replay; then real TL hook (D5)  
+- [x] `rivet_dll_tlp_tx` / `rivet_dll_tlp_rx`  
+- [x] ACK/NAK DLLP schedule from RX; REPLAY_TIMER / REPLAY_NUM  
+- [x] Gate: dual-DLL TLP + ACK purge / NAK replay (`scripts/sim_dll_tlp_ack.ps1`)  
+- [ ] Full streaming TL AXI-ST hook (D5)  
 
 ### D5 — Hook full TL
 
@@ -456,6 +457,9 @@ Scoreboard hooks: DLLP type timeline, CA/CL/CC snapshots, `fc_init_done`.
 | DL SM | Explicit Inactive/Init/Active/Replay (not FC-only) |
 
 Still pick at D0 RTL: internal `keep` byte vs DW granularity on DLL↔MAC beats.
+
+D4b notes: whole-TLP inject ports on `rivet_dll` (`tl_tlp_*`) are the D4b smoke
+API; D5 replaces them with streaming AXI-ST from TL.
 
 ---
 

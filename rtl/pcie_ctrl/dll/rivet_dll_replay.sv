@@ -96,11 +96,24 @@ module rivet_dll_replay #(
         data_q[wr_q]  <= push_data_i;
         wr_q          <= wr_q + 1'b1;
         count_q       <= count_q + 16'd1;
-      end else if (ack_valid_i && (count_q != 16'd0) && valid_q[rd_q] &&
-                   seq_acked(seq_q[rd_q], ack_seq_i)) begin
-        valid_q[rd_q] <= 1'b0;
-        rd_q          <= rd_q + 1'b1;
-        count_q       <= count_q - 16'd1;
+      end else if (ack_valid_i && (count_q != 16'd0)) begin
+        // Purge all consecutive head slots covered by this ACK in one cycle.
+        begin
+          logic [IDX_W-1:0] rd_tmp;
+          logic [15:0]      cnt_tmp;
+          rd_tmp  = rd_q;
+          cnt_tmp = count_q;
+          for (int unsigned pi = 0; pi < TLP_SLOTS; pi++) begin
+            if ((cnt_tmp != 16'd0) && valid_q[rd_tmp] &&
+                seq_acked(seq_q[rd_tmp], ack_seq_i)) begin
+              valid_q[rd_tmp] <= 1'b0;
+              rd_tmp  = rd_tmp + 1'b1;
+              cnt_tmp = cnt_tmp - 16'd1;
+            end
+          end
+          rd_q    <= rd_tmp;
+          count_q <= cnt_tmp;
+        end
       end
 
       if (replay_start_i && !replay_active_q && (count_q != 16'd0)) begin

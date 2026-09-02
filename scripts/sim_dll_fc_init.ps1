@@ -5,14 +5,18 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-$Warn = "-Wall -Wno-DECLFILENAME -Wno-UNUSED -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD"
+$Warn = "-Wall -Wno-DECLFILENAME -Wno-UNUSED -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD -Wno-PINCONNECTEMPTY"
 $Sources = @"
 rtl/pcie_ctrl/rivet_pkg.sv
 rtl/pcie_ctrl/dll/rivet_dll_crc16.sv
+rtl/pcie_ctrl/dll/rivet_dll_lcrc32.sv
 rtl/pcie_ctrl/dll/rivet_dllp_tx.sv
 rtl/pcie_ctrl/dll/rivet_dllp_rx.sv
 rtl/pcie_ctrl/dll/rivet_dll_fc.sv
 rtl/pcie_ctrl/dll/rivet_dll_sm.sv
+rtl/pcie_ctrl/dll/rivet_dll_replay.sv
+rtl/pcie_ctrl/dll/rivet_dll_tlp_tx.sv
+rtl/pcie_ctrl/dll/rivet_dll_tlp_rx.sv
 rtl/pcie_ctrl/dll/rivet_dll.sv
 rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv
 tb/smoke/rivet_dll_fc_init_tb.sv
