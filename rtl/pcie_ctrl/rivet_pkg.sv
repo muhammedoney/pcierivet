@@ -176,6 +176,98 @@ package rivet_pkg;
     logic                 tx_idle_req;
   } rivet_dll_mac_sb_t;
 
+  // -------------------------------------------------------------------------
+  // DLLP / flow-control types (Base 2.1 §3.4). DLLP is always an 8-byte beat on
+  // the DLL↔MAC IF (fits in the 64-bit beat). Link wire rate LANES*PIPE_DATA_W
+  // is a MAC striping concern; do not shrink the DLLP beat to LANES*16.
+  // -------------------------------------------------------------------------
+  localparam int unsigned RIVET_DLLP_BYTES = 8;
+  localparam int unsigned RIVET_DLL_DATA_W_DEFAULT = 64; // one DLLP / beat today
+
+  // High nibble of FC DLLP Type field (VC is OR'd into [2:0]).
+  typedef enum logic [3:0] {
+    RIVET_DLLP_FC_INIT1_P  = 4'h4,
+    RIVET_DLLP_FC_INIT1_NP = 4'h5,
+    RIVET_DLLP_FC_INIT1_CPL = 4'h6,
+    RIVET_DLLP_FC_UPDATE_P  = 4'h8,
+    RIVET_DLLP_FC_UPDATE_NP = 4'h9,
+    RIVET_DLLP_FC_UPDATE_CPL = 4'hA,
+    RIVET_DLLP_FC_INIT2_P  = 4'hC,
+    RIVET_DLLP_FC_INIT2_NP = 4'hD,
+    RIVET_DLLP_FC_INIT2_CPL = 4'hE
+  } rivet_dllp_fc_kind_e;
+
+  localparam logic [7:0] RIVET_DLLP_TYPE_ACK = 8'h00;
+  localparam logic [7:0] RIVET_DLLP_TYPE_NAK = 8'h10;
+
+  typedef enum logic [2:0] {
+    RIVET_DLLP_KIND_NONE = 3'd0,
+    RIVET_DLLP_KIND_ACK  = 3'd1,
+    RIVET_DLLP_KIND_NAK  = 3'd2,
+    RIVET_DLLP_KIND_FC   = 3'd3
+  } rivet_dllp_kind_e;
+
+  // One VC's six credit counters (+ infinite flags). Hdr=8b, Data=12b fields.
+  typedef struct packed {
+    logic [7:0]  ph;
+    logic [11:0] pd;
+    logic [7:0]  nph;
+    logic [11:0] npd;
+    logic [7:0]  cplh;
+    logic [11:0] cpld;
+    logic        ph_inf;
+    logic        pd_inf;
+    logic        nph_inf;
+    logic        npd_inf;
+    logic        cplh_inf;
+    logic        cpld_inf;
+  } rivet_fc_credit_set_t;
+
+  // TL -> DLL: advertised CA and free pulses (D0 stub / D1+ real).
+  typedef struct packed {
+    rivet_fc_credit_set_t ca;
+    logic                 ph_freed;
+    logic                 pd_freed;
+    logic                 nph_freed;
+    logic                 npd_freed;
+    logic                 cplh_freed;
+    logic                 cpld_freed;
+  } rivet_tl_dll_fc_sb_t;
+
+  // DLL -> TL: peer CL / availability / FC init done.
+  typedef struct packed {
+    rivet_fc_credit_set_t cl;
+    logic                 fc_init_done;
+    logic                 dl_active;
+  } rivet_dll_tl_fc_sb_t;
+
+  // Soft request into dllp_tx (before CRC).
+  typedef struct packed {
+    rivet_dllp_kind_e     kind;
+    rivet_dllp_fc_kind_e  fc_kind;
+    logic [2:0]           vc;
+    logic [7:0]           hdr_fc;
+    logic [11:0]          data_fc;
+    logic [11:0]          ack_seq;
+  } rivet_dllp_req_t;
+
+  // Decoded DLLP from dllp_rx (after CRC check).
+  typedef struct packed {
+    rivet_dllp_kind_e     kind;
+    rivet_dllp_fc_kind_e  fc_kind;
+    logic [2:0]           vc;
+    logic [7:0]           hdr_fc;
+    logic [11:0]          data_fc;
+    logic [11:0]          ack_seq;
+    logic                 crc_ok;
+  } rivet_dllp_dec_t;
+
+  function automatic logic [7:0] rivet_dllp_fc_type_byte(
+      input rivet_dllp_fc_kind_e kind,
+      input logic [2:0] vc);
+    return {kind, 1'b0, vc};
+  endfunction
+
   function automatic bit rivet_lanes_legal(int unsigned lanes);
     return (lanes == 1) || (lanes == 2) || (lanes == 4);
   endfunction

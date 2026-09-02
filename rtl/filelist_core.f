@@ -2,6 +2,10 @@
 rtl/pcie_ctrl/rivet_pkg.sv
 rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv
 rtl/pcie_ctrl/dll/rivet_dll_crc16.sv
+rtl/pcie_ctrl/dll/rivet_dllp_tx.sv
+rtl/pcie_ctrl/dll/rivet_dllp_rx.sv
+rtl/pcie_ctrl/dll/rivet_dll.sv
+rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv
 rtl/pcie_ctrl/mac/rivet_mac_timer.sv
 rtl/pcie_ctrl/mac/rivet_ltssm.sv
 rtl/pcie_ctrl/mac/rivet_mac_os_tx.sv
