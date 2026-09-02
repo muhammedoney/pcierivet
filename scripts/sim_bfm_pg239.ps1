@@ -210,6 +210,7 @@ function New-CompileDo {
       "rtl/pcie_ctrl/dll/rivet_dll_crc16.sv",
       "rtl/pcie_ctrl/dll/rivet_dllp_tx.sv",
       "rtl/pcie_ctrl/dll/rivet_dllp_rx.sv",
+      "rtl/pcie_ctrl/dll/rivet_dll_fc.sv",
       "rtl/pcie_ctrl/dll/rivet_dll.sv",
       "rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv",
       "rtl/pcie_ctrl/mac/rivet_mac_timer.sv",
