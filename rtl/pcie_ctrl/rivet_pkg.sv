@@ -83,6 +83,14 @@ package rivet_pkg;
   localparam logic [7:0] RIVET_SYM_FTS = 8'h3C; // K28.1
   localparam logic [7:0] RIVET_SYM_IDL = 8'h7C; // K28.3 (EIOS filler)
   localparam logic [7:0] RIVET_SYM_PAD = 8'hF7; // K23.7
+  // Packet framing tokens (Base 2.1 §4.2.2) — Logical Idle plane before 8b/10b.
+  localparam logic [7:0] RIVET_SYM_SDP = 8'h5C; // K28.2 Start DLLP
+  localparam logic [7:0] RIVET_SYM_STP = 8'hFB; // K27.7 Start TLP
+  localparam logic [7:0] RIVET_SYM_END = 8'hFD; // K29.7 End good packet
+  localparam logic [7:0] RIVET_SYM_EDB = 8'hFE; // K30.7 End bad / nullified
+
+  // Framed DLLP length in symbols: SDP + 8 DLLP bytes + END.
+  localparam int unsigned RIVET_DLLP_FRAMED_LEN = 10;
 
   // TS identifier symbols (Base 2.1 Tables 4-2/4-3). A polarity-inverted lane
   // delivers the bitwise complement, which is the documented inversion hint.

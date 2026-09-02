@@ -220,6 +220,7 @@ module rivet_mac #(
     .os_req_valid_i  (os_req_valid),
     .os_cnt_clr_i    (os_cnt_clr),
     .lane_en_i       (lane_en),
+    .pkt_en_i        (accept_dll_tlp),
     .tx_link_num_i   (tx_link_num),
     .tx_lane_num_i   (tx_lane_num),
     .tx_link_pad_i   (tx_link_pad),
