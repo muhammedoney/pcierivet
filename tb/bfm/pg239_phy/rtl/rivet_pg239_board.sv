@@ -100,6 +100,36 @@ module rivet_pg239_board;
         #10000;
         $display("[%t] : EP ltssm=%0h RP ltssm=%0h", $realtime, ep_ltssm, rp_ltssm);
         $display("[%t] : Test Completed Successfully (Rivet+PG239 link_up)", $realtime);
+
+        // Post-link DLL status (FC / TLP). Hierarchical probes into soft ctrl.
+        begin
+          automatic logic ep_fc, rp_fc, ep_dl, rp_dl;
+          automatic int unsigned i;
+          ep_fc = u_ep.u_ctrl.dll_to_tl_fc.fc_init_done;
+          rp_fc = u_rp.u_ctrl.dll_to_tl_fc.fc_init_done;
+          ep_dl = u_ep.u_ctrl.dll_to_tl_fc.dl_up;
+          rp_dl = u_rp.u_ctrl.dll_to_tl_fc.dl_up;
+          $display("[%t] : FC@link_up  EP fc_init=%0b dl_up=%0b | RP fc_init=%0b dl_up=%0b",
+                   $realtime, ep_fc, ep_dl, rp_fc, rp_dl);
+          // Give InitFC some idle time after L0 (scaled timers; still short wall time).
+          for (i = 0; i < 20000; i++) begin
+            @(posedge u_ep.pipe_clk_o);
+            ep_fc = u_ep.u_ctrl.dll_to_tl_fc.fc_init_done;
+            rp_fc = u_rp.u_ctrl.dll_to_tl_fc.fc_init_done;
+            ep_dl = u_ep.u_ctrl.dll_to_tl_fc.dl_up;
+            rp_dl = u_rp.u_ctrl.dll_to_tl_fc.dl_up;
+            if (ep_fc && rp_fc) break;
+          end
+          $display("[%t] : FC@post     EP fc_init=%0b dl_up=%0b | RP fc_init=%0b dl_up=%0b",
+                   $realtime, ep_fc, ep_dl, rp_fc, rp_dl);
+          $display("[%t] : TLP note    RC/EP tl_tx tied idle in rivet_pcie_ctrl (no app TLP inject)",
+                   $realtime);
+          if (ep_fc && rp_fc)
+            $display("[%t] : FC RESULT  PASS — both sides fc_init_done", $realtime);
+          else
+            $display("[%t] : FC RESULT  FAIL — FC init not complete (x4 MAC DLLP framing not enabled)",
+                     $realtime);
+        end
         $finish;
       end
       begin
