@@ -66,13 +66,12 @@ sufficient for TLP traffic. Rivet owns an explicit **Data Link SM** (do not
 collapse into FC-only logic):
 
 ```text
-  DL_Inactive  — !accept_dll_tlp / !link_up; clear seq / freeze replay
+  DL_Inactive  — !accept_dll_tlp / !link_up; DL_Down; clear seq / freeze replay
        ↓ accept
-  DL_Init      — FC_INIT1 → FC_INIT2 (rivet_dll_fc); no application TLP
+  DL_Init      — FC_INIT1 → FC_INIT2 (rivet_dll_fc); DL_Down; no application TLP
        ↓ fc_init_done
-  DL_Active    — UpdateFC + TLP TX/RX + ACK/NAK; REPLAY_TIMER armed
-       ↓ NAK or REPLAY_TIMER expiry (while Active)
-  DL_Replay    — retransmit from replay buffer; then return to Active
+  DL_Active    — DL_Up; UpdateFC + TLP TX/RX + ACK/NAK; REPLAY_TIMER armed
+                 (replay busy is a flag under Active — not a DLCMSM state)
        ↓ accept drops / REPLAY_NUM overflow → LTSSM retrain hint
   DL_Inactive
 ```
@@ -81,7 +80,7 @@ collapse into FC-only logic):
 drops `accept_dll_tlp` / `link_up` (`replay_freeze` already on sideband).
 
 FC SM (`rivet_dll_fc`) remains nested under `DL_Init` / `DL_Active`. Reliability
-(seq, LCRC, ACK/NAK, replay) runs only in `DL_Active` / `DL_Replay`.
+(seq, LCRC, ACK/NAK, replay) runs only while `DL_Active` (including replay busy).
 
 ---
 
@@ -320,7 +319,7 @@ Internal DLL counters remain authoritative; these ports are a **projection**.
 
 ```text
 rivet_dll
-├── rivet_dll_sm             # DL_Inactive / Init / Active / Replay (+ dl_up)
+├── rivet_dll_sm             # DL_Inactive / Init / Active (+ replay busy, dl_up)
 ├── rivet_dll_crc16          # DLLP CRC
 ├── rivet_dll_lcrc32         # TLP LCRC (seq + TLP bytes)
 ├── rivet_dllp_tx            # Serialize DLLP + CRC; arb vs TLP
@@ -400,7 +399,7 @@ Split: **D4a** infrastructure → **D4b** on-wire TLP path.
 
 #### D4a — SM, LCRC, replay core (no full TL yet)
 
-- [x] `rivet_dll_sm`: Inactive / Init / Active / Replay  
+- [x] `rivet_dll_sm`: Inactive / Init / Active (+ replay busy); `dl_up` = Active  
 - [x] `rivet_dll_lcrc32` + Verilator TB  
 - [x] `rivet_dll_replay` parametric slots; ACK purge / NAK replay API  
 - [x] Gate: Verilator LCRC + SM + replay + FC regress; Questa smoke + L0  
@@ -460,7 +459,7 @@ Scoreboard hooks: DLLP type timeline, CA/CL/CC snapshots, `fc_init_done`.
 | Smoke credits | P/NP large finite; **CPL infinite** |
 | Finite CPL mode | Deferred (switch / P2P RC only) |
 | Replay depth | Parametric; default **16×(MPS+32)** @ MPS=128 |
-| DL SM | Explicit Inactive/Init/Active/Replay (not FC-only); `dl_up` = Active\|Replay |
+| DL SM | DLCMSM Inactive/Init/Active (+ replay busy under Active); `dl_up` = Active |
 
 Still pick at D0 RTL: internal `keep` byte vs DW granularity on DLL↔MAC beats.
 

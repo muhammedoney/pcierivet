@@ -1,9 +1,10 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Data Link Layer feature SM (Rivet subset of DLCMSM):
-//   Inactive → Init (FC) → Active ↔ Replay
-// Side status: dl_up = Active | Replay.
+// Data Link Control and Management SM (Rivet Gen2 VC0 subset):
+//   DL_Inactive → DL_Init (FC) → DL_Active
+// DL_Feature omitted. Replay is a busy flag under DL_Active (not a DLCMSM state).
+// Side status: DL_Up = Active; DL_Down = !DL_Up.
 
 module rivet_dll_sm (
   input  logic pclk_i,
@@ -15,47 +16,60 @@ module rivet_dll_sm (
   input  logic                         replay_done_i,  // buffer drained this bout
 
   output rivet_pkg::rivet_dl_state_e   state_o,
-  output logic                         dl_up_o,        // Active or Replay
-  output logic                         tlp_tx_en_o,    // Active only
-  output logic                         replay_en_o,    // Replay state
-  output logic                         fc_en_o         // Init / Active / Replay
+  output logic                         dl_up_o,        // Active (spec DL_Up)
+  output logic                         tlp_tx_en_o,    // Active and not replaying
+  output logic                         replay_en_o,    // replay busy under Active
+  output logic                         fc_en_o         // Init or Active
 );
 
   import rivet_pkg::*;
 
   rivet_dl_state_e state_q, state_d;
+  logic            replay_q, replay_d;
 
   always_comb begin
-    state_d = state_q;
+    state_d  = state_q;
+    replay_d = replay_q;
+
     if (!mac_sb_i.accept_dll_tlp) begin
-      state_d = RIVET_DL_INACTIVE;
+      state_d  = RIVET_DL_INACTIVE;
+      replay_d = 1'b0;
     end else begin
       unique case (state_q)
-        RIVET_DL_INACTIVE: state_d = RIVET_DL_INIT;
+        RIVET_DL_INACTIVE: begin
+          state_d  = RIVET_DL_INIT;
+          replay_d = 1'b0;
+        end
         RIVET_DL_INIT: begin
+          replay_d = 1'b0;
           if (fc_init_done_i) state_d = RIVET_DL_ACTIVE;
         end
         RIVET_DL_ACTIVE: begin
-          if (replay_req_i) state_d = RIVET_DL_REPLAY;
+          if (replay_done_i) replay_d = 1'b0;
+          else if (replay_req_i) replay_d = 1'b1;
         end
-        RIVET_DL_REPLAY: begin
-          if (replay_done_i) state_d = RIVET_DL_ACTIVE;
+        default: begin
+          state_d  = RIVET_DL_INACTIVE;
+          replay_d = 1'b0;
         end
-        default: state_d = RIVET_DL_INACTIVE;
       endcase
     end
   end
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
-    if (!rst_ni) state_q <= RIVET_DL_INACTIVE;
-    else state_q <= state_d;
+    if (!rst_ni) begin
+      state_q  <= RIVET_DL_INACTIVE;
+      replay_q <= 1'b0;
+    end else begin
+      state_q  <= state_d;
+      replay_q <= replay_d;
+    end
   end
 
   assign state_o     = state_q;
-  assign dl_up_o     = (state_q == RIVET_DL_ACTIVE) || (state_q == RIVET_DL_REPLAY);
-  assign tlp_tx_en_o = (state_q == RIVET_DL_ACTIVE);
-  assign replay_en_o = (state_q == RIVET_DL_REPLAY);
-  assign fc_en_o     = (state_q == RIVET_DL_INIT) || (state_q == RIVET_DL_ACTIVE) ||
-                       (state_q == RIVET_DL_REPLAY);
+  assign dl_up_o     = (state_q == RIVET_DL_ACTIVE);
+  assign replay_en_o = (state_q == RIVET_DL_ACTIVE) && replay_q;
+  assign tlp_tx_en_o = (state_q == RIVET_DL_ACTIVE) && !replay_q;
+  assign fc_en_o     = (state_q == RIVET_DL_INIT) || (state_q == RIVET_DL_ACTIVE);
 
 endmodule : rivet_dll_sm

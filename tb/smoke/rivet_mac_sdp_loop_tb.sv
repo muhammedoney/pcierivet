@@ -8,7 +8,7 @@
 module rivet_mac_sdp_loop_tb;
   import rivet_pkg::*;
 
-  localparam int unsigned LANES = 1;
+  localparam int unsigned LANES = 4;
   localparam int unsigned PIPE_DATA_WIDTH = 16;
 
   logic pclk;
@@ -51,10 +51,10 @@ module rivet_mac_sdp_loop_tb;
     .os_req_i        (os_req),
     .os_req_valid_i  (os_req_valid),
     .os_cnt_clr_i    (os_cnt_clr),
-    .lane_en_i       (1'b1),
+    .lane_en_i       ({LANES{1'b1}}),
     .pkt_en_i        (pkt_en),
     .tx_link_num_i   (8'h00),
-    .tx_lane_num_i   (8'h00),
+    .tx_lane_num_i   ({LANES{8'h00}}),
     .tx_link_pad_i   (1'b0),
     .tx_lane_pad_i   (1'b0),
     .tx_n_fts_i      (8'h00),
@@ -79,8 +79,8 @@ module rivet_mac_sdp_loop_tb;
     .sym_data_i            (sym_data),
     .sym_datak_i           (sym_datak),
     .sym_valid_i           ({LANES{sym_valid}}),
-    .rxstatus_i            (3'b000),
-    .lane_en_i             (1'b1),
+    .rxstatus_i            ({LANES{3'b000}}),
+    .lane_en_i             ({LANES{1'b1}}),
     .capture_clr_i         (1'b0),
     .ts1_pad_all_o         (ts1_pad_all),
     .ts1_pad_any_o         (ts1_pad_any),

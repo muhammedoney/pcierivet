@@ -179,8 +179,8 @@ module rivet_dll #(
 
   assign timer_fire = timer_exp_q;
   assign replay_req = ((nak_pulse || timer_fire) && !rep_empty && !rep_active &&
-                       (dl_state == RIVET_DL_ACTIVE));
-  assign rep_start  = (dl_state == RIVET_DL_REPLAY) && !rep_active && !rep_empty;
+                       (dl_state == RIVET_DL_ACTIVE) && !replay_en);
+  assign rep_start  = replay_en && !rep_active && !rep_empty;
 
   assign dll_to_mac_sb_o.dl_up                = dl_up;
   assign dll_to_mac_sb_o.replay_timer_expired = timer_fire;
@@ -294,7 +294,7 @@ module rivet_dll #(
       dllp_req_valid = 1'b1;
       ack_ready      = dllp_req_ready;
       fc_req_ready   = 1'b0;
-    end else if (tlp_v || rep_active || (dl_state == RIVET_DL_REPLAY)) begin
+    end else if (tlp_v || rep_active || replay_en) begin
       dllp_req       = '0;
       dllp_req_valid = 1'b0;
       ack_ready      = 1'b0;
@@ -379,8 +379,7 @@ module rivet_dll #(
     .dec_ready_i  (dec_ready)
   );
 
-  assign rx_enable = mac_to_dll_sb_i.accept_dll_tlp &&
-                     ((dl_state == RIVET_DL_ACTIVE) || (dl_state == RIVET_DL_REPLAY));
+  assign rx_enable = mac_to_dll_sb_i.accept_dll_tlp && (dl_state == RIVET_DL_ACTIVE);
 
   rivet_dll_tlp_rx #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_rx (
     .clk_i           (pclk_i),
