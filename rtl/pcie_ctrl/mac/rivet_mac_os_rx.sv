@@ -387,10 +387,11 @@ module rivet_mac_os_rx #(
     end
   end
 
+
   // ---------------------------------------------------------------------------
-  // DLLP framing RX (×1 only): SDP + 8 D-bytes + END → one dll_rx beat
+  // DLLP framing RX: SDP + 8 D-bytes + END, striped across LANES (Gen2 16b PIPE)
   // ---------------------------------------------------------------------------
-  localparam bit PKT_RX_OK = (LANES == 1) && (PIPE_DATA_WIDTH == 16);
+  localparam bit PKT_RX_OK = (PIPE_DATA_WIDTH == 16);
 
   typedef enum logic [1:0] {
     RX_IDLE = 2'b00,
@@ -400,75 +401,129 @@ module rivet_mac_os_rx #(
 
   rx_pkt_e       rx_pkt_q, rx_pkt_d;
   logic [63:0]   rx_body_q, rx_body_d;
-  logic [3:0]    rx_cnt_q, rx_cnt_d; // D-bytes captured (0..8)
+  logic [3:0]    rx_cnt_q, rx_cnt_d;
   logic          rx_err_pkt_q, rx_err_pkt_d;
   logic          dll_beat_valid_q, dll_beat_valid_d;
   rivet_dll_mac_rx_beat_t dll_beat_q, dll_beat_d;
 
-  logic [7:0] sym0, sym1;
-  logic       k0, k1;
-  logic       v0;
+  logic          rx_lanes_ok;
+  logic [7:0]    rx_sy;
+  logic          rx_ky;
 
-  assign sym0 = sym_data_i[7:0];
-  assign sym1 = sym_data_i[15:8];
-  assign k0   = sym_datak_i[0];
-  assign k1   = sym_datak_i[1];
-  assign v0   = sym_valid_i[0];
+  assign rx_lanes_ok = PKT_RX_OK && sym_valid_i[0] && lane_en_i[0];
 
   always_comb begin
-    rx_pkt_d        = rx_pkt_q;
-    rx_body_d       = rx_body_q;
-    rx_cnt_d        = rx_cnt_q;
-    rx_err_pkt_d    = rx_err_pkt_q;
+    rx_pkt_d         = rx_pkt_q;
+    rx_body_d        = rx_body_q;
+    rx_cnt_d         = rx_cnt_q;
+    rx_err_pkt_d     = rx_err_pkt_q;
     dll_beat_valid_d = dll_beat_valid_q;
-    dll_beat_d      = dll_beat_q;
+    dll_beat_d       = dll_beat_q;
+    rx_sy            = '0;
+    rx_ky            = 1'b0;
 
     if (dll_beat_valid_q && dll_rx_ready_i) dll_beat_valid_d = 1'b0;
 
-    if (PKT_RX_OK && v0 && lane_en_i[0]) begin
+    if (rx_lanes_ok) begin
       unique case (rx_pkt_q)
         RX_IDLE: begin
-          if (k0 && (sym0 == RIVET_SYM_SDP) && !k1) begin
-            rx_pkt_d     = RX_BODY;
-            rx_body_d    = {56'b0, sym1};
-            rx_cnt_d     = 4'd1;
-            rx_err_pkt_d = 1'b0;
-          end else if (k0 && (sym0 == RIVET_SYM_SDP) && k1 && (sym1 == RIVET_SYM_END)) begin
-            // Illegal empty — drop
-            rx_pkt_d = RX_IDLE;
+          rx_sy = sym_data_i[7:0];
+          rx_ky = sym_datak_i[0];
+          if (lane_en_i[0] && rx_ky && (rx_sy == RIVET_SYM_SDP)) begin
+            automatic logic [3:0]  c   = 4'd0;
+            automatic logic [63:0] b   = '0;
+            automatic logic        err = 1'b0;
+            automatic logic        done = 1'b0;
+            automatic logic        nullified = 1'b0;
+            automatic int unsigned skip = 1;
+
+            for (int unsigned s = 0; s < SYMS; s++) begin
+              for (int unsigned l = 0; l < LANES; l++) begin
+                if (!lane_en_i[l] || done) begin
+                end else if (skip != 0) begin
+                  skip = 0;
+                end else begin
+                  rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+                  rx_ky = sym_datak_i[SYMS*l + s];
+                  if (c < 4'd8) begin
+                    if (rx_ky) begin
+                      err  = 1'b1;
+                      done = 1'b1;
+                    end else begin
+                      b[8*c +: 8] = rx_sy;
+                      c = c + 4'd1;
+                    end
+                  end else begin
+                    if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+                      done = 1'b1;
+                    end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                      nullified = 1'b1;
+                      done      = 1'b1;
+                    end else if (!rx_ky && (rx_sy == 8'h00)) begin
+                    end else begin
+                      err  = 1'b1;
+                      done = 1'b1;
+                    end
+                  end
+                end
+              end
+            end
+
+            rx_body_d    = b;
+            rx_cnt_d     = c;
+            rx_err_pkt_d = err;
+            if (done) begin
+              if (!dll_beat_valid_q || dll_rx_ready_i) begin
+                dll_beat_d.data     = b;
+                dll_beat_d.keep     = 8'hFF;
+                dll_beat_d.sop      = 1'b1;
+                dll_beat_d.eop      = 1'b1;
+                dll_beat_d.err      = err | nullified;
+                dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
+                dll_beat_valid_d    = 1'b1;
+                rx_pkt_d            = RX_IDLE;
+                rx_cnt_d            = 4'd0;
+              end else begin
+                rx_pkt_d = RX_HOLD;
+              end
+            end else begin
+              rx_pkt_d = RX_BODY;
+            end
           end
         end
         RX_BODY: begin
-          // Consume up to 2 symbols per cycle toward 8 data bytes, then END.
-          automatic logic [3:0] c = rx_cnt_q;
-          automatic logic [63:0] b = rx_body_q;
+          automatic logic [3:0]  c   = rx_cnt_q;
+          automatic logic [63:0] b   = rx_body_q;
           automatic logic        err = rx_err_pkt_q;
           automatic logic        done = 1'b0;
           automatic logic        nullified = 1'b0;
 
           for (int unsigned s = 0; s < SYMS; s++) begin
-            automatic logic [7:0] sy = (s == 0) ? sym0 : sym1;
-            automatic logic       ky = (s == 0) ? k0 : k1;
-            if (done) begin
-              // ignore trailing symbol in same beat
-            end else if (c < 4'd8) begin
-              if (ky) begin
-                err  = 1'b1;
-                done = 1'b1;
+            for (int unsigned l = 0; l < LANES; l++) begin
+              if (!lane_en_i[l] || done) begin
               end else begin
-                b[8*c +: 8] = sy;
-                c = c + 4'd1;
-              end
-            end else begin
-              // expect END / EDB
-              if (ky && (sy == RIVET_SYM_END)) begin
-                done = 1'b1;
-              end else if (ky && (sy == RIVET_SYM_EDB)) begin
-                nullified = 1'b1;
-                done      = 1'b1;
-              end else begin
-                err  = 1'b1;
-                done = 1'b1;
+                rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+                rx_ky = sym_datak_i[SYMS*l + s];
+                if (c < 4'd8) begin
+                  if (rx_ky) begin
+                    err  = 1'b1;
+                    done = 1'b1;
+                  end else begin
+                    b[8*c +: 8] = rx_sy;
+                    c = c + 4'd1;
+                  end
+                end else begin
+                  if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+                    done = 1'b1;
+                  end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                    nullified = 1'b1;
+                    done      = 1'b1;
+                  end else if (!rx_ky && (rx_sy == 8'h00)) begin
+                  end else begin
+                    err  = 1'b1;
+                    done = 1'b1;
+                  end
+                end
               end
             end
           end

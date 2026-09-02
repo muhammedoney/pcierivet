@@ -5,7 +5,7 @@ Data Link Layer sources. Checklist / plan: [docs/dll.md](../../../docs/dll.md).
 | Module | Role |
 |--------|------|
 | `rivet_dll` | Top; FC + DL SM + TL stream + TLP/ACK/NAK/replay (D5) |
-| `rivet_dll_sm` | Inactive / Init / Active / Replay; `dl_up` |
+| `rivet_dll_sm` | Inactive / Init / Active (+ replay busy); `dl_up` |
 | `rivet_dll_crc16` | DLLP 16-bit CRC |
 | `rivet_dll_lcrc32` | TLP LCRC-32 |
 | `rivet_dllp_tx` / `rivet_dllp_rx` | DLLP build / parse + CRC |

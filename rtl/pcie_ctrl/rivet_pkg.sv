@@ -177,12 +177,12 @@ package rivet_pkg;
     logic                 tx_idle_req;
   } rivet_dll_mac_sb_t;
 
-  // Data Link feature SM states (D4).
+  // Data Link Control and Management SM (Gen2 VC0 subset; no DL_Feature).
+  // Replay is not a DLCMSM state — it is a busy flag under DL_Active.
   typedef enum logic [1:0] {
     RIVET_DL_INACTIVE = 2'd0,
     RIVET_DL_INIT     = 2'd1,
-    RIVET_DL_ACTIVE   = 2'd2,
-    RIVET_DL_REPLAY   = 2'd3
+    RIVET_DL_ACTIVE   = 2'd2
   } rivet_dl_state_e;
 
   // -------------------------------------------------------------------------

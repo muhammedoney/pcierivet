@@ -4,8 +4,7 @@
 // MAC ordered-set / TS transmitter (Gen2, 8b/10b symbol plane).
 //
 // Streams the ordered set the LTSSM asks for and, when L0 packet enable is high,
-// may insert a framed DLLP (SDP + 8 bytes + END) on ×1. Multi-lane striping of
-// packets is deferred; LANES>1 keeps dll_tx_ready low.
+// may insert a framed DLLP (SDP + 8 bytes + END) striped across LANES∈{1,2,4}.
 
 module rivet_mac_os_tx #(
   parameter int unsigned LANES           = 1,
@@ -46,14 +45,17 @@ module rivet_mac_os_tx #(
 
   import rivet_pkg::*;
 
-  localparam int unsigned SYMS  = PIPE_DATA_WIDTH / 8;
-  localparam int unsigned CNT_W = 12;
+  localparam int unsigned SYMS        = PIPE_DATA_WIDTH / 8;
+  localparam int unsigned SYM_PER_CLK = LANES * SYMS;
+  localparam int unsigned CNT_W       = 12;
+  // Must hold pkt_ptr + SYM_PER_CLK without wrap (x4: 8+8=16).
+  localparam int unsigned PTR_W       = 5;
 
   localparam logic [CNT_W-1:0] SYMS_C  = CNT_W'(SYMS);
   localparam logic [CNT_W-1:0] CNT_MAX = {CNT_W{1'b1}};
 
-  // ×1 packet path only in this slice.
-  localparam bit PKT_OK = (LANES == 1) && (PIPE_DATA_WIDTH == 16);
+  // Packet framing for Gen2 16-bit PIPE on legal widths.
+  localparam bit PKT_OK = (PIPE_DATA_WIDTH == 16);
 
 `ifndef SYNTHESIS
   initial begin
@@ -102,11 +104,13 @@ module rivet_mac_os_tx #(
     endcase
   endfunction
 
-  // Framed DLLP stream: [0]=SDP, [1..8]=bytes, [9]=END
+  // Framed DLLP stream: [0]=SDP, [1..8]=bytes, [9]=END; else Logical Idle.
   function automatic logic [8:0] pkt_symbol(input logic [3:0] idx,
                                             input logic [63:0] dllp);
     logic [8:0] sym;
-    unique case (idx)
+    if (idx >= 4'(RIVET_DLLP_FRAMED_LEN))
+      sym = {1'b0, 8'h00};
+    else unique case (idx)
       4'd0: sym = {1'b1, RIVET_SYM_SDP};
       4'd9: sym = {1'b1, RIVET_SYM_END};
       default: begin
@@ -134,12 +138,13 @@ module rivet_mac_os_tx #(
   logic [CNT_W-1:0]   sent_q;
   logic [8:0]         sym_tmp;
 
-  logic [63:0]        pkt_q, pkt_d;
-  logic [3:0]         pkt_ptr_q, pkt_ptr_d;
-  logic               pkt_done;
-  logic               take_dllp;
-  logic               dllp_ok;
-  logic               want_pkt;
+  logic [63:0]            pkt_q, pkt_d;
+  logic [PTR_W-1:0]       pkt_ptr_q, pkt_ptr_d;
+  logic                   pkt_done;
+  logic                   take_dllp;
+  logic                   dllp_ok;
+  logic                   want_pkt;
+  logic [PTR_W-1:0]       stream_idx;
 
   assign at_boundary  = (ptr_q == 5'd0) && (mode_q == ST_OS);
   assign transmitting = os_req_valid_i && (os_req_i != RIVET_MAC_OS_NONE);
@@ -159,7 +164,7 @@ module rivet_mac_os_tx #(
   assign take_dllp = want_pkt;
   assign dll_tx_ready_o = take_dllp;
 
-  assign pkt_done = (pkt_ptr_q + 4'(SYMS)) >= 4'(RIVET_DLLP_FRAMED_LEN);
+  assign pkt_done = (pkt_ptr_q + PTR_W'(SYM_PER_CLK)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
 
   always_comb begin
     mode_d    = mode_q;
@@ -168,18 +173,23 @@ module rivet_mac_os_tx #(
     unique case (mode_q)
       ST_OS: begin
         if (take_dllp) begin
-          mode_d    = ST_PKT;
-          pkt_d     = dll_tx_beat_i.data;
-          // First cycle already emits symbols 0..SYMS-1.
-          pkt_ptr_d = 4'(SYMS);
+          pkt_d = dll_tx_beat_i.data;
+          // First cycle already emits symbols 0..SYM_PER_CLK-1.
+          if (SYM_PER_CLK >= RIVET_DLLP_FRAMED_LEN) begin
+            mode_d    = ST_OS;
+            pkt_ptr_d = '0;
+          end else begin
+            mode_d    = ST_PKT;
+            pkt_ptr_d = PTR_W'(SYM_PER_CLK);
+          end
         end
       end
       ST_PKT: begin
         if (pkt_done) begin
           mode_d    = ST_OS;
-          pkt_ptr_d = 4'd0;
+          pkt_ptr_d = '0;
         end else begin
-          pkt_ptr_d = pkt_ptr_q + 4'(SYMS);
+          pkt_ptr_d = pkt_ptr_q + PTR_W'(SYM_PER_CLK);
         end
       end
       default: mode_d = ST_OS;
@@ -191,20 +201,23 @@ module rivet_mac_os_tx #(
     sym_datak_o = '0;
     sym_os_d_o  = '0;
     sym_tmp     = '0;
-    if (take_dllp) begin
+    stream_idx  = '0;
+    if (take_dllp || (mode_q == ST_PKT)) begin
+      // Stripe: symbol time s, then lanes 0..LANES-1 (SDP starts on Lane 0).
       for (int unsigned s = 0; s < SYMS; s++) begin
-        sym_tmp = pkt_symbol(4'(s), dll_tx_beat_i.data);
-        if (lane_en_i[0]) begin
-          sym_data_o[8*s +: 8] = sym_tmp[7:0];
-          sym_datak_o[s]       = sym_tmp[8];
-        end
-      end
-    end else if (mode_q == ST_PKT) begin
-      for (int unsigned s = 0; s < SYMS; s++) begin
-        sym_tmp = pkt_symbol(4'(pkt_ptr_q + 4'(s)), pkt_q);
-        if (lane_en_i[0]) begin
-          sym_data_o[8*s +: 8] = sym_tmp[7:0];
-          sym_datak_o[s]       = sym_tmp[8];
+        for (int unsigned l = 0; l < LANES; l++) begin
+          if (take_dllp)
+            stream_idx = PTR_W'(s * LANES + l);
+          else
+            stream_idx = pkt_ptr_q + PTR_W'(s * LANES + l);
+          if (take_dllp)
+            sym_tmp = pkt_symbol(stream_idx[3:0], dll_tx_beat_i.data);
+          else
+            sym_tmp = pkt_symbol(stream_idx[3:0], pkt_q);
+          if (lane_en_i[l]) begin
+            sym_data_o[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
+            sym_datak_o[SYMS*l + s]                  = sym_tmp[8];
+          end
         end
       end
     end else begin
