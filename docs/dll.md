@@ -354,9 +354,11 @@ Folder README stays thin; this file is the checklist.
 
 ### D3 — TX gate + PG213 FC stubs
 
-- [ ] Expose available TX credits to TL stub / `pcie_tfc_*` / `cfg_fc_*`  
-- [ ] Block TL TLP submission when gate fails (API ready before TLP RTL)  
-- [ ] Gate: directed credit-starvation test  
+- [x] Expose available TX credits to TL / `pcie_tfc_*` / `cfg_fc_*`  
+- [x] Consume API gates CC bumps; `*_ok` / `tx_gate_ready` for future TLP  
+- [x] Still **no** application TLP  
+- [x] Gate: Verilator `sim_dll_fc_gate` (starve → peer UpdateFC restore)  
+- [x] Gate: Questa `smoke_gen2_x1` + `ltssm_l0_gen2_x{1,2,4}`  
 
 ### D4 — TLP reliability (after framing + FC proven)
 

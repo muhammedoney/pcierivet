@@ -70,6 +70,15 @@ module rivet_pcie_ctrl #(
   output logic [3:0]                 pcie_tfc_nph_av,
   output logic [3:0]                 pcie_tfc_npd_av,
 
+  // PG213 Configuration Flow Control (Table 32)
+  output logic [7:0]                 cfg_fc_ph,
+  output logic [11:0]                cfg_fc_pd,
+  output logic [7:0]                 cfg_fc_nph,
+  output logic [11:0]                cfg_fc_npd,
+  output logic [7:0]                 cfg_fc_cplh,
+  output logic [11:0]                cfg_fc_cpld,
+  input  logic [2:0]                 cfg_fc_sel,
+
   // Configuration Management (PG213 Table 26)
   input  logic [9:0]                 cfg_mgmt_addr,
   input  logic [7:0]                 cfg_mgmt_function_number,
@@ -169,8 +178,6 @@ module rivet_pcie_ctrl #(
   assign pcie_rq_tag1         = '0;
   assign pcie_rq_tag_vld1     = 1'b0;
   assign pcie_rq_tag_av       = '0;
-  assign pcie_tfc_nph_av      = '0;
-  assign pcie_tfc_npd_av      = '0;
 
   assign cfg_mgmt_read_data       = '0;
   assign cfg_mgmt_read_write_done = cfg_mgmt_read || cfg_mgmt_write;
@@ -205,6 +212,18 @@ module rivet_pcie_ctrl #(
     .free_npd_amt_i   (12'd0),
     .free_cplh_amt_i  (8'd0),
     .free_cpld_amt_i  (12'd0),
+    .consume_ph_i     (1'b0),
+    .consume_pd_i     (1'b0),
+    .consume_nph_i    (1'b0),
+    .consume_npd_i    (1'b0),
+    .consume_cplh_i   (1'b0),
+    .consume_cpld_i   (1'b0),
+    .consume_ph_amt_i (8'd0),
+    .consume_pd_amt_i (12'd0),
+    .consume_nph_amt_i(8'd0),
+    .consume_npd_amt_i(12'd0),
+    .consume_cplh_amt_i(8'd0),
+    .consume_cpld_amt_i(12'd0),
     .tl_to_dll_fc_o   (tl_to_dll_fc),
     .dll_to_tl_fc_i   (dll_to_tl_fc)
   );
@@ -226,6 +245,68 @@ module rivet_pcie_ctrl #(
     .tl_to_dll_fc_i (tl_to_dll_fc),
     .dll_to_tl_fc_o (dll_to_tl_fc)
   );
+
+  // PG213 tfc: NP TX credit availability (0 = none … 15 = 15+)
+  assign pcie_tfc_nph_av = dll_to_tl_fc.tx_gate_ready
+      ? rivet_fc_tfc_scale({4'h0, dll_to_tl_fc.av.nph}, dll_to_tl_fc.av.nph_inf)
+      : 4'h0;
+  assign pcie_tfc_npd_av = dll_to_tl_fc.tx_gate_ready
+      ? rivet_fc_tfc_scale(dll_to_tl_fc.av.npd, dll_to_tl_fc.av.npd_inf)
+      : 4'h0;
+
+  // cfg_fc_* mux (pclk). RX consumed not tracked yet → 0 for sel=010.
+  always_comb begin
+    cfg_fc_ph   = '0;
+    cfg_fc_pd   = '0;
+    cfg_fc_nph  = '0;
+    cfg_fc_npd  = '0;
+    cfg_fc_cplh = '0;
+    cfg_fc_cpld = '0;
+    unique case (cfg_fc_sel)
+      RIVET_CFG_FC_SEL_RX_AVAIL: begin
+        cfg_fc_ph   = tl_to_dll_fc.ca.ph_inf   ? 8'h00  : tl_to_dll_fc.ca.ph;
+        cfg_fc_pd   = tl_to_dll_fc.ca.pd_inf   ? 12'h000 : tl_to_dll_fc.ca.pd;
+        cfg_fc_nph  = tl_to_dll_fc.ca.nph_inf  ? 8'h00  : tl_to_dll_fc.ca.nph;
+        cfg_fc_npd  = tl_to_dll_fc.ca.npd_inf  ? 12'h000 : tl_to_dll_fc.ca.npd;
+        cfg_fc_cplh = tl_to_dll_fc.ca.cplh_inf ? 8'h00  : tl_to_dll_fc.ca.cplh;
+        cfg_fc_cpld = tl_to_dll_fc.ca.cpld_inf ? 12'h000 : tl_to_dll_fc.ca.cpld;
+      end
+      RIVET_CFG_FC_SEL_RX_CONS: begin
+        cfg_fc_ph = '0; cfg_fc_pd = '0; cfg_fc_nph = '0;
+        cfg_fc_npd = '0; cfg_fc_cplh = '0; cfg_fc_cpld = '0;
+      end
+      RIVET_CFG_FC_SEL_TX_AVAIL: begin
+        if (!dll_to_tl_fc.tx_gate_ready) begin
+          cfg_fc_ph = '0; cfg_fc_pd = '0; cfg_fc_nph = '0;
+          cfg_fc_npd = '0; cfg_fc_cplh = '0; cfg_fc_cpld = '0;
+        end else begin
+          cfg_fc_ph   = dll_to_tl_fc.av.ph_inf   ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.ph;
+          cfg_fc_pd   = dll_to_tl_fc.av.pd_inf   ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.pd;
+          cfg_fc_nph  = dll_to_tl_fc.av.nph_inf  ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.nph;
+          cfg_fc_npd  = dll_to_tl_fc.av.npd_inf  ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.npd;
+          cfg_fc_cplh = dll_to_tl_fc.av.cplh_inf ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.cplh;
+          cfg_fc_cpld = dll_to_tl_fc.av.cpld_inf ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.cpld;
+        end
+      end
+      RIVET_CFG_FC_SEL_TX_LIMIT: begin
+        cfg_fc_ph   = dll_to_tl_fc.cl.ph_inf   ? 8'h00  : dll_to_tl_fc.cl.ph;
+        cfg_fc_pd   = dll_to_tl_fc.cl.pd_inf   ? 12'h000 : dll_to_tl_fc.cl.pd;
+        cfg_fc_nph  = dll_to_tl_fc.cl.nph_inf  ? 8'h00  : dll_to_tl_fc.cl.nph;
+        cfg_fc_npd  = dll_to_tl_fc.cl.npd_inf  ? 12'h000 : dll_to_tl_fc.cl.npd;
+        cfg_fc_cplh = dll_to_tl_fc.cl.cplh_inf ? 8'h00  : dll_to_tl_fc.cl.cplh;
+        cfg_fc_cpld = dll_to_tl_fc.cl.cpld_inf ? 12'h000 : dll_to_tl_fc.cl.cpld;
+      end
+      RIVET_CFG_FC_SEL_TX_CONS: begin
+        cfg_fc_ph   = dll_to_tl_fc.cl.ph_inf   ? 8'h00  : dll_to_tl_fc.cc.ph;
+        cfg_fc_pd   = dll_to_tl_fc.cl.pd_inf   ? 12'h000 : dll_to_tl_fc.cc.pd;
+        cfg_fc_nph  = dll_to_tl_fc.cl.nph_inf  ? 8'h00  : dll_to_tl_fc.cc.nph;
+        cfg_fc_npd  = dll_to_tl_fc.cl.npd_inf  ? 12'h000 : dll_to_tl_fc.cc.npd;
+        cfg_fc_cplh = dll_to_tl_fc.cl.cplh_inf ? 8'h00  : dll_to_tl_fc.cc.cplh;
+        cfg_fc_cpld = dll_to_tl_fc.cl.cpld_inf ? 12'h000 : dll_to_tl_fc.cc.cpld;
+      end
+      default: ;
+    endcase
+  end
 
   rivet_mac #(
     .MODE              (MODE),

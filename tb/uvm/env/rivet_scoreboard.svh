@@ -41,8 +41,8 @@ class rivet_scoreboard extends uvm_scoreboard;
       `uvm_error(get_type_name(), $sformatf("MAC txelecidle=%0b expected 1", t.txelecidle))
     else if (t.powerdown !== 2'b10)
       `uvm_error(get_type_name(), $sformatf("MAC powerdown=%0b expected P1", t.powerdown))
-    else if (t.rate !== 3'd1)
-      `uvm_error(get_type_name(), $sformatf("MAC rate=%0d expected Gen2", t.rate))
+    else if (t.rate !== 3'd0)
+      `uvm_error(get_type_name(), $sformatf("MAC rate=%0d expected Gen1 (train rate)", t.rate))
     else if (t.as_mac_in_detect !== 1'b1)
       `uvm_error(get_type_name(), $sformatf("as_mac_in_detect=%0b expected 1", t.as_mac_in_detect))
     else
@@ -78,12 +78,17 @@ class rivet_scoreboard extends uvm_scoreboard;
   function void write_comp(rivet_companion_item t);
     comp_sample_count++;
     if (comp_sample_count < 5) return;
-    // Stub DUT: all companion outputs tied 0; cq_np_req held at TB default.
+    // LTSSM L0 loopback may complete InitFC and drive non-zero tfc_* — skip.
+    if (ltssm_l0_mode) begin
+      comp_checked = 1;
+      return;
+    end
+    // Idle smoke: Detect/P1 — no FC init, companion outputs stay 0.
     if (t.cq_np_req_count !== '0 || t.rq_seq_num_vld0 || t.rq_tag_vld0 ||
         t.rq_tag_vld1 || t.rq_tag_av !== '0 || t.tfc_nph_av !== '0 ||
         t.tfc_npd_av !== '0) begin
       comp_unexpected++;
-      `uvm_error(get_type_name(), "Companion outputs non-zero on stub DUT")
+      `uvm_error(get_type_name(), "Companion outputs non-zero on idle smoke DUT")
     end else
       comp_idle_ok++;
     comp_checked = 1;

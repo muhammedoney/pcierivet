@@ -139,8 +139,10 @@ Status: missing. Message events need a dedicated valid/data handshake
   `cfg_fc_npd[11:0]`, `cfg_fc_cplh[7:0]`, `cfg_fc_cpld[11:0]`
 - Input: `cfg_fc_sel[2:0]`
 
-Status: missing. Required for verification and diagnostics; the internal DLL
-credit model remains authoritative.
+Status: **present (D3 stub)**. Internal DLL CL/CC/av remain authoritative;
+`cfg_fc_sel` mux implements RX avail (CA), TX avail/limit/consumed. RX consumed
+is 0 until RX TLP accounting exists. Infinite TX avail uses PG213 `8'h80` /
+`12'h800`.
 
 ## Configuration control, reset, and errors
 

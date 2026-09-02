@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Minimal TL credit stub: CA advertisement + optional free inject for UpdateFC (D2).
+// Minimal TL credit stub: CA / free / consume inject for DLL FC (D3).
 
 module rivet_tl_fc_stub #(
   parameter logic [7:0]  PH_CRED   = 8'h7F,
@@ -13,7 +13,6 @@ module rivet_tl_fc_stub #(
   input  logic clk_i,
   input  logic rst_ni,
 
-  // One-cycle free injects (TB / TL). Increments CA when not infinite.
   input  logic        free_ph_i,
   input  logic        free_pd_i,
   input  logic        free_nph_i,
@@ -26,6 +25,19 @@ module rivet_tl_fc_stub #(
   input  logic [11:0] free_npd_amt_i,
   input  logic [7:0]  free_cplh_amt_i,
   input  logic [11:0] free_cpld_amt_i,
+
+  input  logic        consume_ph_i,
+  input  logic        consume_pd_i,
+  input  logic        consume_nph_i,
+  input  logic        consume_npd_i,
+  input  logic        consume_cplh_i,
+  input  logic        consume_cpld_i,
+  input  logic [7:0]  consume_ph_amt_i,
+  input  logic [11:0] consume_pd_amt_i,
+  input  logic [7:0]  consume_nph_amt_i,
+  input  logic [11:0] consume_npd_amt_i,
+  input  logic [7:0]  consume_cplh_amt_i,
+  input  logic [11:0] consume_cpld_amt_i,
 
   output rivet_pkg::rivet_tl_dll_fc_sb_t tl_to_dll_fc_o,
   input  rivet_pkg::rivet_dll_tl_fc_sb_t dll_to_tl_fc_i
@@ -64,6 +76,19 @@ module rivet_tl_fc_stub #(
       if (free_npd_i && !sb_q.ca.npd_inf) sb_q.ca.npd <= sb_q.ca.npd + free_npd_amt_i;
       if (free_cplh_i && !sb_q.ca.cplh_inf) sb_q.ca.cplh <= sb_q.ca.cplh + free_cplh_amt_i;
       if (free_cpld_i && !sb_q.ca.cpld_inf) sb_q.ca.cpld <= sb_q.ca.cpld + free_cpld_amt_i;
+
+      sb_q.consume_ph        <= consume_ph_i;
+      sb_q.consume_pd        <= consume_pd_i;
+      sb_q.consume_nph       <= consume_nph_i;
+      sb_q.consume_npd       <= consume_npd_i;
+      sb_q.consume_cplh      <= consume_cplh_i;
+      sb_q.consume_cpld      <= consume_cpld_i;
+      sb_q.consume_ph_amt    <= consume_ph_amt_i;
+      sb_q.consume_pd_amt    <= consume_pd_amt_i;
+      sb_q.consume_nph_amt   <= consume_nph_amt_i;
+      sb_q.consume_npd_amt   <= consume_npd_amt_i;
+      sb_q.consume_cplh_amt  <= consume_cplh_amt_i;
+      sb_q.consume_cpld_amt  <= consume_cpld_amt_i;
     end
   end
 

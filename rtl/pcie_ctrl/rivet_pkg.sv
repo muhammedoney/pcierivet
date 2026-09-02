@@ -223,7 +223,7 @@ package rivet_pkg;
     logic        cpld_inf;
   } rivet_fc_credit_set_t;
 
-  // TL -> DLL: advertised CA and free pulses (D0 stub / D1+ real).
+  // TL -> DLL: advertised CA, free pulses, and TX credit consume (D3).
   typedef struct packed {
     rivet_fc_credit_set_t ca;
     logic                 ph_freed;
@@ -232,14 +232,78 @@ package rivet_pkg;
     logic                 npd_freed;
     logic                 cplh_freed;
     logic                 cpld_freed;
+    logic                 consume_ph;
+    logic                 consume_pd;
+    logic                 consume_nph;
+    logic                 consume_npd;
+    logic                 consume_cplh;
+    logic                 consume_cpld;
+    logic [7:0]           consume_ph_amt;
+    logic [11:0]          consume_pd_amt;
+    logic [7:0]           consume_nph_amt;
+    logic [11:0]          consume_npd_amt;
+    logic [7:0]           consume_cplh_amt;
+    logic [11:0]          consume_cpld_amt;
   } rivet_tl_dll_fc_sb_t;
 
-  // DLL -> TL: peer CL / availability / FC init done.
+  // DLL -> TL: peer CL, consumed, available, gate status.
   typedef struct packed {
     rivet_fc_credit_set_t cl;
+    rivet_fc_credit_set_t cc;
+    rivet_fc_credit_set_t av; // CL-CC (finite); *_inf mirrors CL infinite
     logic                 fc_init_done;
     logic                 dl_active;
+    logic                 tx_gate_ready; // fc_init_done; TLP TX may use av
+    logic                 ph_ok;         // >=1 hdr credit (or inf)
+    logic                 pd_ok;
+    logic                 nph_ok;
+    logic                 npd_ok;
+    logic                 cplh_ok;
+    logic                 cpld_ok;
   } rivet_dll_tl_fc_sb_t;
+
+  // PG213 cfg_fc_sel (UltraScale+ Table 32 subset we implement).
+  localparam logic [2:0] RIVET_CFG_FC_SEL_RX_AVAIL  = 3'b000;
+  localparam logic [2:0] RIVET_CFG_FC_SEL_RX_CONS   = 3'b010;
+  localparam logic [2:0] RIVET_CFG_FC_SEL_TX_AVAIL  = 3'b100;
+  localparam logic [2:0] RIVET_CFG_FC_SEL_TX_LIMIT  = 3'b101;
+  localparam logic [2:0] RIVET_CFG_FC_SEL_TX_CONS   = 3'b110;
+
+  // PG213: infinite TX credits available → 8'h80 / 12'h800 on cfg_fc_*.
+  localparam logic [7:0]  RIVET_CFG_FC_HDR_INF_TX_AV = 8'h80;
+  localparam logic [11:0] RIVET_CFG_FC_DATA_INF_TX_AV = 12'h800;
+
+  function automatic logic [7:0] rivet_fc_hdr_avail(
+      input logic [7:0] cl, input logic [7:0] cc, input logic inf);
+    return inf ? 8'hFF : (cl - cc);
+  endfunction
+
+  function automatic logic [11:0] rivet_fc_data_avail(
+      input logic [11:0] cl, input logic [11:0] cc, input logic inf);
+    return inf ? 12'hFFF : (cl - cc);
+  endfunction
+
+  function automatic bit rivet_fc_hdr_ok(
+      input logic [7:0] cl, input logic [7:0] cc, input logic inf,
+      input logic [7:0] need);
+    if (inf) return 1'b1;
+    return (cl - cc) >= need;
+  endfunction
+
+  function automatic bit rivet_fc_data_ok(
+      input logic [11:0] cl, input logic [11:0] cc, input logic inf,
+      input logic [11:0] need);
+    if (inf) return 1'b1;
+    return (cl - cc) >= need;
+  endfunction
+
+  // pcie_tfc_* scale: 0..14 exact, 15 = 15 or more (PG213).
+  function automatic logic [3:0] rivet_fc_tfc_scale(input logic [11:0] avail, input logic inf);
+    if (inf) return 4'hF;
+    if (avail >= 12'd15) return 4'hF;
+    return avail[3:0];
+  endfunction
+
 
   // Soft request into dllp_tx (before CRC).
   typedef struct packed {

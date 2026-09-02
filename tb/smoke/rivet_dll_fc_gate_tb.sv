@@ -1,11 +1,11 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Dual-DLL InitFC then UpdateFC after TL credit free; peer CL tracks CA.
+// TX credit gate: consume until starved, then peer UpdateFC restores avail.
 
 `timescale 1ns/1ps
 
-module rivet_dll_fc_update_tb;
+module rivet_dll_fc_gate_tb;
   import rivet_pkg::*;
 
   logic clk;
@@ -21,7 +21,8 @@ module rivet_dll_fc_update_tb;
   rivet_dll_mac_rx_beat_t rx_a, rx_b;
   logic                   rxv_a, rxv_b, rxr_a, rxr_b;
 
-  logic free_ph_a, free_nph_a, free_cplh_a;
+  logic free_ph_b;
+  logic consume_ph_a;
 
   always_comb begin
     rx_b.data = tx_a.data; rx_b.keep = tx_a.keep; rx_b.sop = tx_a.sop;
@@ -33,29 +34,30 @@ module rivet_dll_fc_update_tb;
     rxv_a = txv_b; txr_b = rxr_a;
   end
 
-  rivet_tl_fc_stub #(.PH_CRED(8'h05), .NPH_CRED(8'h03)) u_tl_a (
-    .clk_i(clk), .rst_ni(rst_n),
-    .free_ph_i(free_ph_a), .free_pd_i(1'b0),
-    .free_nph_i(free_nph_a), .free_npd_i(1'b0),
-    .free_cplh_i(free_cplh_a), .free_cpld_i(1'b0),
-    .free_ph_amt_i(8'd2), .free_pd_amt_i(12'd0),
-    .free_nph_amt_i(8'd1), .free_npd_amt_i(12'd0),
-    .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
-    .consume_ph_i(1'b0), .consume_pd_i(1'b0),
-    .consume_nph_i(1'b0), .consume_npd_i(1'b0),
-    .consume_cplh_i(1'b0), .consume_cpld_i(1'b0),
-    .consume_ph_amt_i(8'd0), .consume_pd_amt_i(12'd0),
-    .consume_nph_amt_i(8'd0), .consume_npd_amt_i(12'd0),
-    .consume_cplh_amt_i(8'd0), .consume_cpld_amt_i(12'd0),
-    .tl_to_dll_fc_o(tl_a), .dll_to_tl_fc_i(dll_tl_a)
-  );
-
-  rivet_tl_fc_stub #(.PH_CRED(8'h11), .NPH_CRED(8'h07)) u_tl_b (
+  // Peer B advertises PH=3 → A's CL.ph=3 after InitFC.
+  rivet_tl_fc_stub #(.PH_CRED(8'h20), .NPH_CRED(8'h10)) u_tl_a (
     .clk_i(clk), .rst_ni(rst_n),
     .free_ph_i(1'b0), .free_pd_i(1'b0),
     .free_nph_i(1'b0), .free_npd_i(1'b0),
     .free_cplh_i(1'b0), .free_cpld_i(1'b0),
     .free_ph_amt_i(8'd0), .free_pd_amt_i(12'd0),
+    .free_nph_amt_i(8'd0), .free_npd_amt_i(12'd0),
+    .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
+    .consume_ph_i(consume_ph_a), .consume_pd_i(1'b0),
+    .consume_nph_i(1'b0), .consume_npd_i(1'b0),
+    .consume_cplh_i(1'b0), .consume_cpld_i(1'b0),
+    .consume_ph_amt_i(8'd1), .consume_pd_amt_i(12'd0),
+    .consume_nph_amt_i(8'd0), .consume_npd_amt_i(12'd0),
+    .consume_cplh_amt_i(8'd0), .consume_cpld_amt_i(12'd0),
+    .tl_to_dll_fc_o(tl_a), .dll_to_tl_fc_i(dll_tl_a)
+  );
+
+  rivet_tl_fc_stub #(.PH_CRED(8'h03), .NPH_CRED(8'h02)) u_tl_b (
+    .clk_i(clk), .rst_ni(rst_n),
+    .free_ph_i(free_ph_b), .free_pd_i(1'b0),
+    .free_nph_i(1'b0), .free_npd_i(1'b0),
+    .free_cplh_i(1'b0), .free_cpld_i(1'b0),
+    .free_ph_amt_i(8'd1), .free_pd_amt_i(12'd0),
     .free_nph_amt_i(8'd0), .free_npd_amt_i(12'd0),
     .free_cplh_amt_i(8'd0), .free_cpld_amt_i(12'd0),
     .consume_ph_i(1'b0), .consume_pd_i(1'b0),
@@ -90,9 +92,8 @@ module rivet_dll_fc_update_tb;
     rst_n = 1'b0;
     mac_a = '0;
     mac_b = '0;
-    free_ph_a = 1'b0;
-    free_nph_a = 1'b0;
-    free_cplh_a = 1'b0;
+    free_ph_b = 1'b0;
+    consume_ph_a = 1'b0;
     repeat (5) @(posedge clk);
     rst_n = 1'b1;
     @(posedge clk);
@@ -104,51 +105,63 @@ module rivet_dll_fc_update_tb;
     wait (dll_tl_a.fc_init_done && dll_tl_b.fc_init_done);
     @(posedge clk);
 
-    if (dll_tl_b.cl.ph !== 8'h05) begin
-      $error("pre-update B CL.ph=%h", dll_tl_b.cl.ph);
+    if (!dll_tl_a.tx_gate_ready || !dll_tl_a.ph_ok) begin
+      $error("expected gate ready with PH avail after init");
+      $fatal(1);
+    end
+    if (dll_tl_a.cl.ph !== 8'h03) begin
+      $error("A CL.ph=%h expected 3", dll_tl_a.cl.ph);
+      $fatal(1);
+    end
+    if (!dll_tl_a.cplh_ok || !dll_tl_a.av.cplh_inf) begin
+      $error("CPL should stay infinite/ok");
       $fatal(1);
     end
 
-    // Free PH on A: CA.ph 5→7; peer B CL must follow via UpdateFC-P.
-    @(posedge clk);
-    free_ph_a = 1'b1;
-    @(posedge clk);
-    free_ph_a = 1'b0;
+    // Consume all 3 PH credits
+    repeat (3) begin
+      @(posedge clk);
+      consume_ph_a = 1'b1;
+      @(posedge clk);
+      consume_ph_a = 1'b0;
+      @(posedge clk);
+    end
 
-    wait (dll_tl_b.cl.ph === 8'h07);
-    @(posedge clk);
-
-    if (tl_a.ca.ph !== 8'h07) begin
-      $error("A CA.ph not bumped: %h", tl_a.ca.ph);
+    if (dll_tl_a.ph_ok || (dll_tl_a.av.ph !== 8'h00) || (dll_tl_a.cc.ph !== 8'h03)) begin
+      $error("starve fail ok=%0b av=%h cc=%h", dll_tl_a.ph_ok, dll_tl_a.av.ph, dll_tl_a.cc.ph);
       $fatal(1);
     end
 
-    // Free NPH: 3→4
+    // Extra consume must be refused (CC sticky)
     @(posedge clk);
-    free_nph_a = 1'b1;
+    consume_ph_a = 1'b1;
     @(posedge clk);
-    free_nph_a = 1'b0;
-    wait (dll_tl_b.cl.nph === 8'h04);
-
-    // Infinite CPL: free pulse must not clear cplh_inf / invent finite credits.
+    consume_ph_a = 1'b0;
     @(posedge clk);
-    free_cplh_a = 1'b1;
-    @(posedge clk);
-    free_cplh_a = 1'b0;
-    repeat (40) @(posedge clk);
-    if (!dll_tl_b.cl.cplh_inf || (dll_tl_b.cl.cplh !== 8'h00)) begin
-      $error("CPL infinite broken after UpdateFC cplh=%h inf=%0b",
-             dll_tl_b.cl.cplh, dll_tl_b.cl.cplh_inf);
+    if (dll_tl_a.cc.ph !== 8'h03) begin
+      $error("consume past gate bumped CC to %h", dll_tl_a.cc.ph);
       $fatal(1);
     end
 
-    $display("PASS: rivet_dll_fc_update_tb");
+    // Peer frees one PH → UpdateFC raises CL → gate reopens
+    @(posedge clk);
+    free_ph_b = 1'b1;
+    @(posedge clk);
+    free_ph_b = 1'b0;
+    wait (dll_tl_a.cl.ph === 8'h04);
+    @(posedge clk);
+    if (!dll_tl_a.ph_ok || (dll_tl_a.av.ph !== 8'h01)) begin
+      $error("restore fail ok=%0b av=%h", dll_tl_a.ph_ok, dll_tl_a.av.ph);
+      $fatal(1);
+    end
+
+    $display("PASS: rivet_dll_fc_gate_tb");
     $finish;
   end
 
   initial begin
     #500000;
-    $error("timeout ph=%h nph=%h", dll_tl_b.cl.ph, dll_tl_b.cl.nph);
+    $error("timeout gate tb");
     $fatal(1);
   end
-endmodule : rivet_dll_fc_update_tb
+endmodule : rivet_dll_fc_gate_tb
