@@ -294,7 +294,10 @@ module rivet_ltssm #(
 
         if (ts2_pad_any_i) rx_seen_d = 1'b1;
 
-        if (ts2_pad_any_i && rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
+        // Advance after first TS2(PAD) seen and N more TS2 sent. Do not require
+        // ts2_pad_any on the exit cycle — peer bursts can drop the OS-RX
+        // consecutive counter while we are still transmitting (seen with PG213 RP).
+        if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
           state_d = RIVET_LTSSM_CFG_LINKWIDTH_START;
         else if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
