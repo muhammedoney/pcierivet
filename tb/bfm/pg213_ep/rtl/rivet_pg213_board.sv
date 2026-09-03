@@ -74,7 +74,7 @@ module board;
 
   // Stock PG213 Root Port model — width matches Rivet EP (×4).
   xilinx_pcie4_uscale_rp #(
-    .PL_LINK_CAP_MAX_LINK_SPEED (2), // Gen2
+    .PL_LINK_CAP_MAX_LINK_SPEED (1), // Gen1 (temporary bring-up)
     .PL_LINK_CAP_MAX_LINK_WIDTH (5'(LINK_WIDTH)),
     .PF0_DEV_CAP_MAX_PAYLOAD_SIZE (3'b011)
   ) RP (

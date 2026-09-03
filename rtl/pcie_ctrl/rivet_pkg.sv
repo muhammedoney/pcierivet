@@ -13,6 +13,7 @@ package rivet_pkg;
   } rivet_mode_e;
 
   typedef enum int unsigned {
+    RIVET_GEN1 = 1,
     RIVET_GEN2 = 2,
     RIVET_GEN4 = 4,
     RIVET_GEN5 = 5
