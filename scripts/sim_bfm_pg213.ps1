@@ -388,9 +388,9 @@ if ($Step -eq "all" -or $Step -eq "simulate") {
       Write-Host "PASS: PG213 RP + Rivet EP link_up"
       exit 0
     }
-    if ($text -match "Detect/Polling cycle|link training timeout|TIMEOUT") {
+    if ($text -match "Detect/Polling cycle|Config reached then back to Detect|link training timeout|TIMEOUT") {
       Write-Host ""
-      Write-Host "FAIL: link training (Detect/Polling cycle, no link_up) - see $log"
+      Write-Host "FAIL: link training - see $log"
       exit 1
     }
     Write-Warning "No clear PASS/FAIL token in simulate.log - inspect $log"

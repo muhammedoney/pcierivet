@@ -17,7 +17,6 @@ module board;
 
   logic [LINK_WIDTH-1:0] ep_pci_exp_txn, ep_pci_exp_txp;
   logic [LINK_WIDTH-1:0] rp_pci_exp_txn, rp_pci_exp_txp;
-  logic [11:0]           rp_txn, rp_txp;
 
   logic ep_phy_ready, ep_link_up;
   logic [5:0] ep_ltssm;
@@ -73,19 +72,19 @@ module board;
     .ltssm_state_o (ep_ltssm)
   );
 
-  // Stock PG213 Root Port model (×16 ports; lower ×4 wired)
+  // Stock PG213 Root Port model — width matches Rivet EP (×4).
   xilinx_pcie4_uscale_rp #(
     .PL_LINK_CAP_MAX_LINK_SPEED (2), // Gen2
-    .PL_LINK_CAP_MAX_LINK_WIDTH (16),
+    .PL_LINK_CAP_MAX_LINK_WIDTH (5'(LINK_WIDTH)),
     .PF0_DEV_CAP_MAX_PAYLOAD_SIZE (3'b011)
   ) RP (
     .sys_clk_n (rp_sys_clk_n),
     .sys_clk_p (rp_sys_clk_p),
     .sys_rst_n (sys_rst_n),
-    .pci_exp_txn ({rp_txn, rp_pci_exp_txn}),
-    .pci_exp_txp ({rp_txp, rp_pci_exp_txp}),
-    .pci_exp_rxn ({12'b0, ep_pci_exp_txn}),
-    .pci_exp_rxp ({12'b0, ep_pci_exp_txp})
+    .pci_exp_txn (rp_pci_exp_txn),
+    .pci_exp_txp (rp_pci_exp_txp),
+    .pci_exp_rxn (ep_pci_exp_txn),
+    .pci_exp_rxp (ep_pci_exp_txp)
   );
 
   initial begin
@@ -120,16 +119,26 @@ module board;
     $finish;
   end
 
-  // Early fail: Detect(0)→…→Polling.Cfg(4)→Detect without link_up (same as dual-Rivet PG239).
-  // Prefer this over #delay watchdogs — large delays are unreliable under vopt here.
-  logic seen_poll_cfg;
-  initial seen_poll_cfg = 1'b0;
+  // Finish when training regresses to Detect after having reached Configuration
+  // (Polling is no longer the sticky fail — Config/Idle vs RP is).
+  logic seen_cfg;
+  logic seen_ts2_pad;
+  initial begin
+    seen_cfg     = 1'b0;
+    seen_ts2_pad = 1'b0;
+  end
+  always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
+    if (EP.u_rivet_ep.u_ctrl.u_mac.ts2_pad_any)
+      seen_ts2_pad <= 1'b1;
+  end
   always @(ep_ltssm) begin
-    if (ep_ltssm == 6'h4)
-      seen_poll_cfg = 1'b1;
-    if (seen_poll_cfg && ep_ltssm == 6'h0 && !ep_link_up && ep_phy_ready) begin
-      $display("[%t] : TIMEOUT - Detect/Polling cycle (no link_up) ep_ltssm=%0h RP lnk=%0b",
-               $realtime, ep_ltssm, RP.user_lnk_up);
+    if (ep_ltssm >= 6'h5 && ep_ltssm <= 6'h0A)
+      seen_cfg = 1'b1;
+    if (seen_cfg && ep_ltssm == 6'h0 && ep_phy_ready) begin
+      $display("[%t] : TIMEOUT - Config reached then back to Detect (ep_link=%0b RP lnk=%0b)",
+               $realtime, ep_link_up, RP.user_lnk_up);
+      $display("[%t] : hint: ts2_pad_seen=%0b (Polling ok); next: CFG_IDLE idle/L0 vs RP",
+               $realtime, seen_ts2_pad);
       $display("[%t] : PG213 RP + Rivet EP link training timeout", $realtime);
       $finish(2);
     end
