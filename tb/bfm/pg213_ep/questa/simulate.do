@@ -1,4 +1,4 @@
-# Stock / Rivet PG213 board: run until $finish (PIO or timeout in board.v).
+# Stock PG213 board: run until $finish (PIO or timeout).
 onbreak {quit -f}
 onerror {quit -f}
 

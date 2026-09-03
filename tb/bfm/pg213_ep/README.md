@@ -1,12 +1,12 @@
 # PG213 EP example — BFM side-path (stage 3)
 
-Vivado **UltraScale+ PCIe Integrated Block (PG213)** example configured as **Endpoint**, with the stock **Root Port model** and **PIO** app.
+Vivado **UltraScale+ PCIe Integrated Block (PG213)** example with stock **Root Port model** + usrapp PIO, and optional **Rivet EP+PG239** swap.
 
 Local copy (gitignored): `third_party/xilinx_ip/pcie4_uscale_plus_0_ex/` — refresh via `.\scripts\sync_xilinx_examples.ps1`.
 
-Original export also lives under e.g. `C:\Users\tosba\vivado\pcie4_uscale_plus_0_ex` if you prefer `RIVET_PG213_EX` there.
+## Topology
 
-## Topology (stock)
+### Stock (`-Dut stock`)
 
 ```text
   RP model (xilinx_pcie_uscale_rp + usrapp_*)     EP (xilinx_pcie4_uscale_ep)
@@ -17,84 +17,88 @@ Original export also lives under e.g. `C:\Users\tosba\vivado\pcie4_uscale_plus_0
         └─ cfg / mem R/W tests (pio_writeReadBack_…)
 ```
 
-Default example knobs (from `imports/board.v` / EP): **AXI-ST 64-bit**, Gen2-class link speed parameter, PIO slave.
+### Rivet (`-Dut rivet`) — current bring-up target
 
-## Swap plan (Rivet DUT)
-
-Replace **only the EP PG213 core** with **`rivet_pcie_ctrl` + PG239** (same serial + PIO / RP tests):
+Soft Rivet RC is **not** used. Partner is the **PG213 RP BFM**:
 
 ```text
-  RP model (unchanged)     EP shell = rivet_pg213_ep_swap
-        │                         │
-        │◄──── serial ───────────►│  rivet_pcie_ctrl ──PIPE── PG239 (pcie_phy_0)
-        │                         │         ▲
-        │                         │         └── AXI-ST + cfg_mgmt ← pcie_app / PIO
+  RP = xilinx_pcie4_uscale_rp (+ usrapp_*)     EP = rivet_pg213_ep_swap
+        │                                            │
+        │◄──────────── serial ×4 ───────────────────►│
+        │                                            │  rivet_pcie_ctrl ──PIPE── PG239
+        │                                            │         ▲
+        │                                            │         └── AXI-ST / cfg_mgmt (TL still stub)
 ```
 
-WIP RTL: `rtl/rivet_pg213_ep_swap.sv` (drop-in pin-compatible shell).  
-Full PIO PASS needs working LTSSM/L0 + TL — tracked separately (see Known gaps).
-
-## Known gaps (do not block scaffolding)
-
-| Gap | Notes |
-|-----|--------|
-| Rivet LTSSM | PG239 dual-EP BFM saw Detect/Polling cycle (state ~5) without stable `link_up` |
-| Rivet TL / CFG | Stubs — PIO BAR / CfgRd will not complete until TL lands |
-| `simulate.do` | Vivado export uses `run 1000ns`; stock tests need `run -all` |
-| `compile_simlib` | Reuse `RIVET_QUESTA_SIMLIB` or compile under this project |
-
-Work order: fix LTSSM on PG239 BFM → enable Rivet swap here → grow PIO / system RP tests.
+Board module name is `board` and RP instance is `RP` (usrapp hierarchical refs).
 
 ## How to run
 
 ### Prerequisites
 
-Same Questa + Vivado `compile_simlib` as PG239 BFM. In `scripts/local_paths.ps1`:
+Questa + Vivado `compile_simlib`. In `scripts/local_paths.ps1`:
 
 ```powershell
-$env:RIVET_PG213_EX = "C:\Users\tosba\vivado\pcie4_uscale_plus_0_ex"
-# Prefer shared simlib (already built for PG239):
+$env:RIVET_PG213_EX = "...\pcie4_uscale_plus_0_ex"
+$env:RIVET_PG239_EX = "...\pcie_phy_0_ex"          # Rivet DUT only
 $env:RIVET_QUESTA_SIMLIB = "...\compile_simlib\questa"
 ```
 
-### Stock PG213 example (RP model ↔ Xilinx EP)
+### Stock PG213 (RP ↔ Xilinx EP)
 
 ```powershell
-.\scripts\sim_bfm_pg213.ps1
-# or
 .\scripts\sim_bfm_pg213.ps1 -Dut stock
 ```
 
-### Rivet EP swap (experimental)
+### Rivet EP under PG213 RP
 
 ```powershell
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet
+# stepwise:
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Step compile
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Step elaborate
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Step simulate
 ```
 
-Expect **link / PIO failures** until soft-ctrl LTSSM+TL catch up. Use for elaborate / bring-up only.
+Work dir: `tb/bfm/pg213_ep/work/`.
+
+| Token in `simulate.log` | Script result |
+|-------------------------|---------------|
+| `PG213 RP + Rivet EP link_up` | PASS |
+| `Detect/Polling cycle` / `TIMEOUT` | FAIL (expected until LTSSM links) |
+
+## Observed bring-up (Rivet DUT)
+
+Compile + elaborate succeed (needs `xp4_usp_smsw_model_core_top.v` + `board_common` macros).
+
+Simulation reaches EP `phy_ready`, then LTSSM cycles **Detect → Polling → (state 4) → Detect** with `link_up=0` and `RP.user_lnk_up=0`. Board finishes on the first return to Detect after seeing state 4 (~minutes wall-clock with dual GTY).
+
+Same Detect/Polling pattern as the dual-Rivet PG239 board — next debug is LTSSM/PIPE vs RP, not the BFM harness.
+
+## Known gaps
+
+| Gap | Notes |
+|-----|--------|
+| Rivet LTSSM / link_up | Detect/Polling cycle; no stable L0 yet |
+| Rivet TL / CFG | Stubs — after link_up, RP usrapp Cfg/PIO will still fail until TL lands |
+| AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 
 ## Layout
 
 ```text
 tb/bfm/pg213_ep/
-  README.md                 ← this file
+  README.md
   rtl/
-    rivet_pg213_ep_swap.sv  ← EP pin shell: Rivet+PG239 (+ PIO hook)
-    rivet_pg213_board.sv    ← board using swap EP + stock RP (rivet mode)
+    rivet_pg213_board.sv      # module board: RP BFM + Rivet EP
+    rivet_pg213_ep_swap.sv    # EP pin shell → Rivet+PG239
+    board_common_inc.v        # prelude for -mfcu usrapp macros
   questa/
-    simulate.do             ← run -all
-    elaborate_stock.do
     elaborate_rivet.do
-  work/                     ← gitignored
+    simulate_rivet.do
+    simulate.do               # stock
+  work/                       # gitignored
 
 scripts/sim_bfm_pg213.ps1
 ```
 
-## Future tests (both BFM tracks)
-
-| Track | Near-term | Later |
-|-------|-----------|--------|
-| `pg239_phy` | PHY pattern; Rivet dual-shell LTSSM debug | Directed LTSSM / Recovery sequences |
-| `pg213_ep` | Stock PIO green; Rivet swap elaborate | PIO / Cfg after link_up; then RP↔Rivet system |
-
-UVM + Verilator remain primary gates; these BFM tracks are complementary.
+UVM + Verilator remain primary gates; this BFM track is complementary.
