@@ -33,7 +33,12 @@ module rivet_pg213_ep_swap #(
 
   input  sys_clk_p,
   input  sys_clk_n,
-  input  sys_rst_n
+  input  sys_rst_n,
+
+  // Board probes (not on stock Xilinx EP pin list)
+  output phy_ready_o,
+  output link_up_o,
+  output [5:0] ltssm_state_o
 );
 
   // Unused board clocks in soft-PHY path (kept for pin compatibility).
@@ -44,8 +49,9 @@ module rivet_pg213_ep_swap #(
   logic        link_up;
   logic [5:0]  cfg_ltssm_state;
 
-  // Reuse PG239 BFM EP shell (ctrl + pad + pcie_phy_0).
+  // Reuse PG239 BFM EP shell (ctrl + pad + pcie_phy_0). MODE=EP under RP.
   rivet_pg239_ep #(
+    .MODE  (0),
     .LANES (PL_LINK_CAP_MAX_LINK_WIDTH)
   ) u_rivet_ep (
     .sys_clk_p       (sys_clk_p),
@@ -61,6 +67,10 @@ module rivet_pg213_ep_swap #(
     .pipe_clk_o      (),
     .user_clk_o      ()
   );
+
+  assign phy_ready_o   = phy_ready;
+  assign link_up_o     = link_up;
+  assign ltssm_state_o = cfg_ltssm_state;
 
   // LED map (example-compatible intent)
   assign led_0 = sys_rst_n;
