@@ -94,6 +94,7 @@ module rivet_mac_sdp_loop_tb;
     .ts2_cfg_any_o         (ts2_cfg_any),
     .idle_all_o            (idle_all),
     .idle_any_o            (idle_any),
+    .idle_sym_any_o        (),
     .rx_link_num_o         (rx_link_num),
     .rx_lane_num_o         (rx_lane_num),
     .rx_n_fts_o            (rx_n_fts),

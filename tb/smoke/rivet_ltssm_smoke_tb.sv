@@ -372,10 +372,24 @@ module rivet_ltssm_smoke_tb;
     logic [15:0] lfsr;
     logic [7:0]  pad;
     lfsr = lfsr_in;
-    for (int unsigned i = 0; i < 8; i++) begin
-      pad[i] = lfsr[15];
-      lfsr   = {lfsr[14:0], lfsr[15] ^ lfsr[4] ^ lfsr[3] ^ lfsr[2]};
-    end
+    pad  = {lfsr[8],  lfsr[9],  lfsr[10], lfsr[11],
+            lfsr[12], lfsr[13], lfsr[14], lfsr[15]};
+    lfsr = {lfsr[7],
+            lfsr[6],
+            lfsr[5],
+            lfsr[4]  ^ lfsr[15],
+            lfsr[3]  ^ lfsr[15] ^ lfsr[14],
+            lfsr[2]  ^ lfsr[15] ^ lfsr[14] ^ lfsr[13],
+            lfsr[1]  ^ lfsr[14] ^ lfsr[13] ^ lfsr[12],
+            lfsr[0]  ^ lfsr[13] ^ lfsr[12] ^ lfsr[11],
+            lfsr[15] ^ lfsr[12] ^ lfsr[11] ^ lfsr[10],
+            lfsr[14] ^ lfsr[11] ^ lfsr[10] ^ lfsr[9],
+            lfsr[13] ^ lfsr[10] ^ lfsr[9]  ^ lfsr[8],
+            lfsr[12] ^ lfsr[9]  ^ lfsr[8],
+            lfsr[11] ^ lfsr[8],
+            lfsr[10],
+            lfsr[9],
+            lfsr[8]};
     return {lfsr, pad};
   endfunction
 

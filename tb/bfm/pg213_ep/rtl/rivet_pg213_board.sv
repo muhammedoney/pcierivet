@@ -121,15 +121,45 @@ module board;
 
   // Finish when training regresses to Detect after having reached Configuration
   // (Polling is no longer the sticky fail — Config/Idle vs RP is).
+  // CFG_IDLE probes per docs/ltssm.xlsx §4.2.6.3.6 Transition #19.
   logic seen_cfg;
   logic seen_ts2_pad;
+  logic seen_idle_sym;
+  logic seen_idle_all;
+  logic [11:0] idle_os_sent_peak;
+  int unsigned idle_sym_hits;
+  int unsigned idle_k_hits;
   initial begin
-    seen_cfg     = 1'b0;
-    seen_ts2_pad = 1'b0;
+    seen_cfg          = 1'b0;
+    seen_ts2_pad      = 1'b0;
+    seen_idle_sym     = 1'b0;
+    seen_idle_all     = 1'b0;
+    idle_os_sent_peak = '0;
+    idle_sym_hits     = 0;
+    idle_k_hits       = 0;
   end
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
     if (EP.u_rivet_ep.u_ctrl.u_mac.ts2_pad_any)
       seen_ts2_pad <= 1'b1;
+    if (ep_ltssm == 6'h0A) begin
+      automatic logic sym = EP.u_rivet_ep.u_ctrl.u_mac.idle_sym_any;
+      automatic logic iall = EP.u_rivet_ep.u_ctrl.u_mac.idle_all;
+      automatic logic [11:0] osc = EP.u_rivet_ep.u_ctrl.u_mac.os_sent_cnt;
+      automatic logic [15:0] raw0 = EP.u_rivet_ep.u_ctrl.u_mac.sym_rx_data_raw[15:0];
+      automatic logic [15:0] dsc0 = EP.u_rivet_ep.u_ctrl.u_mac.sym_rx_data[15:0];
+      automatic logic [1:0]  k0   = EP.u_rivet_ep.u_ctrl.u_mac.sym_rx_datak[1:0];
+      if (sym) begin
+        seen_idle_sym <= 1'b1;
+        idle_sym_hits <= idle_sym_hits + 1;
+      end
+      if (iall) seen_idle_all <= 1'b1;
+      if (osc > idle_os_sent_peak) idle_os_sent_peak <= osc;
+      if (|k0) idle_k_hits <= idle_k_hits + 1;
+      if ((idle_sym_hits + idle_k_hits) < 8) begin
+        $display("[%t] : CFG_IDLE probe idle_sym=%0b idle_all=%0b os_sent=%0d raw0=%h dsc0=%h k0=%b",
+                 $realtime, sym, iall, osc, raw0, dsc0, k0);
+      end
+    end
   end
   always @(ep_ltssm) begin
     if (ep_ltssm >= 6'h5 && ep_ltssm <= 6'h0A)
@@ -137,8 +167,9 @@ module board;
     if (seen_cfg && ep_ltssm == 6'h0 && ep_phy_ready) begin
       $display("[%t] : TIMEOUT - Config reached then back to Detect (ep_link=%0b RP lnk=%0b)",
                $realtime, ep_link_up, RP.user_lnk_up);
-      $display("[%t] : hint: ts2_pad_seen=%0b (Polling ok); next: CFG_IDLE idle/L0 vs RP",
-               $realtime, seen_ts2_pad);
+      $display("[%t] : hint: ts2_pad=%0b idle_sym=%0b idle_all=%0b os_sent_peak=%0d sym_hits=%0d k_hits=%0d",
+               $realtime, seen_ts2_pad, seen_idle_sym, seen_idle_all,
+               idle_os_sent_peak, idle_sym_hits, idle_k_hits);
       $display("[%t] : PG213 RP + Rivet EP link training timeout", $realtime);
       $finish(2);
     end

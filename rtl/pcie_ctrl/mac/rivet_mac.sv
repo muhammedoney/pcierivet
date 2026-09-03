@@ -124,7 +124,7 @@ module rivet_mac #(
   logic               ts1_link_all, ts1_link_any;
   logic               ts1_lane_all, ts1_lane_any;
   logic               ts2_cfg_all,  ts2_cfg_any;
-  logic               idle_all,     idle_any;
+  logic               idle_all,     idle_any, idle_sym_any;
   logic [7:0]         rx_link_num;
   logic [8*LANES-1:0] rx_lane_num;
   logic [7:0]         rx_n_fts;
@@ -173,6 +173,7 @@ module rivet_mac #(
     .ts2_cfg_any_i        (ts2_cfg_any),
     .idle_all_i           (idle_all),
     .idle_any_i           (idle_any),
+    .idle_sym_any_i       (idle_sym_any),
     .rx_link_num_i        (rx_link_num),
     .rx_lane_num_i        (rx_lane_num),
     .rx_rate_id_i         (rx_rate_id),
@@ -293,6 +294,7 @@ module rivet_mac #(
     .ts2_cfg_any_o         (ts2_cfg_any),
     .idle_all_o            (idle_all),
     .idle_any_o            (idle_any),
+    .idle_sym_any_o        (idle_sym_any),
     .rx_link_num_o         (rx_link_num),
     .rx_lane_num_o         (rx_lane_num),
     .rx_n_fts_o            (rx_n_fts),

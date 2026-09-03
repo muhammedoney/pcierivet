@@ -39,8 +39,11 @@ module rivet_mac_os_rx #(
   output logic ts1_lane_any_o,
   output logic ts2_cfg_all_o,   // TS2, Link and Lane non-PAD
   output logic ts2_cfg_any_o,
-  output logic idle_all_o,      // consecutive Idle Symbol Times
+  output logic idle_all_o,      // 8 consecutive Idle Symbol Times (all/any lanes)
   output logic idle_any_o,
+  // Combinational: any enabled Lane saw descrambled 00h D this cycle (Base:
+  // "16 Idle Symbols sent after receiving one" — one Symbol, not eight).
+  output logic idle_sym_any_o,
 
   // Captured TS fields (sticky until capture_clr_i)
   output logic [7:0]         rx_link_num_o,
@@ -320,6 +323,7 @@ module rivet_mac_os_rx #(
     ts1_lane_any_o = 1'b0;
     ts2_cfg_any_o  = 1'b0;
     idle_any_o     = 1'b0;
+    idle_sym_any_o = 1'b0;
 
     for (int unsigned l = 0; l < LANES; l++) begin
       if (lane_en_i[l]) begin
@@ -336,6 +340,7 @@ module rivet_mac_os_rx #(
         ts1_lane_any_o |= (c_ts1_lane_q[l] >= TH_NUM);
         ts2_cfg_any_o  |= (c_ts2_cfg_q[l]  >= TH_TS);
         idle_any_o     |= (c_idle_q[l]     >= TH_IDLE);
+        idle_sym_any_o |= hit_idle[l];
       end
     end
 

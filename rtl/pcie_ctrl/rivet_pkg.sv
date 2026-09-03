@@ -429,7 +429,8 @@ package rivet_pkg;
 
   // -------------------------------------------------------------------------
   // Gen2 scrambler LFSR (Base Spec §4.2.3): G(X)=X^16+X^5+X^4+X^3+1, seed FFFFh.
-  // Advance eight serial steps; return {new_lfsr[15:0], pad[7:0]} (pad bit0 first).
+  // One Symbol: pad bit i ← lfsr[15-i] (D15→data bit0), then 8-bit parallel
+  // advance (FFFF→E817→0328→…; scrambled 00h→FF,17,C0,14,…).
   // -------------------------------------------------------------------------
   localparam logic [15:0] RIVET_LFSR_SEED = 16'hFFFF;
 
@@ -437,10 +438,24 @@ package rivet_pkg;
     logic [15:0] lfsr;
     logic [7:0]  pad;
     lfsr = lfsr_in;
-    for (int unsigned i = 0; i < 8; i++) begin
-      pad[i] = lfsr[15];
-      lfsr   = {lfsr[14:0], lfsr[15] ^ lfsr[4] ^ lfsr[3] ^ lfsr[2]};
-    end
+    pad  = {lfsr[8],  lfsr[9],  lfsr[10], lfsr[11],
+            lfsr[12], lfsr[13], lfsr[14], lfsr[15]};
+    lfsr = {lfsr[7],
+            lfsr[6],
+            lfsr[5],
+            lfsr[4]  ^ lfsr[15],
+            lfsr[3]  ^ lfsr[15] ^ lfsr[14],
+            lfsr[2]  ^ lfsr[15] ^ lfsr[14] ^ lfsr[13],
+            lfsr[1]  ^ lfsr[14] ^ lfsr[13] ^ lfsr[12],
+            lfsr[0]  ^ lfsr[13] ^ lfsr[12] ^ lfsr[11],
+            lfsr[15] ^ lfsr[12] ^ lfsr[11] ^ lfsr[10],
+            lfsr[14] ^ lfsr[11] ^ lfsr[10] ^ lfsr[9],
+            lfsr[13] ^ lfsr[10] ^ lfsr[9]  ^ lfsr[8],
+            lfsr[12] ^ lfsr[9]  ^ lfsr[8],
+            lfsr[11] ^ lfsr[8],
+            lfsr[10],
+            lfsr[9],
+            lfsr[8]};
     return {lfsr, pad};
   endfunction
 
