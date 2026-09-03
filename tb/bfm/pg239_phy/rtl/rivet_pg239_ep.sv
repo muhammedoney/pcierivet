@@ -9,6 +9,7 @@
 
 module rivet_pg239_ep #(
   parameter int unsigned MODE              = 0, // rivet_pkg::RIVET_MODE_*
+  parameter int unsigned GEN               = 2,
   parameter int unsigned LANES             = 4,
   parameter int unsigned PIPE_DATA_WIDTH   = 16,
   parameter int unsigned PHY_DATA_WIDTH    = 64,
@@ -191,7 +192,7 @@ module rivet_pg239_ep #(
 
   rivet_pcie_ctrl #(
     .MODE              (MODE),
-    .GEN               (2),
+    .GEN               (GEN),
     .LANES             (LANES),
     .PIPE_DATA_WIDTH   (PIPE_DATA_WIDTH),
     .LTSSM_TIMER_SCALE (LTSSM_TIMER_SCALE),

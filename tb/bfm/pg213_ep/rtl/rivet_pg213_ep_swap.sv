@@ -49,9 +49,10 @@ module rivet_pg213_ep_swap #(
   logic        link_up;
   logic [5:0]  cfg_ltssm_state;
 
-  // Reuse PG239 BFM EP shell (ctrl + pad + pcie_phy_0). MODE=EP under RP.
+  // Temporary: advertise Gen1 only toward PG213 RP (TS rate ID + RP max speed).
   rivet_pg239_ep #(
     .MODE  (0),
+    .GEN   (1),
     .LANES (PL_LINK_CAP_MAX_LINK_WIDTH)
   ) u_rivet_ep (
     .sys_clk_p       (sys_clk_p),

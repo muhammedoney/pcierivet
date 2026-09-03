@@ -108,8 +108,8 @@ module rivet_ltssm #(
     if (!(MODE == RIVET_MODE_EP || MODE == RIVET_MODE_RC ||
           MODE == RIVET_MODE_USP || MODE == RIVET_MODE_DSP))
       $error("rivet_ltssm: MODE must be EP/RC/USP/DSP (got %0d)", MODE);
-    if (GEN != RIVET_GEN2)
-      $error("rivet_ltssm: GEN=2 only (got %0d)", GEN);
+    if (!(GEN == RIVET_GEN1 || GEN == RIVET_GEN2))
+      $error("rivet_ltssm: GEN=1 or 2 only (got %0d)", GEN);
     if (!rivet_lanes_legal(LANES))
       $error("rivet_ltssm LANES must be 1, 2, or 4");
     if (N_TS1_POLLING > 4095)
