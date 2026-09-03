@@ -53,6 +53,7 @@ module rivet_ltssm #(
   input  logic             ts2_cfg_any_i,
   input  logic             idle_all_i,
   input  logic             idle_any_i,
+  input  logic             idle_sym_any_i, // one descrambled Idle Symbol (not 8-consec)
   input  logic [7:0]       rx_link_num_i,
   input  logic [8*LANES-1:0] rx_lane_num_i,
   input  logic [7:0]       rx_rate_id_i,
@@ -156,6 +157,7 @@ module rivet_ltssm #(
   logic             rx_seen_q,     rx_seen_d;
   logic             link_up_q,     link_up_d;
   logic             idle_to_rlock_q, idle_to_rlock_d;
+  logic             idle_rx_ok_q,  idle_rx_ok_d; // latched 8-consec Idle (CFG_IDLE)
   logic [7:0]       remote_rate_q, remote_rate_d;
   logic [7:0]       remote_nfts_q, remote_nfts_d;
 
@@ -203,6 +205,7 @@ module rivet_ltssm #(
     rx_seen_d       = rx_seen_q;
     link_up_d       = link_up_q;
     idle_to_rlock_d = idle_to_rlock_q;
+    idle_rx_ok_d    = idle_rx_ok_q;
     remote_rate_d   = remote_rate_q;
     remote_nfts_d   = remote_nfts_q;
 
@@ -230,6 +233,7 @@ module rivet_ltssm #(
         lane_pad_d         = 1'b1;
         rxpolarity_d       = '0;
         idle_to_rlock_d    = 1'b0;
+        idle_rx_ok_d       = 1'b0;
 
         // 12 ms, or as soon as Electrical Idle is broken on any Lane.
         if (timer_expired || (rxelecidle_i != {LANES{1'b1}}))
@@ -403,11 +407,20 @@ module rivet_ltssm #(
 
       RIVET_LTSSM_CFG_IDLE: begin
         os_req_o  = RIVET_MAC_OS_IDLE;
-        link_up_d = 1'b1; // LinkUp is set here, not on L0 entry
+        link_up_d = 1'b1; // LinkUp is set here, not on L0 entry (Base §4.2.6.3.6)
 
-        if (idle_any_i) rx_seen_d = 1'b1;
+        // docs/ltssm.xlsx Transition #19 / §4.2.6.3.6:
+        //   L0 after 8 consecutive Idle Symbol Times on all configured Lanes
+        //   AND 16 Idle Symbols sent after receiving one.
+        // Start the TX count on the first Idle Symbol (not after 8-consec).
+        if (idle_sym_any_i) rx_seen_d = 1'b1;
 
-        if (idle_all_i && rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_IDLE_TX))) begin
+        // Latch the 8-consecutive RX condition once met — peer SKP / brief
+        // gaps must not drop the exit after TX has already counted past 16
+        // (same sticky pattern as Polling.Configuration vs PG213).
+        if (idle_all_i) idle_rx_ok_d = 1'b1;
+
+        if (idle_rx_ok_q && rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_IDLE_TX))) begin
           state_d = RIVET_LTSSM_L0;
         end else if (timer_expired) begin
           if (!idle_to_rlock_q) begin
@@ -439,7 +452,10 @@ module rivet_ltssm #(
     endcase
 
     // Reset the "consecutive since entry" bookkeeping when the state changes.
-    if (state_d != state_q) rx_seen_d = 1'b0;
+    if (state_d != state_q) begin
+      rx_seen_d    = 1'b0;
+      idle_rx_ok_d = 1'b0;
+    end
   end
 
   assign state_change  = (state_d != state_q);
@@ -511,6 +527,7 @@ module rivet_ltssm #(
       rx_seen_q       <= 1'b0;
       link_up_q       <= 1'b0;
       idle_to_rlock_q <= 1'b0;
+      idle_rx_ok_q    <= 1'b0;
       remote_rate_q   <= '0;
       remote_nfts_q   <= '0;
     end else begin
@@ -529,6 +546,7 @@ module rivet_ltssm #(
       rx_seen_q       <= rx_seen_d;
       link_up_q       <= link_up_d;
       idle_to_rlock_q <= idle_to_rlock_d;
+      idle_rx_ok_q    <= idle_rx_ok_d;
       remote_rate_q   <= remote_rate_d;
       remote_nfts_q   <= remote_nfts_d;
     end
