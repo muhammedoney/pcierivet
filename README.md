@@ -69,7 +69,7 @@ Where each layer, interface, and vendor product sits in the stack:
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
 | Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
-| Target FPGA | **VCU118** (**XCVU9P**) primary; **VMK180** / **VPK180** also welcome for sponsorship |
+| Target FPGA | **VCU118** / **VMK180** / **VPK180** (whichever kit is available; PHY path adapts) |
 | Verification | **UVM first** (Phase 1); Verilator CI; Vivado BFM side-path |
 
 Phase 0 stubs + PG239-aligned PIPE ports. Phase 1: grow `tb/uvm`, then Gen2 LTSSM — not Gen3/4 protocol yet.
@@ -88,14 +88,15 @@ tb/bfm/               Vivado BFM side-path (PG239 PHY example first)
 
 ## Target hardware
 
-| Kit | FPGA | Role |
-|-----|------|------|
-| **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | **Primary** — native PG239 GTY generate + 52 GTY + PCIe ×16 |
-| **AMD Versal Prime VMK180** | Versal Prime | **Also welcome** — sponsorship / bring-up alternate |
-| **AMD Versal Premium VPK180** | Versal Premium | **Also welcome** — sponsorship / bring-up alternate |
-| — | VU3P | PG239 GTY generate OK; fewer GTs / no preferred kit |
+Any of these evaluation kits works for FPGA bring-up; the soft PHY / constraints path will follow the board we get.
 
-PHY path today: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **VU9P**). Versal kits are acceptable hardware sponsorship targets for PCIe bring-up (family PHY path as needed). Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
+| Kit | FPGA | Notes |
+|-----|------|-------|
+| **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | UltraScale+ GTY; current in-tree PG239 US+ path |
+| **AMD Versal™ Prime Series VMK180** | Versal Prime | Versal bring-up path when sponsored |
+| **AMD Versal™ Premium VPK180** | Versal Premium | Versal bring-up path when sponsored |
+
+Sim / RTL default today still exercises the UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`) path. Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
 
 ## Tools
 
@@ -104,7 +105,7 @@ PHY path today: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 
 | QuestaSim | UVM regression (local license) |
 | Verilator | Lint / smoke (CI) |
 | Yosys | Open synth sanity |
-| Vivado | PHY IP (PG239 on VU9P) + optional BFM export + VCU118 flows |
+| Vivado | PHY IP + optional BFM export + board flows (US+ / Versal as available) |
 
 ## Quick start (Verilator)
 
@@ -150,17 +151,16 @@ Specifications are not redistributed; obtain PCIe / PIPE / PG213 / PG239 yoursel
 
 Early-stage open interconnect IP. **Hardware sponsorship is a real blocker** for FPGA bring-up.
 
-**Most needed:** an **AMD Virtex UltraScale+ VCU118** evaluation kit (**XCVU9P**), or equivalent board loan / donation. VU9P is the primary part so PG239 can be generated and instantiated for the soft PHY path.
+**Any of these kits (loan or donation) is enough** — we will adapt the PHY wrapper / board flow to the part:
 
-**Also sufficient for bring-up / sponsorship:**
-
-- **AMD Versal™ Prime Series VMK180** evaluation kit
-- **AMD Versal™ Premium VPK180** evaluation kit
+- **AMD Virtex UltraScale+ VCU118** (**XCVU9P**)
+- **AMD Versal™ Prime Series VMK180**
+- **AMD Versal™ Premium VPK180**
 
 Also welcome:
 
 - Sponsorship for simulation tooling (Questa) and related costs
 - Review of UVM methodology and PIPE / AXI-ST fidelity
-- Other **VU9P-class** UltraScale+ PCIe boards (native PG239 GTY)
+- Other AMD/Xilinx PCIe evaluation boards with a usable edge connector
 
 If you can ship a board, fund a kit, or connect us to AMD/Xilinx university / open-source hardware programs — please open an issue or reach out. Thank you.
