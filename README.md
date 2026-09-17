@@ -69,7 +69,7 @@ Where each layer, interface, and vendor product sits in the stack:
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
 | Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
-| Target FPGA | **VCU118** (**XCVU9P**, UltraScale+ GTY) — primary bring-up |
+| Target FPGA | **VCU118** (**XCVU9P**) primary; **VMK180** / **VPK180** also welcome for sponsorship |
 | Verification | **UVM first** (Phase 1); Verilator CI; Vivado BFM side-path |
 
 Phase 0 stubs + PG239-aligned PIPE ports. Phase 1: grow `tb/uvm`, then Gen2 LTSSM — not Gen3/4 protocol yet.
@@ -91,9 +91,11 @@ tb/bfm/               Vivado BFM side-path (PG239 PHY example first)
 | Kit | FPGA | Role |
 |-----|------|------|
 | **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | **Primary** — native PG239 GTY generate + 52 GTY + PCIe ×16 |
+| **AMD Versal Prime VMK180** | Versal Prime | **Also welcome** — sponsorship / bring-up alternate |
+| **AMD Versal Premium VPK180** | Versal Premium | **Also welcome** — sponsorship / bring-up alternate |
 | — | VU3P | PG239 GTY generate OK; fewer GTs / no preferred kit |
 
-PHY path: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **VU9P**). Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
+PHY path today: UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`, PG239 for **VU9P**). Versal kits are acceptable hardware sponsorship targets for PCIe bring-up (family PHY path as needed). Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
 
 ## Tools
 
@@ -148,7 +150,12 @@ Specifications are not redistributed; obtain PCIe / PIPE / PG213 / PG239 yoursel
 
 Early-stage open interconnect IP. **Hardware sponsorship is a real blocker** for FPGA bring-up.
 
-**Most needed:** an **AMD Virtex UltraScale+ VCU118** evaluation kit (**XCVU9P**), or equivalent board loan / donation. VU9P is required so PG239 can be generated and instantiated for the soft PHY path.
+**Most needed:** an **AMD Virtex UltraScale+ VCU118** evaluation kit (**XCVU9P**), or equivalent board loan / donation. VU9P is the primary part so PG239 can be generated and instantiated for the soft PHY path.
+
+**Also sufficient for bring-up / sponsorship:**
+
+- **AMD Versal™ Prime Series VMK180** evaluation kit
+- **AMD Versal™ Premium VPK180** evaluation kit
 
 Also welcome:
 
