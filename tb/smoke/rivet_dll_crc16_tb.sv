@@ -32,8 +32,7 @@ module rivet_dll_crc16_tb;
       end
     end
     c = ~c;
-    return {c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15],
-            c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]};
+    return c;
   endfunction
 
   initial begin
@@ -58,6 +57,14 @@ module rivet_dll_crc16_tb;
     #1;
     if (crc !== ref_crc(body)) begin
       $error("InitFC1-P mismatch dut=%04h ref=%04h", crc, ref_crc(body));
+      $fatal(1);
+    end
+
+    // Captured PG213 InitFC1-P: 40 08 00 e0 → wire CRC 06F5.
+    body = 48'h00_00_E0_00_08_40;
+    #1;
+    if (crc !== 16'h06F5) begin
+      $error("PG213 InitFC1-P CRC dut=%04h exp=06F5", crc);
       $fatal(1);
     end
 
