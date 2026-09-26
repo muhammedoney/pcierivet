@@ -90,8 +90,8 @@ package rivet_pkg;
   localparam logic [7:0] RIVET_SYM_END = 8'hFD; // K29.7 End good packet
   localparam logic [7:0] RIVET_SYM_EDB = 8'hFE; // K30.7 End bad / nullified
 
-  // Wire DLLP: SDP + 6 bytes (4 info + CRC-16) + END. The DLL↔MAC beat stays
-  // 64-bit (bytes 6-7 unused) so LANES*PIPE is a MAC striping concern only.
+  // Wire DLLP: SDP + 6 bytes + END. Bytes 1..4 = info, bytes 5..6 = CRC-16.
+  // The DLL↔MAC beat stays 64-bit (bytes 7..8 unused).
   localparam int unsigned RIVET_DLLP_INFO_BYTES  = 4;
   localparam int unsigned RIVET_DLLP_WIRE_BYTES  = 6;
   localparam int unsigned RIVET_DLLP_FRAMED_LEN  = 8;

@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Parse a 6-byte wire DLLP in a 64-bit MAC beat: CRC check + type demux.
+// Parse a 6-byte wire DLLP (bytes 5..6 = CRC-16) in a 64-bit MAC beat.
 
 module rivet_dllp_rx (
   input  logic                              clk_i,
