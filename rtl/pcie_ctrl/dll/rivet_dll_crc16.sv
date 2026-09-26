@@ -5,8 +5,8 @@
 // then complement. LSB-first already yields wire bit order — do not remap.
 
 module rivet_dll_crc16 (
-  input  logic [47:0] body_i,   // DLLP info bytes 0..3 in [31:0]; [47:32] unused
-  output logic [15:0] crc_o     // wire-order CRC field (byte4=[7:0], byte5=[15:8])
+  input  logic [47:0] body_i,   // info bytes 1..4 in [31:0]; [47:32] unused
+  output logic [15:0] crc_o     // wire CRC in bytes 5..6 (byte5=[7:0], byte6=[15:8])
 );
 
   import rivet_pkg::*;

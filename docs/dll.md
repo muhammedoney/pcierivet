@@ -86,8 +86,8 @@ FC SM (`rivet_dll_fc`) remains nested under `DL_Init` / `DL_Active`. Reliability
 
 ## 3. DLLP inventory (Gen2 EP, VC0 first)
 
-All DLLPs are a fixed **6-byte** packet on the wire: 32-bit type/body + **16-bit CRC**.
-The DLL↔MAC beat stays 64-bit (bytes 6–7 unused).
+All DLLPs are a fixed **6-byte** packet on the wire: bytes **1–4** type/body,
+bytes **5–6** **CRC-16**. The DLL↔MAC beat stays 64-bit (bytes 7–8 unused).
 Bad CRC → discard DLLP (no ACK/NAK implied by the CRC miss alone).
 
 | Class | Types (VC0) | When |
