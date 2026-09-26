@@ -95,7 +95,7 @@ Bad CRC → discard DLLP (no ACK/NAK implied by the CRC miss alone).
 | Flow-control init | InitFC1-P / -NP / -Cpl | FC_INIT1; order **P → NP → Cpl**; repeat ≥ every 34 µs |
 | Flow-control init | InitFC2-P / -NP / -Cpl | FC_INIT2; same order and body credits as InitFC1 |
 | Flow-control update | UpdateFC-P / -NP / -Cpl | DL_Active; periodic + when buffers free |
-| Ack / Nak | Ack, Nak | With TLP reliability (later milestone) |
+| Ack / Nak | Ack, Nak | Seq# in bytes 3–4 as `{Rsvd,Seq[11:8]}` + `Seq[7:0]` (same as TLP) |
 | PM | Enter_L1 / L23 / ASPM / Request_Ack | Defer until power mgmt |
 
 FC DLLP body fields (engineering summary):
@@ -410,6 +410,7 @@ Split: **D4a** infrastructure → **D4b** on-wire TLP path.
 
 - [x] `rivet_dll_tlp_tx` / `rivet_dll_tlp_rx`  
 - [x] ACK/NAK DLLP schedule from RX; REPLAY_TIMER / REPLAY_NUM  
+- [x] Duplicate seq (replay) → ACK last_good, do not NAK / re-deliver  
 - [x] Gate: dual-DLL TLP + ACK purge / NAK replay (`scripts/sim_dll_tlp_ack.ps1`)  
 - [x] On-wire STP: `scripts/sim_dll_mac_tlp.ps1` (LCRC + ACK through MAC)  
 - [x] `nak_storm` → LTSSM Recovery.RcvrLock  

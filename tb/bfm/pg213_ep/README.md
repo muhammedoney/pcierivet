@@ -64,20 +64,22 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 
 | Token in `simulate.log` | Script result |
 |-------------------------|---------------|
-| `PG213 RP + Rivet EP Cfg Vendor/Device` | PASS (Type 0 CplD) |
+| `PG213 RP + Rivet EP PIO 1DW` | PASS (BAR0 Mem32 write/readback) |
+| `PIO 1DW incomplete` | FAIL (Cfg closed, Mem PIO not closed) |
 | `Cfg Vendor/Device incomplete` | FAIL (link trained, Cfg path not closed) |
 | `TIMEOUT` / Detect loop | FAIL |
 
 ## Observed bring-up (Rivet DUT)
 
-L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang (Rivet has no speed-change Recovery yet), then dumps the first STP/TLP and waits for a Type 0 CplD of Vendor/Device (`1EE0`/`0001`). AXI-ST CQ/CC PIO is still later.
+L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang (Rivet has no speed-change Recovery yet). Type 0 Cfg and BAR scan close on the wire (Length in TLP byte 3). Link Cap/Status advertise Gen1 ×4 so the Gen1 RP BFM does not start a speed-change Recovery. Then the board waits for BAR0 Mem32 1 DW write/readback. 2 DW / 256 DW PIO and AXI-ST CQ/CC to a user app are still later.
 
 ## Known gaps
 
 | Gap | Notes |
 |-----|--------|
 | LCRC vs PG213 | Proven on first CfgRd0 (`a1f45f41`, complement only) |
-| AXI-ST CQ/CC PIO | After Cfg smoke |
+| AXI-ST CQ/CC user app | Internal BAR0 PIO first; CQ/CC export later |
+| 256 DW PIO | Needs MAC/DLL slot > 1 KB (usrapp `dw_length`) |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 
 ## Layout

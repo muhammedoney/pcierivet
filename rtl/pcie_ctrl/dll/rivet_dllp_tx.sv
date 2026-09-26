@@ -35,9 +35,9 @@ module rivet_dllp_tx (
         body[7:0]   = (req_i.kind == RIVET_DLLP_KIND_ACK) ? RIVET_DLLP_TYPE_ACK
                                                            : RIVET_DLLP_TYPE_NAK;
         body[15:8]  = 8'h00;
-        // AckNak_Seq_Num in info bytes 3..4; CRC-16 is wire bytes 5..6.
-        body[23:16] = req_i.ack_seq[7:0];
-        body[31:24] = {4'h0, req_i.ack_seq[11:8]};
+        // Spec: byte2 = {Rsvd[3:0], Seq[11:8]}, byte3 = Seq[7:0] (same as TLP Seq#).
+        body[23:16] = {4'h0, req_i.ack_seq[11:8]};
+        body[31:24] = req_i.ack_seq[7:0];
       end
       RIVET_DLLP_KIND_FC: begin
         body[7:0]   = rivet_dllp_fc_type_byte(req_i.fc_kind, req_i.vc);

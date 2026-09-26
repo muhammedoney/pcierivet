@@ -53,7 +53,7 @@ module rivet_tl_cfg_tb;
     rst_n = 1'b1;
     repeat (2) @(posedge clk);
 
-    beat0 = {8'h0F, 8'h11, 8'h01, 8'h00, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_CFGRD0};
+    beat0 = {8'h0F, 8'h11, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_CFGRD0};
     beat1 = {32'h0, 8'h00, 8'h00, 8'h00, 8'h00};
     drive_two(beat0, beat1, 8'h0F);
 
@@ -74,7 +74,7 @@ module rivet_tl_cfg_tb;
     end
     @(posedge clk);
 
-    beat0 = {8'h0F, 8'h11, 8'h01, 8'h00, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_CFGWR0};
+    beat0 = {8'h0F, 8'h11, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_CFGWR0};
     beat1 = {32'hFFFF_FFFF, 8'h10, 8'h00, 8'h00, 8'h00};
     drive_two(beat0, beat1, 8'hFF);
     wait (tx_v);
@@ -86,7 +86,7 @@ module rivet_tl_cfg_tb;
     wait (tx_v && tx_l);
     @(posedge clk);
 
-    beat0 = {8'h0F, 8'h11, 8'h01, 8'h00, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_CFGRD0};
+    beat0 = {8'h0F, 8'h11, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_CFGRD0};
     beat1 = {32'h0, 8'h10, 8'h00, 8'h00, 8'h00};
     drive_two(beat0, beat1, 8'h0F);
     wait (tx_v);
@@ -94,6 +94,28 @@ module rivet_tl_cfg_tb;
     wait (tx_v && tx_l);
     if (tx_d[63:32] !== RIVET_CFG_BAR0_MASK) begin
       $error("BAR0 mask got %08h", tx_d[63:32]);
+      $fatal(1);
+    end
+    @(posedge clk);
+
+    // MemWr32 1DW then MemRd32 1DW at address 0x00000010.
+    beat0 = {8'h0F, 8'h22, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_MEMWR32};
+    beat1 = {32'hA1B2_C3D4, 8'h10, 8'h00, 8'h00, 8'h00};
+    drive_two(beat0, beat1, 8'hFF);
+    repeat (4) @(posedge clk);
+
+    beat0 = {8'h0F, 8'h23, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, RIVET_TLP_B0_MEMRD32};
+    beat1 = {32'h0, 8'h10, 8'h00, 8'h00, 8'h00};
+    drive_two(beat0, beat1, 8'h0F);
+    wait (tx_v);
+    if (tx_d[7:0] !== RIVET_TLP_B0_CPLD) begin
+      $error("mem CplD beat0 %02h", tx_d[7:0]);
+      $fatal(1);
+    end
+    @(posedge clk);
+    wait (tx_v && tx_l);
+    if (tx_d[63:32] !== 32'hA1B2_C3D4) begin
+      $error("PIO readback %08h", tx_d[63:32]);
       $fatal(1);
     end
 

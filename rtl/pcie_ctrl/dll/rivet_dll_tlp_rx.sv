@@ -105,6 +105,8 @@ module rivet_dll_tlp_rx #(
   logic [31:0] lcrc_wire;
   logic        lcrc_ok;
   logic        seq_ok;
+  logic        seq_dup;
+  logic [11:0] seq_delta;
   logic [CRC_W-1:0] crc_in;
   int unsigned      lcrc_base;
 
@@ -125,6 +127,8 @@ module rivet_dll_tlp_rx #(
     lcrc_calc = rivet_lcrc32_calc(crc_in, lcrc_base);
     lcrc_ok   = (lcrc_calc == lcrc_wire) && (int'(len_next) >= MIN_FR);
     seq_ok    = (rx_seq == expect_q);
+    seq_delta = expect_q - rx_seq;
+    seq_dup   = lcrc_ok && !seq_ok && (seq_delta != 12'd0) && (seq_delta <= 12'd32);
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -153,9 +157,9 @@ module rivet_dll_tlp_rx #(
 
       if (eop_take) begin
 `ifndef SYNTHESIS
-        $display("[%t] : TLP RX eop len=%0d seq=%03h expect=%03h lcrc_wire=%08h lcrc_calc=%08h ok=%0b seq_ok=%0b",
+        $display("[%t] : TLP RX eop len=%0d seq=%03h expect=%03h lcrc_wire=%08h lcrc_calc=%08h ok=%0b seq_ok=%0b dup=%0b",
                  $realtime, int'(len_next), rx_seq, expect_q, lcrc_wire, lcrc_calc,
-                 lcrc_ok, seq_ok);
+                 lcrc_ok, seq_ok, seq_dup);
 `endif
         if (lcrc_ok && seq_ok) begin
           pld_q <= '0;
@@ -171,6 +175,11 @@ module rivet_dll_tlp_rx #(
           ack_q         <= '0;
           ack_q.kind    <= RIVET_DLLP_KIND_ACK;
           ack_q.ack_seq <= rx_seq;
+          ack_pend_q    <= 1'b1;
+        end else if (seq_dup) begin
+          ack_q         <= '0;
+          ack_q.kind    <= RIVET_DLLP_KIND_ACK;
+          ack_q.ack_seq <= last_good_q;
           ack_pend_q    <= 1'b1;
         end else begin
           lcrc_err_q    <= !lcrc_ok;

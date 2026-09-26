@@ -6,7 +6,7 @@ Transaction Layer and configuration-space sources.
 |--------------|------|
 | `rivet_tl_fc_stub` | CA / free / consume inject toward DLL (**D3**) |
 | `rivet_tl_credit` | Classify TLP Fmt/Type → free (RX) / consume (TX) pulses |
-| `rivet_tl_cfg` | Type 0 CfgRd/CfgWr → Cpl/CplD (Vendor/Device, BAR0 stub) |
+| `rivet_tl_cfg` | Type 0 Cfg + BAR0 Mem32 1 DW PIO completer (on-wire Length in B3) |
 | TL↔DLL TLP stream | 64b pack/unpack inside DLL (**D5**); user AXI-ST still stubbed |
 | TLP assemble / decode | Toward user CQ/CC/RQ/RC (after D5 stream) |
 | Config space | Type 0 (EP) smoke; `cfg_mgmt_*` still stubbed |

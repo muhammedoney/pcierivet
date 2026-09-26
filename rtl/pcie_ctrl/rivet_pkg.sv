@@ -373,10 +373,12 @@ package rivet_pkg;
   localparam logic [4:0] RIVET_TLP_TYPE_MEM = 5'b00000;
   localparam logic [4:0] RIVET_TLP_TYPE_CFG = 5'b00100;
   localparam logic [4:0] RIVET_TLP_TYPE_CPL = 5'b01010;
-  localparam logic [7:0] RIVET_TLP_B0_CFGRD0 = 8'h04;
-  localparam logic [7:0] RIVET_TLP_B0_CFGWR0 = 8'h44;
-  localparam logic [7:0] RIVET_TLP_B0_CPL    = 8'h0A;
-  localparam logic [7:0] RIVET_TLP_B0_CPLD   = 8'h4A;
+  localparam logic [7:0] RIVET_TLP_B0_MEMRD32 = 8'h00;
+  localparam logic [7:0] RIVET_TLP_B0_MEMWR32 = 8'h40;
+  localparam logic [7:0] RIVET_TLP_B0_CFGRD0  = 8'h04;
+  localparam logic [7:0] RIVET_TLP_B0_CFGWR0  = 8'h44;
+  localparam logic [7:0] RIVET_TLP_B0_CPL     = 8'h0A;
+  localparam logic [7:0] RIVET_TLP_B0_CPLD    = 8'h4A;
 
   typedef enum logic [1:0] {
     RIVET_FC_CLS_P   = 2'd0,
@@ -406,8 +408,9 @@ package rivet_pkg;
     return 12'((32'(len_dw) + 32'd3) / 32'd4);
   endfunction
 
+  // Byte2 = {TD,EP,Attr[1:0],AT[1:0],Length[9:8]}; Byte3 = Length[7:0].
   function automatic logic [9:0] rivet_tlp_len_dw(input logic [7:0] b2, input logic [7:0] b3);
-    return {b3[1:0], b2};
+    return {b2[1:0], b3};
   endfunction
 
   function automatic logic [15:0] rivet_tlp_seq_bytes(input logic [11:0] seq);
