@@ -178,6 +178,7 @@ Base spec §4.2.3 rules:
 | Polynomial | `G(X) = X^16 + X^5 + X^4 + X^3 + 1` |
 | Seed | `FFFFh`; TX LFSR re-initialises immediately after COM leaves it, RX LFSR every time a COM enters it on **any** Lane |
 | Advance | 8 serial shifts per Symbol, **except SKP** (SKP does not advance it) |
+| COM wrap | 16-bit PIPE: if COM is the second Symbol, classify SKP vs TS on the next cycle — do not assume TS |
 | Bypass | All K codes; D Symbols inside TS1/TS2; Compliance and Modified Compliance patterns |
 | Multi-lane | One LFSR per Lane |
 | Enable | Always on from Detect; Disable Scrambling training-control bit not yet honored |

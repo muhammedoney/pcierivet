@@ -197,12 +197,12 @@ module board;
       $display("[%t] : hint: ts2_pad=%0b idle_sym=%0b idle_all=%0b os_sent_peak=%0d sym_hits=%0d k_hits=%0d",
                $realtime, seen_ts2_pad, seen_idle_sym, seen_idle_all,
                idle_os_sent_peak, idle_sym_hits, idle_k_hits);
-      $display("[%t] : L0 FC@EP fc_init=%0b dl_up=%0b dll_tx_v=%0b dll_rx=%0d dec_ok=%0d dec_bad=%0d",
+      $display("[%t] : L0 FC@EP fc_init=%0b dl_up=%0b dll_tx_v=%0b dll_rx=%0d dec_ok=%0d dec_bad=%0d err=%0d crc_mis=%0d",
                $realtime,
                EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done,
                EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.dl_up,
                EP.u_rivet_ep.u_ctrl.dll_tx_valid,
-               l0_dll_rx_n, l0_dec_ok_n, l0_dec_bad_n);
+               l0_dll_rx_n, l0_dec_ok_n, l0_dec_bad_n, l0_err_n, l0_crc_mis_n);
       $display("[%t] : PG213 RP + Rivet EP link training timeout", $realtime);
       $finish(2);
     end
@@ -211,21 +211,43 @@ module board;
   // While both sides claim L0, sample EP FC / DLLP progress once.
   logic l0_fc_logged;
   int unsigned l0_dll_rx_n, l0_dec_ok_n, l0_dec_bad_n;
+  int unsigned l0_err_n, l0_crc_mis_n, l0_dump_n;
   initial begin
     l0_fc_logged = 1'b0;
     l0_dll_rx_n  = 0;
     l0_dec_ok_n  = 0;
     l0_dec_bad_n = 0;
+    l0_err_n     = 0;
+    l0_crc_mis_n = 0;
+    l0_dump_n    = 0;
   end
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
     if (ep_ltssm == 6'h10) begin
-      if (EP.u_rivet_ep.u_ctrl.dll_rx_valid)
+      if (EP.u_rivet_ep.u_ctrl.dll_rx_valid) begin
         l0_dll_rx_n <= l0_dll_rx_n + 1;
+        if (EP.u_rivet_ep.u_ctrl.dll_rx_beat.err)
+          l0_err_n <= l0_err_n + 1;
+        if (l0_dump_n < 4) begin
+          $display("[%t] : DLLP#%0d data=%016h err=%0b crc_rx=%04h crc_calc=%04h crc_ok=%0b",
+                   $realtime, l0_dump_n,
+                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.data,
+                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.err,
+                   EP.u_rivet_ep.u_ctrl.u_dll.u_dllp_rx.crc_rx,
+                   EP.u_rivet_ep.u_ctrl.u_dll.u_dllp_rx.crc_calc,
+                   EP.u_rivet_ep.u_ctrl.u_dll.u_dllp_rx.crc_ok);
+          l0_dump_n <= l0_dump_n + 1;
+        end
+      end
       if (EP.u_rivet_ep.u_ctrl.u_dll.dec_valid) begin
         if (EP.u_rivet_ep.u_ctrl.u_dll.dec.crc_ok)
           l0_dec_ok_n <= l0_dec_ok_n + 1;
-        else
+        else begin
           l0_dec_bad_n <= l0_dec_bad_n + 1;
+          if (!EP.u_rivet_ep.u_ctrl.u_dll.dec.crc_ok &&
+              (EP.u_rivet_ep.u_ctrl.u_dll.u_dllp_rx.crc_calc !=
+               EP.u_rivet_ep.u_ctrl.u_dll.u_dllp_rx.crc_rx))
+            l0_crc_mis_n <= l0_crc_mis_n + 1;
+        end
       end
     end
     if (!l0_fc_logged && (ep_ltssm == 6'h10) && (rp_ltssm == 6'h10)) begin
