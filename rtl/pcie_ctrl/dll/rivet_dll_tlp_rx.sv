@@ -152,6 +152,11 @@ module rivet_dll_tlp_rx #(
       end
 
       if (eop_take) begin
+`ifndef SYNTHESIS
+        $display("[%t] : TLP RX eop len=%0d seq=%03h expect=%03h lcrc_wire=%08h lcrc_calc=%08h ok=%0b seq_ok=%0b",
+                 $realtime, int'(len_next), rx_seq, expect_q, lcrc_wire, lcrc_calc,
+                 lcrc_ok, seq_ok);
+`endif
         if (lcrc_ok && seq_ok) begin
           pld_q <= '0;
           for (int unsigned j = 0; j < SLOT_BYTES - MIN_FR; j++) begin

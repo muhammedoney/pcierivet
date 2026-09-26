@@ -425,7 +425,6 @@ package rivet_pkg;
     logic        din;
     logic        fb;
     int unsigned bi, bit_i;
-    logic [31:0] c;
     crc = 32'hFFFF_FFFF;
     for (bi = 0; bi < nbytes; bi++) begin
       b = bytes_le[8*bi +: 8];
@@ -436,13 +435,8 @@ package rivet_pkg;
         if (fb) crc = crc ^ 32'hEDB88320;
       end
     end
-    c = ~crc;
-    return {
-      c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
-      c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23],
-      c[ 8], c[ 9], c[10], c[11], c[12], c[13], c[14], c[15],
-      c[ 0], c[ 1], c[ 2], c[ 3], c[ 4], c[ 5], c[ 6], c[ 7]
-    };
+    // LSB-first remainder already matches the LCRC field — complement only.
+    return ~crc;
   endfunction
 
   function automatic bit rivet_lanes_legal(int unsigned lanes);

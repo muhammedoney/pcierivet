@@ -268,6 +268,8 @@ function New-RivetCompileDo {
     "rtl/pcie_ctrl/dll/rivet_dll_tl_unpack.sv",
     "rtl/pcie_ctrl/dll/rivet_dll.sv",
     "rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv",
+    "rtl/pcie_ctrl/tl/rivet_tl_credit.sv",
+    "rtl/pcie_ctrl/tl/rivet_tl_cfg.sv",
     "rtl/pcie_ctrl/mac/rivet_mac_timer.sv",
     "rtl/pcie_ctrl/mac/rivet_ltssm.sv",
     "rtl/pcie_ctrl/mac/rivet_mac_os_tx.sv",
@@ -383,10 +385,15 @@ if ($Step -eq "all" -or $Step -eq "simulate") {
   $log = Join-Path $WorkDir "simulate.log"
   if ((Test-Path $log) -and -not $Gui) {
     $text = Get-Content $log -Raw
-    if ($text -match "PG213 RP \+ Rivet EP link_up") {
+    if ($text -match "PG213 RP \+ Rivet EP Cfg Vendor/Device") {
       Write-Host ""
-      Write-Host "PASS: PG213 RP + Rivet EP link_up"
+      Write-Host "PASS: PG213 RP + Rivet EP Cfg Vendor/Device"
       exit 0
+    }
+    if ($text -match "Cfg Vendor/Device incomplete") {
+      Write-Host ""
+      Write-Host "FAIL: Cfg incomplete - see $log"
+      exit 1
     }
     if ($text -match "Detect/Polling cycle|Config reached then back to Detect|link training timeout|TIMEOUT") {
       Write-Host ""
