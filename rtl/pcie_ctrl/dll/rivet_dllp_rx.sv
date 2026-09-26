@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Parse an 8-byte DLLP beat from MAC: CRC check + type demux.
+// Parse a 6-byte wire DLLP in a 64-bit MAC beat: CRC check + type demux.
 
 module rivet_dllp_rx (
   input  logic                              clk_i,
@@ -29,8 +29,8 @@ module rivet_dllp_rx (
     .crc_o  (crc_calc)
   );
 
-  assign body   = beat_i.data[47:0];
-  assign crc_rx = {beat_i.data[63:56], beat_i.data[55:48]};
+  assign body   = {16'h0, beat_i.data[31:0]};
+  assign crc_rx = {beat_i.data[47:40], beat_i.data[39:32]};
   assign crc_ok = (crc_calc == crc_rx) && !beat_i.err;
   assign type_b = beat_i.data[7:0];
 
@@ -42,11 +42,11 @@ module rivet_dllp_rx (
     unique case (type_b)
       RIVET_DLLP_TYPE_ACK: begin
         dec_comb.kind    = RIVET_DLLP_KIND_ACK;
-        dec_comb.ack_seq = {beat_i.data[43:40], beat_i.data[39:32]};
+        dec_comb.ack_seq = {beat_i.data[27:24], beat_i.data[23:16]};
       end
       RIVET_DLLP_TYPE_NAK: begin
         dec_comb.kind    = RIVET_DLLP_KIND_NAK;
-        dec_comb.ack_seq = {beat_i.data[43:40], beat_i.data[39:32]};
+        dec_comb.ack_seq = {beat_i.data[27:24], beat_i.data[23:16]};
       end
       default: begin
         // FC family if high nibble matches known kinds.

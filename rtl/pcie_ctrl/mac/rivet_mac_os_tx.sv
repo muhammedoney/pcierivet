@@ -5,7 +5,7 @@
 //
 // Streams the ordered set the LTSSM asks for and, when L0 packet enable is high,
 // may insert SKP OS (Gen1/Gen2 clock compensation) and framed DLLP
-// (SDP + 8 bytes + END) striped across LANES∈{1,2,4}.
+// (SDP + 6 bytes + END) striped across LANES∈{1,2,4}.
 
 module rivet_mac_os_tx #(
   parameter int unsigned LANES           = 1,
@@ -112,20 +112,18 @@ module rivet_mac_os_tx #(
     endcase
   endfunction
 
-  // Framed DLLP stream: [0]=SDP, [1..8]=bytes, [9]=END; else Logical Idle.
+  // Framed DLLP stream: [0]=SDP, [1..6]=bytes, [7]=END; else Logical Idle.
   function automatic logic [8:0] pkt_symbol(input logic [3:0] idx,
                                             input logic [63:0] dllp);
     logic [8:0] sym;
-    if (idx >= 4'(RIVET_DLLP_FRAMED_LEN))
+    if (idx == 4'd0)
+      sym = {1'b1, RIVET_SYM_SDP};
+    else if (idx == 4'(RIVET_DLLP_FRAMED_LEN - 1))
+      sym = {1'b1, RIVET_SYM_END};
+    else if (idx < 4'(RIVET_DLLP_FRAMED_LEN))
+      sym = {1'b0, dllp[8*(idx-1) +: 8]};
+    else
       sym = {1'b0, 8'h00};
-    else unique case (idx)
-      4'd0: sym = {1'b1, RIVET_SYM_SDP};
-      4'd9: sym = {1'b1, RIVET_SYM_END};
-      default: begin
-        // idx 1..8 → dllp bytes 0..7
-        sym = {1'b0, dllp[8*(idx-1) +: 8]};
-      end
-    endcase
     return sym;
   endfunction
 

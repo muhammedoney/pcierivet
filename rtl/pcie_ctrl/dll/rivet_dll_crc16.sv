@@ -5,13 +5,13 @@
 // complement, then Table 3-2 bit mapping into the CRC field.
 
 module rivet_dll_crc16 (
-  input  logic [47:0] body_i,   // DLLP bytes 0..5, byte0 in [7:0]
-  output logic [15:0] crc_o     // wire-order CRC field (byte6=[7:0], byte7=[15:8])
+  input  logic [47:0] body_i,   // DLLP info bytes 0..3 in [31:0]; [47:32] unused
+  output logic [15:0] crc_o     // wire-order CRC field (byte4=[7:0], byte5=[15:8])
 );
 
   import rivet_pkg::*;
 
-  // Combinational CRC over six body bytes.
+  // Combinational CRC over the 32-bit DLLP (four info bytes).
   function automatic logic [15:0] rivet_dllp_crc16_calc(input logic [47:0] body);
     logic [15:0] crc;
     logic [7:0]  b;
@@ -20,7 +20,7 @@ module rivet_dll_crc16 (
     int unsigned bi;
     int unsigned bit_i;
     crc = 16'hFFFF;
-    for (bi = 0; bi < 6; bi++) begin
+    for (bi = 0; bi < 4; bi++) begin
       b = body[8*bi +: 8];
       for (bit_i = 0; bit_i < 8; bit_i++) begin
         din = b[bit_i];

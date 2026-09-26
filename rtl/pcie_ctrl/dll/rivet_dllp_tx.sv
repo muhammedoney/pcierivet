@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Build an 8-byte DLLP (body + CRC-16) as a single DLL↔MAC TX beat.
+// Build a 6-byte wire DLLP (4 info + CRC-16) in a 64-bit DLL↔MAC TX beat.
 
 module rivet_dllp_tx (
   input  logic                          clk_i,
@@ -35,26 +35,22 @@ module rivet_dllp_tx (
         body[7:0]   = (req_i.kind == RIVET_DLLP_KIND_ACK) ? RIVET_DLLP_TYPE_ACK
                                                            : RIVET_DLLP_TYPE_NAK;
         body[15:8]  = 8'h00;
-        body[23:16] = 8'h00;
-        body[31:24] = 8'h00;
-        // AckNak_Seq_Num in bytes 4..5 (12-bit value, low bits).
-        body[39:32] = req_i.ack_seq[7:0];
-        body[47:40] = {4'h0, req_i.ack_seq[11:8]};
+        // AckNak_Seq_Num in info bytes 2..3 (CRC occupies wire bytes 4..5).
+        body[23:16] = req_i.ack_seq[7:0];
+        body[31:24] = {4'h0, req_i.ack_seq[11:8]};
       end
       RIVET_DLLP_KIND_FC: begin
         body[7:0]   = rivet_dllp_fc_type_byte(req_i.fc_kind, req_i.vc);
         body[15:8]  = req_i.hdr_fc;
         body[23:16] = req_i.data_fc[7:0];
         body[31:24] = {4'h0, req_i.data_fc[11:8]};
-        body[39:32] = 8'h00;
-        body[47:40] = 8'h00;
       end
       default: body = '0;
     endcase
   end
 
-  assign dllp_bytes = {crc[15:8], crc[7:0], body[47:40], body[39:32],
-                       body[31:24], body[23:16], body[15:8], body[7:0]};
+  assign dllp_bytes = {16'h0000, crc[15:8], crc[7:0], body[31:24],
+                       body[23:16], body[15:8], body[7:0]};
 
   logic pending_q;
   rivet_dll_mac_tx_beat_t beat_q;

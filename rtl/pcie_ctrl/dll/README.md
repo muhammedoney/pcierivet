@@ -66,7 +66,7 @@ rivet_dll
 | `rivet_dll` | Top; FC + DL SM + TL stream + TLP/ACK/NAK/replay |
 | `rivet_dll_sm` | DLCMSM: Inactive / Init / Active (+ replay busy); `dl_up` |
 | `rivet_dll_fc` | InitFC1/2, UpdateFC, CL/CC, TX credit gate |
-| `rivet_dllp_tx` | Build 8-byte DLLP + CRC-16 → MAC beat |
+| `rivet_dllp_tx` | Build 6-byte wire DLLP + CRC-16 → 64-bit MAC beat |
 | `rivet_dllp_rx` | Parse MAC DLLP beat; CRC check; demux |
 | `rivet_dll_crc16` | DLLP 16-bit CRC |
 | `rivet_dll_tl_pack` | TL AXI-ST-like → whole TLP payload |

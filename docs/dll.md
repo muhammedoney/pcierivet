@@ -86,7 +86,8 @@ FC SM (`rivet_dll_fc`) remains nested under `DL_Init` / `DL_Active`. Reliability
 
 ## 3. DLLP inventory (Gen2 EP, VC0 first)
 
-All DLLPs are a fixed **8-byte** packet: type / body fields + **16-bit CRC**.
+All DLLPs are a fixed **6-byte** packet on the wire: 32-bit type/body + **16-bit CRC**.
+The DLL↔MAC beat stays 64-bit (bytes 6–7 unused).
 Bad CRC → discard DLLP (no ACK/NAK implied by the CRC miss alone).
 
 | Class | Types (VC0) | When |
@@ -236,7 +237,7 @@ tie DLL to AXI.
 
 | Concern | Width coupling |
 |---------|----------------|
-| DLLP CRC-16 | Byte-stream; fixed 8-byte DLLP |
+| DLLP CRC-16 | Byte-stream; 4 info bytes + CRC field |
 | TLP LCRC-32 | Byte-stream over Seq# + TLP |
 | FC credits | Header / DW units |
 | MAC striping | Scales with `LANES` + PIPE |
@@ -363,7 +364,7 @@ only. Directed tests may shrink slots (e.g. 4) for fast fill/starve cases.
 ### D0 — Types, CRC16, DLLP codec (no wire yet)
 
 - [x] `rivet_dll_crc16` + Verilator TB (`scripts/sim_dll_crc16.ps1`)
-- [x] DLLP beats stay **64-bit** (one 8-byte DLLP); wire `LANES*PIPE` is MAC-only
+- [x] DLLP beats stay **64-bit** (6 wire bytes + pad); wire `LANES*PIPE` is MAC-only
 - [x] `rivet_dllp_tx` / `rivet_dllp_rx` (FC + Ack/Nak) + round-trip TB
 - [x] TL↔DLL FC sideband structs + `rivet_tl_fc_stub` (CA params; CPL infinite)
 - [x] `rivet_dll` top wired in `rivet_pcie_ctrl` (TX idle until D1)

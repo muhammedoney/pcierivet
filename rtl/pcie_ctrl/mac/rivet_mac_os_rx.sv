@@ -394,7 +394,7 @@ module rivet_mac_os_rx #(
 
 
   // ---------------------------------------------------------------------------
-  // DLLP framing RX: SDP + 8 D-bytes + END, striped across LANES (Gen2 16b PIPE)
+  // DLLP framing RX: SDP + 6 D-bytes + END, striped across LANES (Gen2 16b PIPE)
   // ---------------------------------------------------------------------------
   localparam bit PKT_RX_OK = (PIPE_DATA_WIDTH == 16);
 
@@ -449,7 +449,7 @@ module rivet_mac_os_rx #(
                 if (!saw_sdp) begin
                   if ((l == 0) && rx_ky && (rx_sy == RIVET_SYM_SDP))
                     saw_sdp = 1'b1;
-                end else if (c < 4'd8) begin
+                end else if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
                   if (rx_ky) begin
                     err  = 1'b1;
                     done = 1'b1;
@@ -509,7 +509,7 @@ module rivet_mac_os_rx #(
               end else begin
                 rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
                 rx_ky = sym_datak_i[SYMS*l + s];
-                if (c < 4'd8) begin
+                if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
                   if (rx_ky) begin
                     err  = 1'b1;
                     done = 1'b1;

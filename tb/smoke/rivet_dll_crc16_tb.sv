@@ -22,7 +22,7 @@ module rivet_dll_crc16_tb;
     logic [7:0]  byte_v;
     logic        din, fb;
     c = 16'hFFFF;
-    for (int unsigned bi = 0; bi < 6; bi++) begin
+    for (int unsigned bi = 0; bi < 4; bi++) begin
       byte_v = b[8*bi +: 8];
       for (int unsigned bit_i = 0; bit_i < 8; bit_i++) begin
         din = byte_v[bit_i];
@@ -45,7 +45,7 @@ module rivet_dll_crc16_tb;
       $fatal(1);
     end
 
-    // Ack DLLP type + reserved zeros (seq in bytes 4-5 low bits unused here)
+    // Ack DLLP type + reserved zeros (seq in info bytes 2-3 unused here)
     body = {8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00}; // byte5..byte0 packing
     // body[7:0]=byte0 type Ack
     body = 48'h00_00_00_00_00_00;
