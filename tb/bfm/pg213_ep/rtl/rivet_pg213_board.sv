@@ -24,6 +24,9 @@ module board;
   // PG213 RP uses the same cfg_ltssm_state[5:0] encoding (usrapp waits 0x0B then 0x10).
   wire  [5:0] rp_ltssm = RP.pcie_4_0_rport.cfg_ltssm_state;
 
+  logic        saw_tlp, saw_cpl, stay_l0;
+  int unsigned tlp_n, cpl_n;
+
   // Human-readable PG213 LTSSM codes used in Rivet + UltraScale+ IP.
   function automatic string ltssm_name(input logic [5:0] s);
     case (s)
@@ -124,67 +127,118 @@ module board;
     #10000;
     $display("[%t] : EP ltssm=%0h link_up=%0b | RP user_lnk_up=%0b",
              $realtime, ep_ltssm, ep_link_up, RP.user_lnk_up);
-    $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP link_up)",
+    $display("[%t] : link trained (PG213 RP + Rivet EP link_up) — staying for Cfg",
              $realtime);
 
     begin
       automatic logic ep_fc, ep_dl;
-      automatic int unsigned i;
+      wait (EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done === 1'b1);
       ep_fc = EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done;
       ep_dl = EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.dl_up;
-      for (i = 0; i < 200000; i++) begin
-        @(posedge EP.u_rivet_ep.pipe_clk_o);
-        ep_fc = EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done;
-        ep_dl = EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.dl_up;
-        if (ep_fc && ep_dl) break;
-      end
       $display("[%t] : FC@EP       fc_init=%0b dl_up=%0b", $realtime, ep_fc, ep_dl);
     end
 
-    // Stay past link_up: dump first TLP and wait for Type 0 CplD (Vendor/Device).
-    begin
-      automatic int unsigned i;
-      automatic logic saw_tlp, saw_cpl, stay_l0;
-      automatic logic [7:0] tlp_b0;
-      saw_tlp = 1'b0;
-      saw_cpl = 1'b0;
-      stay_l0 = 1'b1;
-      for (i = 0; i < 2_000_000; i++) begin
-        @(posedge EP.u_rivet_ep.pipe_clk_o);
-        if (ep_ltssm != 6'h10) stay_l0 = 1'b0;
-        if (!saw_tlp && EP.u_rivet_ep.u_ctrl.dll_rx_valid &&
-            (EP.u_rivet_ep.u_ctrl.dll_rx_beat.pkt_type == rivet_pkg::RIVET_MAC_PKT_TLP) &&
-            EP.u_rivet_ep.u_ctrl.dll_rx_beat.sop) begin
-          tlp_b0 = EP.u_rivet_ep.u_ctrl.dll_rx_beat.data[7:0];
-          $display("[%t] : TLP RX sop data=%016h err=%0b keep=%02h b0=%02h",
-                   $realtime,
-                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.data,
-                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.err,
-                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.keep,
-                   tlp_b0);
-          saw_tlp = 1'b1;
-        end
-        if (!saw_cpl && EP.u_rivet_ep.u_ctrl.tl_tx_tvalid &&
-            EP.u_rivet_ep.u_ctrl.tl_tx_tready &&
-            (EP.u_rivet_ep.u_ctrl.tl_tx_tdata[7:0] == rivet_pkg::RIVET_TLP_B0_CPLD)) begin
-          $display("[%t] : CplD TX   data=%016h vendor_le=%04h",
-                   $realtime,
-                   EP.u_rivet_ep.u_ctrl.tl_tx_tdata,
-                   EP.u_rivet_ep.u_ctrl.u_tl_cfg.cfg_q[0][15:0]);
-          saw_cpl = 1'b1;
-        end
-        if (saw_tlp && saw_cpl) break;
+    // Event monitors (saw_tlp / saw_cpl) start at L0; do not clock-walk here —
+    // a 2M-cycle hierarchical poll stalls Questa after link_up.
+    fork
+      begin
+        wait (saw_tlp && saw_cpl);
       end
-      $display("[%t] : Cfg probe   tlp=%0b cpld=%0b stay_l0=%0b rp_lnk=%0b",
-               $realtime, saw_tlp, saw_cpl, stay_l0, RP.user_lnk_up);
-      if (saw_cpl && stay_l0 && RP.user_lnk_up) begin
-        $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Cfg Vendor/Device)",
-                 $realtime);
-      end else begin
-        $display("[%t] : Cfg Vendor/Device incomplete (TLP path probe only)", $realtime);
+      begin
+        // timescale is 1ps; do not use 2ms (Questa scales that to 2s here).
+        #2_000_000_000;
       end
+    join_any
+    disable fork;
+
+    $display("[%t] : Cfg probe   tlp=%0b cpld=%0b stay_l0=%0b rp_lnk=%0b tlp_n=%0d cpl_n=%0d",
+             $realtime, saw_tlp, saw_cpl, stay_l0, RP.user_lnk_up, tlp_n, cpl_n);
+    if (saw_cpl && stay_l0 && RP.user_lnk_up) begin
+      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Cfg Vendor/Device)",
+               $realtime);
+    end else begin
+      $display("[%t] : Cfg Vendor/Device incomplete (TLP path probe only)", $realtime);
     end
     $finish;
+  end
+
+  // PG213 usrapp Gen2 path waits Recovery (0x0B) then L0. Rivet stays L0
+  // without a speed-change Recovery, so pulse 0x0B once to unblock Type 0 Cfg.
+  initial begin
+    wait (RP.user_lnk_up === 1'b1);
+    #10000;
+    if (rp_ltssm == 6'h10) begin
+      $display("[%t] : unblock usrapp — pulse RP cfg_ltssm 0x0B (no Recovery)",
+               $realtime);
+      force RP.pcie_4_0_rport.cfg_ltssm_state = 6'h0B;
+      #1000;
+      release RP.pcie_4_0_rport.cfg_ltssm_state;
+    end
+  end
+
+  initial begin
+    saw_tlp = 1'b0;
+    saw_cpl = 1'b0;
+    stay_l0 = 1'b1;
+    tlp_n   = 0;
+    cpl_n   = 0;
+  end
+  always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
+    if (RP.user_lnk_up && ep_link_up && (ep_ltssm != 6'h10))
+      stay_l0 <= 1'b0;
+  end
+  always @(posedge EP.u_rivet_ep.u_ctrl.dll_rx_valid) begin
+    if (EP.u_rivet_ep.u_ctrl.dll_rx_valid &&
+        (EP.u_rivet_ep.u_ctrl.dll_rx_beat.pkt_type == rivet_pkg::RIVET_MAC_PKT_TLP) &&
+        EP.u_rivet_ep.u_ctrl.dll_rx_beat.sop) begin
+      if (tlp_n < 4) begin
+        $display("[%t] : TLP RX sop data=%016h err=%0b keep=%02h",
+                 $realtime,
+                 EP.u_rivet_ep.u_ctrl.dll_rx_beat.data,
+                 EP.u_rivet_ep.u_ctrl.dll_rx_beat.err,
+                 EP.u_rivet_ep.u_ctrl.dll_rx_beat.keep);
+      end
+      tlp_n   = tlp_n + 1;
+      saw_tlp = 1'b1;
+    end
+  end
+  always @(posedge EP.u_rivet_ep.u_ctrl.tl_rx_tvalid) begin
+    if (EP.u_rivet_ep.u_ctrl.tl_rx_tvalid &&
+        EP.u_rivet_ep.u_ctrl.tl_rx_tlast) begin
+      $display("[%t] : TL RX last data=%016h last_good=%03h lcrc_err=%0b",
+               $realtime,
+               EP.u_rivet_ep.u_ctrl.tl_rx_tdata,
+               EP.u_rivet_ep.u_ctrl.u_dll.u_tlp_rx.last_good_seq_o,
+               EP.u_rivet_ep.u_ctrl.u_dll.u_tlp_rx.lcrc_err_o);
+    end
+  end
+  always @(posedge EP.u_rivet_ep.u_ctrl.tl_tx_tvalid) begin
+    if (EP.u_rivet_ep.u_ctrl.tl_tx_tvalid &&
+        (EP.u_rivet_ep.u_ctrl.tl_tx_tdata[7:0] == rivet_pkg::RIVET_TLP_B0_CPLD)) begin
+      if (cpl_n < 4) begin
+        $display("[%t] : CplD TX   data=%016h vendor_le=%04h",
+                 $realtime,
+                 EP.u_rivet_ep.u_ctrl.tl_tx_tdata,
+                 EP.u_rivet_ep.u_ctrl.u_tl_cfg.cfg_q[0][15:0]);
+      end
+      cpl_n   = cpl_n + 1;
+      saw_cpl = 1'b1;
+    end
+  end
+  always @(EP.u_rivet_ep.u_ctrl.u_mac.u_os_rx.rx_pkt_q) begin
+    if (ep_ltssm == 6'h10)
+      $display("[%t] : MAC rx_pkt=%0b",
+               $realtime, EP.u_rivet_ep.u_ctrl.u_mac.u_os_rx.rx_pkt_q);
+  end
+  initial begin
+    wait (ep_link_up === 1'b1);
+    forever begin
+      #100_000_000; // 100 us at 1ps timescale
+      $display("[%t] : Cfg beat tlp=%0b cpld=%0b fc=%0b dl=%0b ltssm=%0h",
+               $realtime, saw_tlp, saw_cpl,
+               EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done,
+               EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.dl_up, ep_ltssm);
+    end
   end
 
   // Finish when training regresses to Detect after having reached Configuration
@@ -265,7 +319,9 @@ module board;
     l0_dump_n    = 0;
   end
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
-    if (ep_ltssm == 6'h10) begin
+    if (l0_dump_n >= 4 && l0_fc_logged)
+      ; // stop hierarchical L0 peeks — they stall Questa after link_up
+    else if (ep_ltssm == 6'h10) begin
       if (EP.u_rivet_ep.u_ctrl.dll_rx_valid) begin
         l0_dll_rx_n <= l0_dll_rx_n + 1;
         if (EP.u_rivet_ep.u_ctrl.dll_rx_beat.err)

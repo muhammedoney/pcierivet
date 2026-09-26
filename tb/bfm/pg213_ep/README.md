@@ -65,18 +65,18 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 | Token in `simulate.log` | Script result |
 |-------------------------|---------------|
 | `PG213 RP + Rivet EP Cfg Vendor/Device` | PASS (Type 0 CplD) |
-| `PG213 RP + Rivet EP link_up` | Link trained (older gate) |
-| `TIMEOUT` | FAIL |
+| `Cfg Vendor/Device incomplete` | FAIL (link trained, Cfg path not closed) |
+| `TIMEOUT` / Detect loop | FAIL |
 
 ## Observed bring-up (Rivet DUT)
 
-L0 + InitFC + `dl_up` already proven. The board now stays past `user_lnk_up`, dumps the first STP/TLP beat (seq/LCRC/err/`fmt`), and waits for a Type 0 CplD of Vendor/Device (`1EE0`/`0001`). AXI-ST CQ/CC PIO is still later.
+L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang (Rivet has no speed-change Recovery yet), then dumps the first STP/TLP and waits for a Type 0 CplD of Vendor/Device (`1EE0`/`0001`). AXI-ST CQ/CC PIO is still later.
 
 ## Known gaps
 
 | Gap | Notes |
 |-----|--------|
-| LCRC vs PG213 | Probe first TLP; remap is the same class of risk as the old DLLP CRC-16 |
+| LCRC vs PG213 | Proven on first CfgRd0 (`a1f45f41`, complement only) |
 | AXI-ST CQ/CC PIO | After Cfg smoke |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 

@@ -238,7 +238,7 @@ tie DLL to AXI.
 | Concern | Width coupling |
 |---------|----------------|
 | DLLP CRC-16 | Byte-stream; 4 info bytes + CRC field |
-| TLP LCRC-32 | Byte-stream over Seq# + TLP |
+| TLP LCRC-32 | Byte-stream over Seq# + TLP; complement only (no per-byte remap) |
 | FC credits | Header / DW units |
 | MAC striping | Scales with `LANES` + PIPE |
 
