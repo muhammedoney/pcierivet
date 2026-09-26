@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // DLLP CRC-16 (Base 2.1 §3.4.1): poly 100Bh, seed FFFFh, bit0-of-byte0 first,
-// complement, then Table 3-2 bit mapping into the CRC field.
+// then complement. LSB-first already yields wire bit order — do not remap.
 
 module rivet_dll_crc16 (
   input  logic [47:0] body_i,   // DLLP info bytes 0..3 in [31:0]; [47:32] unused
@@ -30,9 +30,7 @@ module rivet_dll_crc16 (
       end
     end
     crc = ~crc;
-    // Table 3-2: reverse bits within each byte of the remainder.
-    return {crc[8],  crc[9],  crc[10], crc[11], crc[12], crc[13], crc[14], crc[15],
-            crc[0],  crc[1],  crc[2],  crc[3],  crc[4],  crc[5],  crc[6],  crc[7]};
+    return crc;
   endfunction
 
   assign crc_o = rivet_dllp_crc16_calc(body_i);
