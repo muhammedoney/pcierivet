@@ -108,7 +108,7 @@ Under `rtl/pcie_ctrl/mac/` (names locked for follow-on slices):
 | `rivet_dll_mac_if` (pkg or SV IF) | DLL ↔ MAC streams + **control sideband** (may live under `dll/`) |
 | (M2) `rivet_mac_scrambler` / `rivet_mac_descrambler` | Per-Lane LFSR, K/TS bypass ([§6.1](#61-scrambling-mac-owned-not-yet-implemented)) |
 | (M2) `rivet_mac_framer` / `rivet_mac_deframer` | STP/SDP/END/EDB + byte striping across Lanes |
-| (M2) `rivet_mac_skp` | SKP insertion policy in L0 |
+| (M2) `rivet_mac_skp` | *(folded into `rivet_mac_os_tx`)* L0 SKP interval |
 
 Keep Gen3+ block-framing and EQ **out** of Gen2 bodies; adapter may have dead ports.
 
@@ -193,7 +193,7 @@ the loop stays honest against a real Root Port.
 | Scrambler / descrambler | Present (M2 start) | §6.1; Config.Idle + every TLP/DLLP byte |
 | STP / SDP / END / EDB framing | **SDP ×1/×2/×4** (STP/EDB later) | DLLP delimiters |
 | Byte striping / un-striping | **DLLP striped** (STP later) | ×2/×4 |
-| SKP scheduling in L0 (`rivet_mac_skp`) | Missing | SKP OS every 1180–1538 Symbol Times |
+| SKP scheduling in L0 (`rivet_mac_os_tx`) | **Done** | Gen1/Gen2 8b/10b: SKP OS every 1180–1538 Symbol Times (default 1400); never mid-packet / mid-OS; preempts Idle/DLLP at boundaries |
 | Real lane-to-lane deskew | Hook only | Striped data reassembly |
 | Descrambled-`00h` Idle detect | Done | `rivet_mac_os_rx` |
 
@@ -318,10 +318,10 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 - [x] `rivet_mac_scrambler` / `rivet_mac_descrambler` (per Lane, COM-seeded, SKP does not advance, K and TS bypass)
 - [x] Scramble Logical Idle, and switch Idle detection to descrambled `00h`
 - [x] Extend the smoke peer to scramble Idle so the loop stays honest
-- [x] **SDP + END framing for DLLP on ×1/×2/×4** (`os_tx` / `os_rx`); STP/EDB later
+- [x] **SDP + END framing for DLLP on ×1/×2/×4** (`os_tx` / `os_rx`); RX accepts SDP on either 16-bit symbol phase; STP/EDB later
 - [x] Untie `dll_tx_ready_o` / `dll_rx_valid_o` for DLLP in L0
 - [ ] STP/EDB + byte striping / un-striping for ×2/×4
-- [ ] `rivet_mac_skp` — SKP OS every 1180–1538 Symbol Times, never mid-packet
+- [x] L0 SKP OS every 1180–1538 Symbol Times in `rivet_mac_os_tx` (never mid-packet)
 - [ ] Keep ×2/×4 packet smokes after striping lands
 
 ### M3 — Lane grow
