@@ -20,6 +20,31 @@ module board;
 
   logic ep_phy_ready, ep_link_up;
   logic [5:0] ep_ltssm;
+  // PG213 RP uses the same cfg_ltssm_state[5:0] encoding (usrapp waits 0x0B then 0x10).
+  wire  [5:0] rp_ltssm = RP.pcie_4_0_rport.cfg_ltssm_state;
+
+  // Human-readable PG213 LTSSM codes used in Rivet + UltraScale+ IP.
+  function automatic string ltssm_name(input logic [5:0] s);
+    case (s)
+      6'h00: ltssm_name = "Detect.Quiet";
+      6'h01: ltssm_name = "Detect.Active";
+      6'h02: ltssm_name = "Polling.Active";
+      6'h03: ltssm_name = "Polling.Compliance";
+      6'h04: ltssm_name = "Polling.Configuration";
+      6'h05: ltssm_name = "Cfg.Linkwidth.Start";
+      6'h06: ltssm_name = "Cfg.Linkwidth.Accept";
+      6'h07: ltssm_name = "Cfg.Lanenum.Accept";
+      6'h08: ltssm_name = "Cfg.Lanenum.Wait";
+      6'h09: ltssm_name = "Cfg.Complete";
+      6'h0A: ltssm_name = "Cfg.Idle";
+      6'h0B: ltssm_name = "Recovery.RcvrLock";
+      6'h0C: ltssm_name = "Recovery.Speed";
+      6'h0D: ltssm_name = "Recovery.RcvrCfg";
+      6'h0E: ltssm_name = "Recovery.Idle";
+      6'h10: ltssm_name = "L0";
+      default: ltssm_name = $sformatf("0x%0h", s);
+    endcase
+  endfunction
 
   sys_clk_gen_ds #(
     .halfcycle (REF_CLK_HALF_CYCLE),
@@ -167,17 +192,75 @@ module board;
     if (seen_cfg && ep_ltssm == 6'h0 && ep_phy_ready) begin
       $display("[%t] : TIMEOUT - Config reached then back to Detect (ep_link=%0b RP lnk=%0b)",
                $realtime, ep_link_up, RP.user_lnk_up);
+      $display("[%t] : TIMEOUT LTSSM EP=%0h(%s) RP=%0h(%s)",
+               $realtime, ep_ltssm, ltssm_name(ep_ltssm), rp_ltssm, ltssm_name(rp_ltssm));
       $display("[%t] : hint: ts2_pad=%0b idle_sym=%0b idle_all=%0b os_sent_peak=%0d sym_hits=%0d k_hits=%0d",
                $realtime, seen_ts2_pad, seen_idle_sym, seen_idle_all,
                idle_os_sent_peak, idle_sym_hits, idle_k_hits);
+      $display("[%t] : L0 FC@EP fc_init=%0b dl_up=%0b dll_tx_v=%0b dll_rx=%0d dec_ok=%0d dec_bad=%0d",
+               $realtime,
+               EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done,
+               EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.dl_up,
+               EP.u_rivet_ep.u_ctrl.dll_tx_valid,
+               l0_dll_rx_n, l0_dec_ok_n, l0_dec_bad_n);
       $display("[%t] : PG213 RP + Rivet EP link training timeout", $realtime);
       $finish(2);
     end
   end
 
-  always @(ep_ltssm or ep_link_up or RP.user_lnk_up) begin
-    $display("[%t] : LTSSM ep=%0h ep_link=%0b rp_lnk=%0b",
-             $realtime, ep_ltssm, ep_link_up, RP.user_lnk_up);
+  // While both sides claim L0, sample EP FC / DLLP progress once.
+  logic l0_fc_logged;
+  int unsigned l0_dll_rx_n, l0_dec_ok_n, l0_dec_bad_n;
+  initial begin
+    l0_fc_logged = 1'b0;
+    l0_dll_rx_n  = 0;
+    l0_dec_ok_n  = 0;
+    l0_dec_bad_n = 0;
+  end
+  always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
+    if (ep_ltssm == 6'h10) begin
+      if (EP.u_rivet_ep.u_ctrl.dll_rx_valid)
+        l0_dll_rx_n <= l0_dll_rx_n + 1;
+      if (EP.u_rivet_ep.u_ctrl.u_dll.dec_valid) begin
+        if (EP.u_rivet_ep.u_ctrl.u_dll.dec.crc_ok)
+          l0_dec_ok_n <= l0_dec_ok_n + 1;
+        else
+          l0_dec_bad_n <= l0_dec_bad_n + 1;
+      end
+    end
+    if (!l0_fc_logged && (ep_ltssm == 6'h10) && (rp_ltssm == 6'h10)) begin
+      if (EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done ||
+          EP.u_rivet_ep.u_ctrl.dll_tx_valid) begin
+        $display("[%t] : L0 live EP fc_init=%0b dl_up=%0b dll_tx_v=%0b dll_rx_v=%0b rp_lnk=%0b",
+                 $realtime,
+                 EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.fc_init_done,
+                 EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.dl_up,
+                 EP.u_rivet_ep.u_ctrl.dll_tx_valid,
+                 EP.u_rivet_ep.u_ctrl.dll_rx_valid,
+                 RP.user_lnk_up);
+        l0_fc_logged = 1'b1;
+      end
+    end
+  end
+
+  // Comparative EP vs RP LTSSM timeline (state change on either side).
+  time last_ltssm_t;
+  logic [5:0] ep_ltssm_prev, rp_ltssm_prev;
+  initial begin
+    last_ltssm_t  = 0;
+    ep_ltssm_prev = 'x;
+    rp_ltssm_prev = 'x;
+  end
+  always @(ep_ltssm or rp_ltssm or ep_link_up or RP.user_lnk_up) begin
+    automatic time now = $realtime;
+    automatic time dt  = now - last_ltssm_t;
+    $display("[%t] : LTSSM(+%0t) EP=%0h(%s) ep_link=%0b | RP=%0h(%s) rp_lnk=%0b",
+             now, dt,
+             ep_ltssm, ltssm_name(ep_ltssm), ep_link_up,
+             rp_ltssm, ltssm_name(rp_ltssm), RP.user_lnk_up);
+    last_ltssm_t  = now;
+    ep_ltssm_prev = ep_ltssm;
+    rp_ltssm_prev = rp_ltssm;
   end
 
 endmodule : board

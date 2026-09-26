@@ -115,7 +115,12 @@ package rivet_pkg;
 
   // Ordered-set lengths in symbols at 2.5/5.0 GT/s 8b/10b encoding.
   localparam int unsigned RIVET_TS_LEN      = 16;
-  localparam int unsigned RIVET_SHORT_OS_LEN = 4; // SKP / FTS / EIOS at Gen1
+  localparam int unsigned RIVET_SHORT_OS_LEN = 4; // SKP / FTS / EIOS at Gen1 rate
+  // Gen1 and Gen2 (8b/10b) both require TX SKP OS in L0 for clock compensation.
+  // Base: schedule between 1180 and 1538 Symbol Times (never mid-packet).
+  localparam int unsigned RIVET_SKP_MIN_SYM_TIMES = 1180;
+  localparam int unsigned RIVET_SKP_MAX_SYM_TIMES = 1538;
+  localparam int unsigned RIVET_SKP_INTERVAL_SYM  = 1400; // mid-range pick
 
   // Exit thresholds from the LTSSM sections (Base 2.1 §4.2.6.2 / §4.2.6.3).
   localparam int unsigned RIVET_N_TS_CONSEC     = 8;    // consecutive TS received

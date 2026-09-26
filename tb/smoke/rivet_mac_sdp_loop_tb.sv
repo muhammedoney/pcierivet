@@ -43,8 +43,9 @@ module rivet_mac_sdp_loop_tb;
   logic [11:0] os_sent_cnt;
 
   rivet_mac_os_tx #(
-    .LANES           (LANES),
-    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+    .LANES            (LANES),
+    .PIPE_DATA_WIDTH  (PIPE_DATA_WIDTH),
+    .SKP_INTERVAL_SYM (1180) // legal min — keeps SKP check inside timeout
   ) u_tx (
     .pclk_i          (pclk),
     .rst_ni          (rst_n),
@@ -114,14 +115,23 @@ module rivet_mac_sdp_loop_tb;
 
   logic got;
   logic [63:0] got_data;
+  int unsigned skp_hits;
 
   always_ff @(posedge pclk or negedge rst_n) begin
     if (!rst_n) begin
       got      <= 1'b0;
       got_data <= '0;
-    end else if (dll_rx_valid && dll_rx_ready) begin
-      got      <= 1'b1;
-      got_data <= dll_rx.data;
+      skp_hits <= 0;
+    end else begin
+      if (dll_rx_valid && dll_rx_ready) begin
+        got      <= 1'b1;
+        got_data <= dll_rx.data;
+      end
+      // Lane0 Symbol0: COM, Symbol1: SKP (16-bit PIPE, SKP OS start)
+      if (sym_valid &&
+          (sym_datak[0] && (sym_data[7:0] == RIVET_SYM_COM)) &&
+          (sym_datak[1] && (sym_data[15:8] == RIVET_SYM_SKP)))
+        skp_hits <= skp_hits + 1;
     end
   end
 
@@ -169,13 +179,21 @@ module rivet_mac_sdp_loop_tb;
       $fatal(1);
     end
 
-    $display("PASS: rivet_mac_sdp_loop_tb");
+    // Gen1/Gen2 L0 must schedule SKP OS (COM+SKP…) after the interval.
+    wait (skp_hits > 0);
+    @(posedge pclk);
+    if (skp_hits == 0) begin
+      $error("expected L0 SKP OS");
+      $fatal(1);
+    end
+
+    $display("PASS: rivet_mac_sdp_loop_tb (SDP + SKP hits=%0d)", skp_hits);
     $finish;
   end
 
   initial begin
-    #10000;
-    $error("timeout");
+    #50000;
+    $error("timeout skp_hits=%0d got=%0b", skp_hits, got);
     $fatal(1);
   end
 endmodule : rivet_mac_sdp_loop_tb

@@ -432,48 +432,48 @@ module rivet_mac_os_rx #(
     if (rx_lanes_ok) begin
       unique case (rx_pkt_q)
         RX_IDLE: begin
-          rx_sy = sym_data_i[7:0];
-          rx_ky = sym_datak_i[0];
-          if (lane_en_i[0] && rx_ky && (rx_sy == RIVET_SYM_SDP)) begin
-            automatic logic [3:0]  c   = 4'd0;
-            automatic logic [63:0] b   = '0;
-            automatic logic        err = 1'b0;
-            automatic logic        done = 1'b0;
-            automatic logic        nullified = 1'b0;
-            automatic int unsigned skip = 1;
+          // SDP is on Lane 0 but may land on either 16-bit PIPE symbol phase.
+          automatic logic        saw_sdp = 1'b0;
+          automatic logic [3:0]  c   = 4'd0;
+          automatic logic [63:0] b   = '0;
+          automatic logic        err = 1'b0;
+          automatic logic        done = 1'b0;
+          automatic logic        nullified = 1'b0;
 
-            for (int unsigned s = 0; s < SYMS; s++) begin
-              for (int unsigned l = 0; l < LANES; l++) begin
-                if (!lane_en_i[l] || done) begin
-                end else if (skip != 0) begin
-                  skip = 0;
-                end else begin
-                  rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-                  rx_ky = sym_datak_i[SYMS*l + s];
-                  if (c < 4'd8) begin
-                    if (rx_ky) begin
-                      err  = 1'b1;
-                      done = 1'b1;
-                    end else begin
-                      b[8*c +: 8] = rx_sy;
-                      c = c + 4'd1;
-                    end
+          for (int unsigned s = 0; s < SYMS; s++) begin
+            for (int unsigned l = 0; l < LANES; l++) begin
+              if (!lane_en_i[l] || done) begin
+              end else begin
+                rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+                rx_ky = sym_datak_i[SYMS*l + s];
+                if (!saw_sdp) begin
+                  if ((l == 0) && rx_ky && (rx_sy == RIVET_SYM_SDP))
+                    saw_sdp = 1'b1;
+                end else if (c < 4'd8) begin
+                  if (rx_ky) begin
+                    err  = 1'b1;
+                    done = 1'b1;
                   end else begin
-                    if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
-                      done = 1'b1;
-                    end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
-                      nullified = 1'b1;
-                      done      = 1'b1;
-                    end else if (!rx_ky && (rx_sy == 8'h00)) begin
-                    end else begin
-                      err  = 1'b1;
-                      done = 1'b1;
-                    end
+                    b[8*c +: 8] = rx_sy;
+                    c = c + 4'd1;
+                  end
+                end else begin
+                  if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+                    done = 1'b1;
+                  end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                    nullified = 1'b1;
+                    done      = 1'b1;
+                  end else if (!rx_ky && (rx_sy == 8'h00)) begin
+                  end else begin
+                    err  = 1'b1;
+                    done = 1'b1;
                   end
                 end
               end
             end
+          end
 
+          if (saw_sdp) begin
             rx_body_d    = b;
             rx_cnt_d     = c;
             rx_err_pkt_d = err;

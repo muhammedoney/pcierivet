@@ -4,11 +4,14 @@
 // MAC ordered-set / TS transmitter (Gen2, 8b/10b symbol plane).
 //
 // Streams the ordered set the LTSSM asks for and, when L0 packet enable is high,
-// may insert a framed DLLP (SDP + 8 bytes + END) striped across LANES∈{1,2,4}.
+// may insert SKP OS (Gen1/Gen2 clock compensation) and framed DLLP
+// (SDP + 8 bytes + END) striped across LANES∈{1,2,4}.
 
 module rivet_mac_os_tx #(
   parameter int unsigned LANES           = 1,
-  parameter int unsigned PIPE_DATA_WIDTH = 16
+  parameter int unsigned PIPE_DATA_WIDTH = 16,
+  // Symbol Times between SKP OS in L0 (must stay in [1180, 1538]).
+  parameter int unsigned SKP_INTERVAL_SYM = rivet_pkg::RIVET_SKP_INTERVAL_SYM
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
@@ -56,6 +59,7 @@ module rivet_mac_os_tx #(
 
   // Packet framing for Gen2 16-bit PIPE on legal widths.
   localparam bit PKT_OK = (PIPE_DATA_WIDTH == 16);
+  localparam int unsigned SKP_CNT_W = 12;
 
 `ifndef SYNTHESIS
   initial begin
@@ -64,6 +68,10 @@ module rivet_mac_os_tx #(
              PIPE_DATA_WIDTH);
     if (!rivet_lanes_legal(LANES))
       $error("rivet_mac_os_tx LANES must be 1, 2, or 4");
+    if ((SKP_INTERVAL_SYM < RIVET_SKP_MIN_SYM_TIMES) ||
+        (SKP_INTERVAL_SYM > RIVET_SKP_MAX_SYM_TIMES))
+      $error("rivet_mac_os_tx SKP_INTERVAL_SYM=%0d outside [%0d,%0d]",
+             SKP_INTERVAL_SYM, RIVET_SKP_MIN_SYM_TIMES, RIVET_SKP_MAX_SYM_TIMES);
   end
 `endif
 
@@ -144,22 +152,34 @@ module rivet_mac_os_tx #(
   logic                   take_dllp;
   logic                   dllp_ok;
   logic                   want_pkt;
+  logic                   want_skp;
+  logic                   skp_due;
+  logic                   skp_finishing;
   logic [PTR_W-1:0]       stream_idx;
+  logic [SKP_CNT_W-1:0]   skp_sym_q;
 
   assign at_boundary  = (ptr_q == 5'd0) && (mode_q == ST_OS);
   assign transmitting = os_req_valid_i && (os_req_i != RIVET_MAC_OS_NONE);
-  assign cur          = at_boundary ? (transmitting ? os_req_i : RIVET_MAC_OS_NONE) : cur_q;
+  // L0: SKP preempts Idle/DLLP at OS boundaries (never mid-packet / mid-OS).
+  assign skp_due  = pkt_en_i && (skp_sym_q >= SKP_CNT_W'(SKP_INTERVAL_SYM));
+  assign want_skp = PKT_OK && skp_due && at_boundary;
+  assign cur = at_boundary
+      ? (want_skp ? RIVET_MAC_OS_SKP
+                  : (transmitting ? os_req_i : RIVET_MAC_OS_NONE))
+      : cur_q;
   assign len          = os_length(cur);
   assign set_done     = (ptr_q + 5'(SYMS)) >= len;
   assign ptr_next     = set_done ? 5'd0 : (ptr_q + 5'(SYMS));
+  assign skp_finishing =
+      (mode_q == ST_OS) && !take_dllp && set_done && (cur == RIVET_MAC_OS_SKP);
 
   assign dllp_ok = dll_tx_valid_i &&
                    (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_DLLP) &&
                    dll_tx_beat_i.sop && dll_tx_beat_i.eop &&
                    (dll_tx_beat_i.keep == 8'hFF);
 
-  // Insert DLLP only between Idle OS boundaries while packet-enabled.
-  assign want_pkt = PKT_OK && pkt_en_i && at_boundary &&
+  // Insert DLLP only between Idle OS boundaries while packet-enabled (SKP first).
+  assign want_pkt = PKT_OK && pkt_en_i && at_boundary && !want_skp &&
                     (cur == RIVET_MAC_OS_IDLE) && dllp_ok;
   assign take_dllp = want_pkt;
   assign dll_tx_ready_o = take_dllp;
@@ -246,6 +266,7 @@ module rivet_mac_os_tx #(
       mode_q    <= ST_OS;
       pkt_q     <= '0;
       pkt_ptr_q <= '0;
+      skp_sym_q <= '0;
     end else begin
       mode_q    <= mode_d;
       pkt_q     <= pkt_d;
@@ -267,6 +288,22 @@ module rivet_mac_os_tx #(
       end else if ((mode_q == ST_OS) && !take_dllp && set_done &&
                    (cur != RIVET_MAC_OS_NONE)) begin
         if (sent_q != CNT_MAX) sent_q <= sent_q + 1'b1;
+      end
+
+      // L0 Symbol-Time counter for SKP scheduling. Reset outside L0 and after
+      // each completed SKP OS so the next interval starts cleanly.
+      if (!pkt_en_i) begin
+        skp_sym_q <= '0;
+      end else if (skp_finishing) begin
+        skp_sym_q <= '0;
+      end else if (skp_sym_q < SKP_CNT_W'(SKP_INTERVAL_SYM)) begin
+        // Count Symbol Times while TX is live (Idle, SKP body, or DLLP).
+        if (take_dllp || (mode_q == ST_PKT) || (cur != RIVET_MAC_OS_NONE)) begin
+          if (skp_sym_q <= (SKP_CNT_W'(SKP_INTERVAL_SYM) - SKP_CNT_W'(SYMS)))
+            skp_sym_q <= skp_sym_q + SKP_CNT_W'(SYMS);
+          else
+            skp_sym_q <= SKP_CNT_W'(SKP_INTERVAL_SYM);
+        end
       end
     end
   end
