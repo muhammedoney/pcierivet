@@ -181,6 +181,7 @@ module rivet_mac #(
     .polarity_inverted_i  (polarity_inverted),
     .deskew_done_i        (deskew_done),
     .rx_err_i             (rx_err),
+    .nak_storm_i          (dll_to_mac_sb_i.nak_storm),
     .os_req_o             (os_req),
     .os_req_valid_o       (os_req_valid),
     .os_cnt_clr_o         (os_cnt_clr),
@@ -389,10 +390,10 @@ module rivet_mac #(
     mac_to_dll_sb_o.replay_freeze    = !accept_dll_tlp;
   end
 
-  // DLL-driven Recovery requests and the captured peer TS fields land in later
-  // milestones (Recovery, L0s).
   logic _unused_mac;
-  assign _unused_mac = (|dll_to_mac_sb_i) ^ (|phystatus_rst) ^ (|rx_train_ctrl) ^
+  assign _unused_mac = dll_to_mac_sb_i.replay_timer_expired ^
+                       dll_to_mac_sb_i.dl_up ^ dll_to_mac_sb_i.tx_idle_req ^
+                       (|phystatus_rst) ^ (|rx_train_ctrl) ^
                        rx_lane_num_changed ^ (|remote_rate_id) ^ (|remote_n_fts);
 
 endmodule : rivet_mac

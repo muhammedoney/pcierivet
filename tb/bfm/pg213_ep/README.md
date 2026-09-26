@@ -64,23 +64,20 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 
 | Token in `simulate.log` | Script result |
 |-------------------------|---------------|
-| `PG213 RP + Rivet EP link_up` | PASS |
-| `Detect/Polling cycle` / `TIMEOUT` | FAIL (expected until LTSSM links) |
+| `PG213 RP + Rivet EP Cfg Vendor/Device` | PASS (Type 0 CplD) |
+| `PG213 RP + Rivet EP link_up` | Link trained (older gate) |
+| `TIMEOUT` | FAIL |
 
 ## Observed bring-up (Rivet DUT)
 
-Compile + elaborate succeed (needs `xp4_usp_smsw_model_core_top.v` + `board_common` macros).
-
-Simulation reaches EP `phy_ready`, then LTSSM cycles **Detect → Polling → (state 4) → Detect** with `link_up=0` and `RP.user_lnk_up=0`. Board finishes on the first return to Detect after seeing state 4 (~minutes wall-clock with dual GTY).
-
-Same Detect/Polling pattern as the dual-Rivet PG239 board — next debug is LTSSM/PIPE vs RP, not the BFM harness.
+L0 + InitFC + `dl_up` already proven. The board now stays past `user_lnk_up`, dumps the first STP/TLP beat (seq/LCRC/err/`fmt`), and waits for a Type 0 CplD of Vendor/Device (`1EE0`/`0001`). AXI-ST CQ/CC PIO is still later.
 
 ## Known gaps
 
 | Gap | Notes |
 |-----|--------|
-| Rivet LTSSM / link_up | Detect/Polling cycle; no stable L0 yet |
-| Rivet TL / CFG | Stubs — after link_up, RP usrapp Cfg/PIO will still fail until TL lands |
+| LCRC vs PG213 | Probe first TLP; remap is the same class of risk as the old DLLP CRC-16 |
+| AXI-ST CQ/CC PIO | After Cfg smoke |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 
 ## Layout

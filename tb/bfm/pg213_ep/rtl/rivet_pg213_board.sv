@@ -7,6 +7,7 @@
 `timescale 1ps/1ps
 
 module board;
+  import rivet_pkg::*;
 
   localparam int unsigned LINK_WIDTH         = 4;
   localparam int unsigned REF_CLK_HALF_CYCLE = 5000; // ps → 100 MHz (sys_clk_gen is 1ps)
@@ -138,8 +139,50 @@ module board;
         if (ep_fc && ep_dl) break;
       end
       $display("[%t] : FC@EP       fc_init=%0b dl_up=%0b", $realtime, ep_fc, ep_dl);
-      $display("[%t] : TLP note    RP usrapp will attempt Cfg after link_up; Rivet TL still stub",
-               $realtime);
+    end
+
+    // Stay past link_up: dump first TLP and wait for Type 0 CplD (Vendor/Device).
+    begin
+      automatic int unsigned i;
+      automatic logic saw_tlp, saw_cpl, stay_l0;
+      automatic logic [7:0] tlp_b0;
+      saw_tlp = 1'b0;
+      saw_cpl = 1'b0;
+      stay_l0 = 1'b1;
+      for (i = 0; i < 2_000_000; i++) begin
+        @(posedge EP.u_rivet_ep.pipe_clk_o);
+        if (ep_ltssm != 6'h10) stay_l0 = 1'b0;
+        if (!saw_tlp && EP.u_rivet_ep.u_ctrl.dll_rx_valid &&
+            (EP.u_rivet_ep.u_ctrl.dll_rx_beat.pkt_type == rivet_pkg::RIVET_MAC_PKT_TLP) &&
+            EP.u_rivet_ep.u_ctrl.dll_rx_beat.sop) begin
+          tlp_b0 = EP.u_rivet_ep.u_ctrl.dll_rx_beat.data[7:0];
+          $display("[%t] : TLP RX sop data=%016h err=%0b keep=%02h b0=%02h",
+                   $realtime,
+                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.data,
+                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.err,
+                   EP.u_rivet_ep.u_ctrl.dll_rx_beat.keep,
+                   tlp_b0);
+          saw_tlp = 1'b1;
+        end
+        if (!saw_cpl && EP.u_rivet_ep.u_ctrl.tl_tx_tvalid &&
+            EP.u_rivet_ep.u_ctrl.tl_tx_tready &&
+            (EP.u_rivet_ep.u_ctrl.tl_tx_tdata[7:0] == rivet_pkg::RIVET_TLP_B0_CPLD)) begin
+          $display("[%t] : CplD TX   data=%016h vendor_le=%04h",
+                   $realtime,
+                   EP.u_rivet_ep.u_ctrl.tl_tx_tdata,
+                   EP.u_rivet_ep.u_ctrl.u_tl_cfg.cfg_q[0][15:0]);
+          saw_cpl = 1'b1;
+        end
+        if (saw_tlp && saw_cpl) break;
+      end
+      $display("[%t] : Cfg probe   tlp=%0b cpld=%0b stay_l0=%0b rp_lnk=%0b",
+               $realtime, saw_tlp, saw_cpl, stay_l0, RP.user_lnk_up);
+      if (saw_cpl && stay_l0 && RP.user_lnk_up) begin
+        $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Cfg Vendor/Device)",
+                 $realtime);
+      end else begin
+        $display("[%t] : Cfg Vendor/Device incomplete (TLP path probe only)", $realtime);
+      end
     end
     $finish;
   end
