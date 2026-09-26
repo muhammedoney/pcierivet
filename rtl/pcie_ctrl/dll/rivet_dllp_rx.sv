@@ -42,11 +42,11 @@ module rivet_dllp_rx (
     unique case (type_b)
       RIVET_DLLP_TYPE_ACK: begin
         dec_comb.kind    = RIVET_DLLP_KIND_ACK;
-        dec_comb.ack_seq = {beat_i.data[27:24], beat_i.data[23:16]};
+        dec_comb.ack_seq = {beat_i.data[19:16], beat_i.data[31:24]};
       end
       RIVET_DLLP_TYPE_NAK: begin
         dec_comb.kind    = RIVET_DLLP_KIND_NAK;
-        dec_comb.ack_seq = {beat_i.data[27:24], beat_i.data[23:16]};
+        dec_comb.ack_seq = {beat_i.data[19:16], beat_i.data[31:24]};
       end
       default: begin
         // FC family if high nibble matches known kinds.

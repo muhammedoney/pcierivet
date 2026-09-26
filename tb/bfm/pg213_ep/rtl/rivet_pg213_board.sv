@@ -24,7 +24,7 @@ module board;
   // PG213 RP uses the same cfg_ltssm_state[5:0] encoding (usrapp waits 0x0B then 0x10).
   wire  [5:0] rp_ltssm = RP.pcie_4_0_rport.cfg_ltssm_state;
 
-  logic        saw_tlp, saw_cpl, stay_l0;
+  logic        saw_tlp, saw_cpl, stay_l0, saw_memwr, saw_pio;
   int unsigned tlp_n, cpl_n;
 
   // Human-readable PG213 LTSSM codes used in Rivet + UltraScale+ IP.
@@ -138,26 +138,41 @@ module board;
       $display("[%t] : FC@EP       fc_init=%0b dl_up=%0b", $realtime, ep_fc, ep_dl);
     end
 
-    // Event monitors (saw_tlp / saw_cpl) start at L0; do not clock-walk here —
-    // a 2M-cycle hierarchical poll stalls Questa after link_up.
     fork
       begin
         wait (saw_tlp && saw_cpl);
       end
       begin
-        // timescale is 1ps; do not use 2ms (Questa scales that to 2s here).
-        #2_000_000_000;
+        #2_000_000_000; // 2 ms at 1ps
       end
     join_any
     disable fork;
 
     $display("[%t] : Cfg probe   tlp=%0b cpld=%0b stay_l0=%0b rp_lnk=%0b tlp_n=%0d cpl_n=%0d",
              $realtime, saw_tlp, saw_cpl, stay_l0, RP.user_lnk_up, tlp_n, cpl_n);
-    if (saw_cpl && stay_l0 && RP.user_lnk_up) begin
-      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Cfg Vendor/Device)",
+    if (!(saw_cpl && stay_l0 && RP.user_lnk_up)) begin
+      $display("[%t] : Cfg Vendor/Device incomplete (TLP path probe only)", $realtime);
+      $finish;
+    end
+    $display("[%t] : Cfg closed — staying for BAR0 PIO 1DW", $realtime);
+
+    fork
+      begin
+        wait (saw_pio);
+      end
+      begin
+        #(64'd20_000_000_000); // 20 ms at 1ps
+      end
+    join_any
+    disable fork;
+
+    $display("[%t] : PIO probe   memwr=%0b pio=%0b stay_l0=%0b rp_lnk=%0b",
+             $realtime, saw_memwr, saw_pio, stay_l0, RP.user_lnk_up);
+    if (saw_pio && stay_l0 && RP.user_lnk_up) begin
+      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP PIO 1DW)",
                $realtime);
     end else begin
-      $display("[%t] : Cfg Vendor/Device incomplete (TLP path probe only)", $realtime);
+      $display("[%t] : PIO 1DW incomplete", $realtime);
     end
     $finish;
   end
@@ -177,11 +192,13 @@ module board;
   end
 
   initial begin
-    saw_tlp = 1'b0;
-    saw_cpl = 1'b0;
-    stay_l0 = 1'b1;
-    tlp_n   = 0;
-    cpl_n   = 0;
+    saw_tlp   = 1'b0;
+    saw_cpl   = 1'b0;
+    stay_l0   = 1'b1;
+    saw_memwr = 1'b0;
+    saw_pio   = 1'b0;
+    tlp_n     = 0;
+    cpl_n     = 0;
   end
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
     if (RP.user_lnk_up && ep_link_up && (ep_ltssm != 6'h10))
@@ -203,11 +220,12 @@ module board;
     end
   end
   always @(posedge EP.u_rivet_ep.u_ctrl.tl_rx_tvalid) begin
-    if (EP.u_rivet_ep.u_ctrl.tl_rx_tvalid &&
-        EP.u_rivet_ep.u_ctrl.tl_rx_tlast) begin
-      $display("[%t] : TL RX last data=%016h last_good=%03h lcrc_err=%0b",
+    if (EP.u_rivet_ep.u_ctrl.tl_rx_tvalid) begin
+      $display("[%t] : TL RX %s data=%016h keep=%02h last_good=%03h lcrc_err=%0b",
                $realtime,
+               EP.u_rivet_ep.u_ctrl.tl_rx_tlast ? "last" : "beat",
                EP.u_rivet_ep.u_ctrl.tl_rx_tdata,
+               EP.u_rivet_ep.u_ctrl.tl_rx_tkeep,
                EP.u_rivet_ep.u_ctrl.u_dll.u_tlp_rx.last_good_seq_o,
                EP.u_rivet_ep.u_ctrl.u_dll.u_tlp_rx.lcrc_err_o);
     end
@@ -223,6 +241,18 @@ module board;
       end
       cpl_n   = cpl_n + 1;
       saw_cpl = 1'b1;
+      if (saw_memwr && !saw_pio) begin
+        $display("[%t] : PIO CplD after MemWr", $realtime);
+        saw_pio = 1'b1;
+      end
+    end
+  end
+  always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
+    if (EP.u_rivet_ep.u_ctrl.u_tl_cfg.rx_accept_o &&
+        (EP.u_rivet_ep.u_ctrl.u_tl_cfg.hdr0_q == rivet_pkg::RIVET_TLP_B0_MEMWR32)) begin
+      if (!saw_memwr)
+        $display("[%t] : MemWr32 accept", $realtime);
+      saw_memwr <= 1'b1;
     end
   end
   always @(EP.u_rivet_ep.u_ctrl.u_mac.u_os_rx.rx_pkt_q) begin
