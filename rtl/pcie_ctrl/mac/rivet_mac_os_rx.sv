@@ -394,14 +394,19 @@ module rivet_mac_os_rx #(
 
 
   // ---------------------------------------------------------------------------
-  // DLLP framing RX: SDP + 6 D-bytes + END, striped across LANES (Gen2 16b PIPE)
+  // Packet framing RX: SDP + 6 D-bytes + END, or STP + N D-bytes + END/EDB
+  // striped across LANES (Gen2 16b PIPE). STP/SDP may land on either symbol
+  // phase of Lane 0. EDB nullifies: one err beat, no good TLP delivery.
   // ---------------------------------------------------------------------------
   localparam bit PKT_RX_OK = (PIPE_DATA_WIDTH == 16);
+  localparam int unsigned TLP_BUF_B = RIVET_MAC_TLP_BUF_BYTES;
 
-  typedef enum logic [1:0] {
-    RX_IDLE = 2'b00,
-    RX_BODY = 2'b01,
-    RX_HOLD = 2'b10
+  typedef enum logic [2:0] {
+    RX_IDLE    = 3'b000,
+    RX_BODY    = 3'b001,
+    RX_HOLD    = 3'b010,
+    RX_TLP     = 3'b011,
+    RX_TLP_OUT = 3'b100
   } rx_pkt_e;
 
   rx_pkt_e       rx_pkt_q, rx_pkt_d;
@@ -410,12 +415,23 @@ module rivet_mac_os_rx #(
   logic          rx_err_pkt_q, rx_err_pkt_d;
   logic          dll_beat_valid_q, dll_beat_valid_d;
   rivet_dll_mac_rx_beat_t dll_beat_q, dll_beat_d;
+  logic [TLP_BUF_B*8-1:0] tlp_buf_q, tlp_buf_d;
+  logic [7:0]             tlp_len_q, tlp_len_d;
+  logic [7:0]             tlp_off_q, tlp_off_d;
+  logic                   tlp_err_q, tlp_err_d;
 
   logic          rx_lanes_ok;
   logic [7:0]    rx_sy;
   logic          rx_ky;
 
   assign rx_lanes_ok = PKT_RX_OK && sym_valid_i[0] && lane_en_i[0];
+
+  function automatic logic [7:0] tlp_beat_nleft(input logic [7:0] len,
+                                                input logic [7:0] off);
+    logic [7:0] left;
+    left = (len > off) ? (len - off) : 8'd0;
+    return (left > 8'd8) ? 8'd8 : left;
+  endfunction
 
   always_comb begin
     rx_pkt_d         = rx_pkt_q;
@@ -424,6 +440,10 @@ module rivet_mac_os_rx #(
     rx_err_pkt_d     = rx_err_pkt_q;
     dll_beat_valid_d = dll_beat_valid_q;
     dll_beat_d       = dll_beat_q;
+    tlp_buf_d        = tlp_buf_q;
+    tlp_len_d        = tlp_len_q;
+    tlp_off_d        = tlp_off_q;
+    tlp_err_d        = tlp_err_q;
     rx_sy            = '0;
     rx_ky            = 1'b0;
 
@@ -432,10 +452,13 @@ module rivet_mac_os_rx #(
     if (rx_lanes_ok) begin
       unique case (rx_pkt_q)
         RX_IDLE: begin
-          // SDP is on Lane 0 but may land on either 16-bit PIPE symbol phase.
+          // SDP/STP on Lane 0, either 16-bit PIPE symbol phase.
           automatic logic        saw_sdp = 1'b0;
+          automatic logic        saw_stp = 1'b0;
           automatic logic [3:0]  c   = 4'd0;
           automatic logic [63:0] b   = '0;
+          automatic logic [7:0]  tl  = 8'd0;
+          automatic logic [TLP_BUF_B*8-1:0] tb = '0;
           automatic logic        err = 1'b0;
           automatic logic        done = 1'b0;
           automatic logic        nullified = 1'b0;
@@ -446,16 +469,31 @@ module rivet_mac_os_rx #(
               end else begin
                 rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
                 rx_ky = sym_datak_i[SYMS*l + s];
-                if (!saw_sdp) begin
+                if (!saw_sdp && !saw_stp) begin
                   if ((l == 0) && rx_ky && (rx_sy == RIVET_SYM_SDP))
                     saw_sdp = 1'b1;
-                end else if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
-                  if (rx_ky) begin
-                    err  = 1'b1;
-                    done = 1'b1;
+                  else if ((l == 0) && rx_ky && (rx_sy == RIVET_SYM_STP))
+                    saw_stp = 1'b1;
+                end else if (saw_sdp) begin
+                  if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
+                    if (rx_ky) begin
+                      err  = 1'b1;
+                      done = 1'b1;
+                    end else begin
+                      b[8*c +: 8] = rx_sy;
+                      c = c + 4'd1;
+                    end
                   end else begin
-                    b[8*c +: 8] = rx_sy;
-                    c = c + 4'd1;
+                    if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+                      done = 1'b1;
+                    end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                      nullified = 1'b1;
+                      done      = 1'b1;
+                    end else if (!rx_ky && (rx_sy == 8'h00)) begin
+                    end else begin
+                      err  = 1'b1;
+                      done = 1'b1;
+                    end
                   end
                 end else begin
                   if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
@@ -463,7 +501,12 @@ module rivet_mac_os_rx #(
                   end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
                     nullified = 1'b1;
                     done      = 1'b1;
-                  end else if (!rx_ky && (rx_sy == 8'h00)) begin
+                  end else if (rx_ky) begin
+                    err  = 1'b1;
+                    done = 1'b1;
+                  end else if (tl < 8'(TLP_BUF_B)) begin
+                    tb[8*tl +: 8] = rx_sy;
+                    tl = tl + 8'd1;
                   end else begin
                     err  = 1'b1;
                     done = 1'b1;
@@ -493,6 +536,16 @@ module rivet_mac_os_rx #(
               end
             end else begin
               rx_pkt_d = RX_BODY;
+            end
+          end else if (saw_stp) begin
+            tlp_buf_d = tb;
+            tlp_len_d = tl;
+            tlp_err_d = err | nullified | (done && (tl == 8'd0));
+            tlp_off_d = 8'd0;
+            if (done) begin
+              rx_pkt_d = RX_TLP_OUT;
+            end else begin
+              rx_pkt_d = RX_TLP;
             end
           end
         end
@@ -566,6 +619,79 @@ module rivet_mac_os_rx #(
             rx_cnt_d            = 4'd0;
           end
         end
+        RX_TLP: begin
+          automatic logic [7:0] tl = tlp_len_q;
+          automatic logic [TLP_BUF_B*8-1:0] tb = tlp_buf_q;
+          automatic logic err = tlp_err_q;
+          automatic logic done = 1'b0;
+          automatic logic nullified = 1'b0;
+
+          for (int unsigned s = 0; s < SYMS; s++) begin
+            for (int unsigned l = 0; l < LANES; l++) begin
+              if (!lane_en_i[l] || done) begin
+              end else begin
+                rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+                rx_ky = sym_datak_i[SYMS*l + s];
+                if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+                  done = 1'b1;
+                end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                  nullified = 1'b1;
+                  done      = 1'b1;
+                end else if (rx_ky) begin
+                  err  = 1'b1;
+                  done = 1'b1;
+                end else if (tl < 8'(TLP_BUF_B)) begin
+                  tb[8*tl +: 8] = rx_sy;
+                  tl = tl + 8'd1;
+                end else begin
+                  err  = 1'b1;
+                  done = 1'b1;
+                end
+              end
+            end
+          end
+
+          tlp_buf_d = tb;
+          tlp_len_d = tl;
+          tlp_err_d = err | nullified | (done && (tl == 8'd0));
+          if (done) begin
+            tlp_off_d = 8'd0;
+            rx_pkt_d  = RX_TLP_OUT;
+          end
+        end
+        RX_TLP_OUT: begin
+          automatic logic [7:0] n;
+          automatic logic       slot;
+          n    = tlp_beat_nleft(tlp_len_q, tlp_off_q);
+          slot = !dll_beat_valid_q || dll_rx_ready_i;
+          if (slot) begin
+            dll_beat_d = '0;
+            dll_beat_d.pkt_type = RIVET_MAC_PKT_TLP;
+            dll_beat_d.sop      = (tlp_off_q == 8'd0);
+            if (tlp_err_q) begin
+              dll_beat_d.eop   = 1'b1;
+              dll_beat_d.err   = 1'b1;
+              dll_beat_d.keep  = 8'hFF;
+              dll_beat_valid_d = 1'b1;
+              rx_pkt_d         = RX_IDLE;
+              tlp_off_d        = 8'd0;
+            end else if (n != 8'd0) begin
+              for (int unsigned i = 0; i < 8; i++) begin
+                if (8'(i) < n) begin
+                  dll_beat_d.data[8*i +: 8] = tlp_buf_q[8*(tlp_off_q + 8'(i)) +: 8];
+                  dll_beat_d.keep[i]        = 1'b1;
+                end
+              end
+              dll_beat_d.eop   = ((tlp_off_q + n) >= tlp_len_q);
+              dll_beat_d.err   = 1'b0;
+              dll_beat_valid_d = 1'b1;
+              tlp_off_d        = tlp_off_q + n;
+              if ((tlp_off_q + n) >= tlp_len_q) rx_pkt_d = RX_IDLE;
+            end else begin
+              rx_pkt_d = RX_IDLE;
+            end
+          end
+        end
         default: rx_pkt_d = RX_IDLE;
       endcase
     end
@@ -579,6 +705,10 @@ module rivet_mac_os_rx #(
       rx_err_pkt_q     <= 1'b0;
       dll_beat_valid_q <= 1'b0;
       dll_beat_q       <= '0;
+      tlp_buf_q        <= '0;
+      tlp_len_q        <= '0;
+      tlp_off_q        <= '0;
+      tlp_err_q        <= 1'b0;
     end else begin
       rx_pkt_q         <= rx_pkt_d;
       rx_body_q        <= rx_body_d;
@@ -586,6 +716,10 @@ module rivet_mac_os_rx #(
       rx_err_pkt_q     <= rx_err_pkt_d;
       dll_beat_valid_q <= dll_beat_valid_d;
       dll_beat_q       <= dll_beat_d;
+      tlp_buf_q        <= tlp_buf_d;
+      tlp_len_q        <= tlp_len_d;
+      tlp_off_q        <= tlp_off_d;
+      tlp_err_q        <= tlp_err_d;
     end
   end
 

@@ -197,35 +197,107 @@ module rivet_pcie_ctrl #(
   rivet_tl_dll_fc_sb_t    tl_to_dll_fc;
   rivet_dll_tl_fc_sb_t    dll_to_tl_fc;
 
+  logic        cr_rx_acc, cr_tx_acc;
+  logic [7:0]  cr_rx_h0, cr_tx_h0;
+  logic [9:0]  cr_rx_len, cr_tx_len;
+  logic        cr_free_ph, cr_free_pd, cr_free_nph, cr_free_npd, cr_free_cplh, cr_free_cpld;
+  logic [7:0]  cr_free_ph_a, cr_free_nph_a, cr_free_cplh_a;
+  logic [11:0] cr_free_pd_a, cr_free_npd_a, cr_free_cpld_a;
+  logic        cr_cons_ph, cr_cons_pd, cr_cons_nph, cr_cons_npd, cr_cons_cplh, cr_cons_cpld;
+  logic [7:0]  cr_cons_ph_a, cr_cons_nph_a, cr_cons_cplh_a;
+  logic [11:0] cr_cons_pd_a, cr_cons_npd_a, cr_cons_cpld_a;
+
+  logic [63:0] tl_rx_tdata, tl_tx_tdata;
+  logic [7:0]  tl_rx_tkeep, tl_tx_tkeep;
+  logic        tl_rx_tlast, tl_tx_tlast;
+  logic        tl_rx_tvalid, tl_tx_tvalid;
+  logic        tl_rx_tready, tl_tx_tready;
+
+  rivet_tl_cfg u_tl_cfg (
+    .clk_i        (pclk),
+    .rst_ni       (preset_n),
+    .rx_tdata_i   (tl_rx_tdata),
+    .rx_tkeep_i   (tl_rx_tkeep),
+    .rx_tlast_i   (tl_rx_tlast),
+    .rx_tvalid_i  (tl_rx_tvalid),
+    .rx_tready_o  (tl_rx_tready),
+    .tx_tdata_o   (tl_tx_tdata),
+    .tx_tkeep_o   (tl_tx_tkeep),
+    .tx_tlast_o   (tl_tx_tlast),
+    .tx_tvalid_o  (tl_tx_tvalid),
+    .tx_tready_i  (tl_tx_tready),
+    .rx_accept_o  (cr_rx_acc),
+    .rx_hdr0_o    (cr_rx_h0),
+    .rx_len_dw_o  (cr_rx_len),
+    .tx_accept_o  (cr_tx_acc),
+    .tx_hdr0_o    (cr_tx_h0),
+    .tx_len_dw_o  (cr_tx_len)
+  );
+
+  rivet_tl_credit u_tl_credit (
+    .clk_i               (pclk),
+    .rst_ni              (preset_n),
+    .rx_accept_i         (cr_rx_acc),
+    .rx_hdr0_i           (cr_rx_h0),
+    .rx_len_dw_i         (cr_rx_len),
+    .tx_accept_i         (cr_tx_acc),
+    .tx_hdr0_i           (cr_tx_h0),
+    .tx_len_dw_i         (cr_tx_len),
+    .free_ph_o           (cr_free_ph),
+    .free_pd_o           (cr_free_pd),
+    .free_nph_o          (cr_free_nph),
+    .free_npd_o          (cr_free_npd),
+    .free_cplh_o         (cr_free_cplh),
+    .free_cpld_o         (cr_free_cpld),
+    .free_ph_amt_o       (cr_free_ph_a),
+    .free_pd_amt_o       (cr_free_pd_a),
+    .free_nph_amt_o      (cr_free_nph_a),
+    .free_npd_amt_o      (cr_free_npd_a),
+    .free_cplh_amt_o     (cr_free_cplh_a),
+    .free_cpld_amt_o     (cr_free_cpld_a),
+    .consume_ph_o        (cr_cons_ph),
+    .consume_pd_o        (cr_cons_pd),
+    .consume_nph_o       (cr_cons_nph),
+    .consume_npd_o       (cr_cons_npd),
+    .consume_cplh_o      (cr_cons_cplh),
+    .consume_cpld_o      (cr_cons_cpld),
+    .consume_ph_amt_o    (cr_cons_ph_a),
+    .consume_pd_amt_o    (cr_cons_pd_a),
+    .consume_nph_amt_o   (cr_cons_nph_a),
+    .consume_npd_amt_o   (cr_cons_npd_a),
+    .consume_cplh_amt_o  (cr_cons_cplh_a),
+    .consume_cpld_amt_o  (cr_cons_cpld_a)
+  );
+
   rivet_tl_fc_stub u_tl_fc (
-    .clk_i            (pclk),
-    .rst_ni           (preset_n),
-    .free_ph_i        (1'b0),
-    .free_pd_i        (1'b0),
-    .free_nph_i       (1'b0),
-    .free_npd_i       (1'b0),
-    .free_cplh_i      (1'b0),
-    .free_cpld_i      (1'b0),
-    .free_ph_amt_i    (8'd0),
-    .free_pd_amt_i    (12'd0),
-    .free_nph_amt_i   (8'd0),
-    .free_npd_amt_i   (12'd0),
-    .free_cplh_amt_i  (8'd0),
-    .free_cpld_amt_i  (12'd0),
-    .consume_ph_i     (1'b0),
-    .consume_pd_i     (1'b0),
-    .consume_nph_i    (1'b0),
-    .consume_npd_i    (1'b0),
-    .consume_cplh_i   (1'b0),
-    .consume_cpld_i   (1'b0),
-    .consume_ph_amt_i (8'd0),
-    .consume_pd_amt_i (12'd0),
-    .consume_nph_amt_i(8'd0),
-    .consume_npd_amt_i(12'd0),
-    .consume_cplh_amt_i(8'd0),
-    .consume_cpld_amt_i(12'd0),
-    .tl_to_dll_fc_o   (tl_to_dll_fc),
-    .dll_to_tl_fc_i   (dll_to_tl_fc)
+    .clk_i              (pclk),
+    .rst_ni             (preset_n),
+    .free_ph_i          (cr_free_ph),
+    .free_pd_i          (cr_free_pd),
+    .free_nph_i         (cr_free_nph),
+    .free_npd_i         (cr_free_npd),
+    .free_cplh_i        (cr_free_cplh),
+    .free_cpld_i        (cr_free_cpld),
+    .free_ph_amt_i      (cr_free_ph_a),
+    .free_pd_amt_i      (cr_free_pd_a),
+    .free_nph_amt_i     (cr_free_nph_a),
+    .free_npd_amt_i     (cr_free_npd_a),
+    .free_cplh_amt_i    (cr_free_cplh_a),
+    .free_cpld_amt_i    (cr_free_cpld_a),
+    .consume_ph_i       (cr_cons_ph),
+    .consume_pd_i       (cr_cons_pd),
+    .consume_nph_i      (cr_cons_nph),
+    .consume_npd_i      (cr_cons_npd),
+    .consume_cplh_i     (cr_cons_cplh),
+    .consume_cpld_i     (cr_cons_cpld),
+    .consume_ph_amt_i   (cr_cons_ph_a),
+    .consume_pd_amt_i   (cr_cons_pd_a),
+    .consume_nph_amt_i  (cr_cons_nph_a),
+    .consume_npd_amt_i  (cr_cons_npd_a),
+    .consume_cplh_amt_i (cr_cons_cplh_a),
+    .consume_cpld_amt_i (cr_cons_cpld_a),
+    .tl_to_dll_fc_o     (tl_to_dll_fc),
+    .dll_to_tl_fc_i     (dll_to_tl_fc)
   );
 
   rivet_dll #(
@@ -244,16 +316,16 @@ module rivet_pcie_ctrl #(
     .dll_to_mac_sb_o (dll_to_mac_sb),
     .tl_to_dll_fc_i (tl_to_dll_fc),
     .dll_to_tl_fc_o (dll_to_tl_fc),
-    .tl_tx_tdata_i  ('0),
-    .tl_tx_tkeep_i  ('0),
-    .tl_tx_tlast_i  (1'b0),
-    .tl_tx_tvalid_i (1'b0),
-    .tl_tx_tready_o (),
-    .tl_rx_tdata_o  (),
-    .tl_rx_tkeep_o  (),
-    .tl_rx_tlast_o  (),
-    .tl_rx_tvalid_o (),
-    .tl_rx_tready_i (1'b1),
+    .tl_tx_tdata_i  (tl_tx_tdata),
+    .tl_tx_tkeep_i  (tl_tx_tkeep),
+    .tl_tx_tlast_i  (tl_tx_tlast),
+    .tl_tx_tvalid_i (tl_tx_tvalid),
+    .tl_tx_tready_o (tl_tx_tready),
+    .tl_rx_tdata_o  (tl_rx_tdata),
+    .tl_rx_tkeep_o  (tl_rx_tkeep),
+    .tl_rx_tlast_o  (tl_rx_tlast),
+    .tl_rx_tvalid_o (tl_rx_tvalid),
+    .tl_rx_tready_i (tl_rx_tready),
     .tl_rx_seq_o    ()
   );
 

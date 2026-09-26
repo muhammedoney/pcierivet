@@ -61,6 +61,7 @@ module rivet_ltssm #(
   input  logic [LANES-1:0] polarity_inverted_i,
   input  logic             deskew_done_i,
   input  logic             rx_err_i,
+  input  logic             nak_storm_i, // REPLAY_NUM exhausted → Recovery
 
   // Ordered-set transmission (rivet_mac_os_tx)
   output rivet_pkg::rivet_mac_os_type_e os_req_o,
@@ -438,7 +439,8 @@ module rivet_ltssm #(
         as_mac_in_L0_o   = 1'b1;
         accept_dll_tlp_o = 1'b1;
 
-        if (rx_err_i || rxvalid_lost) state_d = RIVET_LTSSM_RECOVERY_RCVRLOCK;
+        if (rx_err_i || rxvalid_lost || nak_storm_i)
+          state_d = RIVET_LTSSM_RECOVERY_RCVRLOCK;
       end
 
       // Minimal Recovery so timeouts and link errors cannot dead-end. The real

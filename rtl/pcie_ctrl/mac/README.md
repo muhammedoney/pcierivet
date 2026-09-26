@@ -57,8 +57,8 @@ rivet_mac
 | `rivet_mac` | Top wrapper; wires the blocks below |
 | `rivet_ltssm` | Link training state machine (Detect → … → L0) |
 | `rivet_mac_timer` | Shared LTSSM timeout counter |
-| `rivet_mac_os_tx` | Ordered-set / TS encoder; L0 SKP cadence; ×1 SDP DLLP framing |
-| `rivet_mac_os_rx` | Ordered-set / TS / Idle detect; ×1 SDP → DLL RX |
+| `rivet_mac_os_tx` | Ordered-set / TS encoder; L0 SKP cadence; SDP DLLP + STP TLP framing |
+| `rivet_mac_os_rx` | Ordered-set / TS / Idle detect; SDP/STP → DLL RX; EDB → err |
 | `rivet_mac_scrambler` | Gen2 TX per-lane LFSR |
 | `rivet_mac_descrambler` | Gen2 RX per-lane LFSR |
 | `rivet_mac_pipe_adapter` | Symbol + LTSSM commands ↔ flat PIPE |

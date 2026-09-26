@@ -352,7 +352,8 @@ depth_bytes ≈ f(LANES, wire_rate, MPS, AckLatency, InternalDelay, SafetyFactor
 | `REPLAY_TLP_SLOTS` | **16** (sim-friendly; each slot holds one max TLP) |
 | `REPLAY_SLOT_BYTES` | `MPS_BYTES + 32` (seq + hdr + LCRC + margin) |
 | Safety | ~1.5–2× vs theoretical AckLatency occupancy |
-| REPLAY_TIMER | ~3× AckLatency band (exact Base table later) |
+| REPLAY_TIMER | Sim default `256` pclk (not the Base AckLatency table); tune later |
+| REPLAY_NUM | Limit `3`; `nak_storm` forces LTSSM Recovery.RcvrLock |
 
 Override via module parameters. Too small → early TX stall; too large → BRAM
 only. Directed tests may shrink slots (e.g. 4) for fast fill/starve cases.
@@ -410,6 +411,8 @@ Split: **D4a** infrastructure → **D4b** on-wire TLP path.
 - [x] `rivet_dll_tlp_tx` / `rivet_dll_tlp_rx`  
 - [x] ACK/NAK DLLP schedule from RX; REPLAY_TIMER / REPLAY_NUM  
 - [x] Gate: dual-DLL TLP + ACK purge / NAK replay (`scripts/sim_dll_tlp_ack.ps1`)  
+- [x] On-wire STP: `scripts/sim_dll_mac_tlp.ps1` (LCRC + ACK through MAC)  
+- [x] `nak_storm` → LTSSM Recovery.RcvrLock  
 - [x] Streaming TL AXI-ST-like hook (D5)  
 
 ### D5 — Hook TL stream

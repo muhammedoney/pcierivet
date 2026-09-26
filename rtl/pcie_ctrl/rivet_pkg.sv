@@ -358,6 +358,57 @@ package rivet_pkg;
   // DLL TLP framing sizes (seq + LCRC around TL payload).
   localparam int unsigned RIVET_TLP_SEQ_BYTES  = 2;
   localparam int unsigned RIVET_TLP_LCRC_BYTES = 4;
+  // MAC assemble buffer (Cfg/Cpl-class TLPs). Larger payloads come later.
+  localparam int unsigned RIVET_MAC_TLP_BUF_BYTES = 64;
+
+  // Type 0 config space (EP smoke)
+  localparam logic [15:0] RIVET_CFG_VENDOR_ID = 16'h1EE0;
+  localparam logic [15:0] RIVET_CFG_DEVICE_ID = 16'h0001;
+  localparam logic [15:0] RIVET_CFG_CLASS_REV = 16'h0000;
+  localparam logic [7:0]  RIVET_CFG_REV_ID    = 8'h01;
+  localparam logic [23:0] RIVET_CFG_CLASS     = 24'h120000;
+  localparam logic [31:0] RIVET_CFG_BAR0_MASK = 32'hFFFF_0000; // 64 KiB MMIO
+
+  // TLP Fmt/Type in header byte 0: {Fmt[2:0], Type[4:0]}.
+  localparam logic [4:0] RIVET_TLP_TYPE_MEM = 5'b00000;
+  localparam logic [4:0] RIVET_TLP_TYPE_CFG = 5'b00100;
+  localparam logic [4:0] RIVET_TLP_TYPE_CPL = 5'b01010;
+  localparam logic [7:0] RIVET_TLP_B0_CFGRD0 = 8'h04;
+  localparam logic [7:0] RIVET_TLP_B0_CFGWR0 = 8'h44;
+  localparam logic [7:0] RIVET_TLP_B0_CPL    = 8'h0A;
+  localparam logic [7:0] RIVET_TLP_B0_CPLD   = 8'h4A;
+
+  typedef enum logic [1:0] {
+    RIVET_FC_CLS_P   = 2'd0,
+    RIVET_FC_CLS_NP  = 2'd1,
+    RIVET_FC_CLS_CPL = 2'd2
+  } rivet_fc_cls_e;
+
+  function automatic logic [4:0] rivet_tlp_type5(input logic [7:0] b0);
+    return b0[4:0];
+  endfunction
+
+  function automatic logic rivet_tlp_has_data(input logic [7:0] b0);
+    return b0[6];
+  endfunction
+
+  function automatic rivet_fc_cls_e rivet_tlp_fc_class(input logic [7:0] b0);
+    if (rivet_tlp_type5(b0) == RIVET_TLP_TYPE_CPL)
+      return RIVET_FC_CLS_CPL;
+    if (rivet_tlp_type5(b0) == RIVET_TLP_TYPE_CFG)
+      return RIVET_FC_CLS_NP;
+    if (rivet_tlp_has_data(b0))
+      return RIVET_FC_CLS_P;
+    return RIVET_FC_CLS_NP;
+  endfunction
+
+  function automatic logic [11:0] rivet_tlp_data_credits(input logic [9:0] len_dw);
+    return 12'((32'(len_dw) + 32'd3) / 32'd4);
+  endfunction
+
+  function automatic logic [9:0] rivet_tlp_len_dw(input logic [7:0] b2, input logic [7:0] b3);
+    return {b3[1:0], b2};
+  endfunction
 
   function automatic logic [15:0] rivet_tlp_seq_bytes(input logic [11:0] seq);
     // Byte0: {Rsvd[3:0], Seq[11:8]}; Byte1: Seq[7:0]
