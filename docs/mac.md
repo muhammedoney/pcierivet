@@ -319,7 +319,7 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 - [x] `rivet_mac_scrambler` / `rivet_mac_descrambler` (per Lane, COM-seeded, SKP does not advance, K and TS bypass)
 - [x] Scramble Logical Idle, and switch Idle detection to descrambled `00h`
 - [x] Extend the smoke peer to scramble Idle so the loop stays honest
-- [x] **SDP + END framing for DLLP on ×1/×2/×4** (`os_tx` / `os_rx`); RX accepts SDP on either 16-bit symbol phase; STP/EDB later
+- [x] **SDP + END framing for DLLP on ×1/×2/×4** (`os_tx` / `os_rx`); SDP + 6 D-bytes + END; RX accepts SDP on either 16-bit symbol phase; STP/EDB later
 - [x] Untie `dll_tx_ready_o` / `dll_rx_valid_o` for DLLP in L0
 - [ ] STP/EDB + byte striping / un-striping for ×2/×4
 - [x] L0 SKP OS every 1180–1538 Symbol Times in `rivet_mac_os_tx` (never mid-packet)

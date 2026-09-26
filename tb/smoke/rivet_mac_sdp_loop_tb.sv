@@ -149,8 +149,8 @@ module rivet_mac_sdp_loop_tb;
     rst_n = 1'b1;
     repeat (2) @(posedge pclk);
 
-    // One DLLP beat: SDP will frame data[63:0]
-    dll_tx.data     = 64'h0123_4567_89AB_CDEF;
+    // One DLLP beat: SDP frames the 6 wire bytes in data[47:0]
+    dll_tx.data     = 64'h0000_4567_89AB_CDEF;
     dll_tx.keep     = 8'hFF;
     dll_tx.sop      = 1'b1;
     dll_tx.eop      = 1'b1;
@@ -166,7 +166,7 @@ module rivet_mac_sdp_loop_tb;
     wait (got);
     @(posedge pclk);
 
-    if (got_data !== 64'h0123_4567_89AB_CDEF) begin
+    if (got_data !== 64'h0000_4567_89AB_CDEF) begin
       $error("SDP loopback data mismatch got=%016h", got_data);
       $fatal(1);
     end

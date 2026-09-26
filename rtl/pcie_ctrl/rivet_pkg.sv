@@ -90,8 +90,11 @@ package rivet_pkg;
   localparam logic [7:0] RIVET_SYM_END = 8'hFD; // K29.7 End good packet
   localparam logic [7:0] RIVET_SYM_EDB = 8'hFE; // K30.7 End bad / nullified
 
-  // Framed DLLP length in symbols: SDP + 8 DLLP bytes + END.
-  localparam int unsigned RIVET_DLLP_FRAMED_LEN = 10;
+  // Wire DLLP: SDP + 6 bytes (4 info + CRC-16) + END. The DLL↔MAC beat stays
+  // 64-bit (bytes 6-7 unused) so LANES*PIPE is a MAC striping concern only.
+  localparam int unsigned RIVET_DLLP_INFO_BYTES  = 4;
+  localparam int unsigned RIVET_DLLP_WIRE_BYTES  = 6;
+  localparam int unsigned RIVET_DLLP_FRAMED_LEN  = 8;
 
   // TS identifier symbols (Base 2.1 Tables 4-2/4-3). A polarity-inverted lane
   // delivers the bitwise complement, which is the documented inversion hint.
@@ -192,9 +195,9 @@ package rivet_pkg;
   } rivet_dl_state_e;
 
   // -------------------------------------------------------------------------
-  // DLLP / flow-control types (Base 2.1 §3.4). DLLP is always an 8-byte beat on
-  // the DLL↔MAC IF (fits in the 64-bit beat). Link wire rate LANES*PIPE_DATA_W
-  // is a MAC striping concern; do not shrink the DLLP beat to LANES*16.
+  // DLLP / flow-control types (Base 2.1 §3.4). On the wire a DLLP is 32 bits of
+  // information plus CRC-16 (6 symbols between SDP and END). The DLL↔MAC beat
+  // stays 64-bit; do not shrink it to LANES*16.
   // -------------------------------------------------------------------------
   localparam int unsigned RIVET_DLLP_BYTES = 8;
   localparam int unsigned RIVET_DLL_DATA_W_DEFAULT = 64; // one DLLP / beat today
