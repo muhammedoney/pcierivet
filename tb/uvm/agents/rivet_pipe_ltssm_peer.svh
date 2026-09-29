@@ -12,7 +12,16 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   int unsigned   lanes = 1;
   bit            enable = 0;
   bit            dllp_fc_enable = 0;
+  bit            tlp_memrd_enable = 0;
+  bit            tlp_cpld_enable = 0;
   uvm_analysis_port #(rivet_dllp_item) dllp_ap;
+
+  bit [31:0] tlp_memrd_addr = 32'h0000_0010;
+  bit [7:0]  tlp_memrd_tag  = 8'h23;
+  bit [15:0] tlp_memrd_rid  = 16'h0001;
+  bit [7:0]  tlp_cpld_tag   = 8'h11;
+  bit [15:0] tlp_cpld_rid   = 16'h0100;
+  bit [31:0] tlp_cpld_data  = 32'hCAFE_BABE;
 
   localparam logic [7:0] SYM_COM    = 8'hBC;
   localparam logic [7:0] SYM_PAD    = 8'hF7;
@@ -40,6 +49,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     dllp_ap = new("dllp_ap", this);
     void'(uvm_config_db#(bit)::get(this, "", "ltssm_peer_enable", enable));
     void'(uvm_config_db#(bit)::get(this, "", "dllp_fc_enable", dllp_fc_enable));
+    void'(uvm_config_db#(bit)::get(this, "", "tlp_memrd_enable", tlp_memrd_enable));
+    void'(uvm_config_db#(bit)::get(this, "", "tlp_cpld_enable", tlp_cpld_enable));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
     if (!enable) return;
     if (!uvm_config_db#(rivet_pipe_vif)::get(this, "", "vif", vif))
@@ -153,6 +164,14 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     rivet_pkg::rivet_dllp_fc_kind_e fc_kind;
     bit          fc_sending;
     logic [8:0]  fc_sym9;
+    bit          tlp_sending;
+    bit          tlp_memrd_done;
+    bit          tlp_cpld_done;
+    int unsigned tlp_sym;
+    int unsigned tlp_nbytes;
+    logic [8*32-1:0] tlp_frame;
+    logic [63:0] tlp_b0, tlp_b1;
+    logic [8:0]  tlp_sym9;
 
     if (!enable) return;
 
@@ -168,6 +187,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     txdetectrx_d = 1'b0;
     peer_active  = 1'b0;
     fc_idx = 0; fc_sym = 0; fc_gap_left = 0; fc_wire = '0; fc_sending = 1'b0;
+    tlp_sending = 1'b0; tlp_memrd_done = 1'b0; tlp_cpld_done = 1'b0;
+    tlp_sym = 0; tlp_nbytes = 0; tlp_frame = '0;
     for (l = 0; l < lanes; l++) peer_lfsr[l] = 16'hFFFF;
 
     vif.rxdata        <= '0;
@@ -241,12 +262,64 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         end
       end else if (phase_q != P_IDLE) begin
         fc_idx = 0; fc_sym = 0; fc_gap_left = 64; fc_wire = '0; fc_sending = 1'b0;
+        tlp_sending = 1'b0; tlp_sym = 0;
+      end
+
+      // One-shot TLP inject after InitFC2 (fc_idx >= 6), between FC gaps.
+      if (peer_active && (phase_q == P_IDLE) && !fc_sending && !tlp_sending &&
+          (fc_idx >= 6) && (fc_gap_left > 4)) begin
+        if (tlp_memrd_enable && !tlp_memrd_done) begin
+          bit go_m;
+          go_m = 1'b0;
+          void'(uvm_config_db#(bit)::get(null, "*", "peer_memrd_go", go_m));
+          if (go_m) begin
+            rivet_axi_tlp_util::pack_memrd32_tl_beats(
+                tlp_memrd_addr, tlp_memrd_tag, tlp_memrd_rid, 4'hF, tlp_b0, tlp_b1);
+            rivet_axi_tlp_util::pack_dll_tlp_frame(
+                12'd0, tlp_b0, tlp_b1, 16, tlp_frame, tlp_nbytes);
+            tlp_sym = 0; tlp_sending = 1'b1; tlp_memrd_done = 1'b1;
+            uvm_config_db#(bit)::set(null, "*", "peer_tlp_memrd_done", 1'b1);
+          end
+        end else if (tlp_cpld_enable && !tlp_cpld_done) begin
+          bit go_c;
+          go_c = 1'b0;
+          void'(uvm_config_db#(bit)::get(null, "*", "peer_cpld_go", go_c));
+          if (go_c) begin
+            rivet_axi_tlp_util::pack_cpld_tl_beats(
+                tlp_cpld_rid, tlp_cpld_tag, tlp_cpld_data, tlp_b0, tlp_b1);
+            rivet_axi_tlp_util::pack_dll_tlp_frame(
+                12'd0, tlp_b0, tlp_b1, 16, tlp_frame, tlp_nbytes);
+            tlp_sym = 0; tlp_sending = 1'b1; tlp_cpld_done = 1'b1;
+            uvm_config_db#(bit)::set(null, "*", "peer_tlp_cpld_done", 1'b1);
+          end
+        end
       end
 
       vif.rxdata  <= '0;
       vif.rxdatak <= '0;
       if (peer_active) begin
-        if (fc_sending) begin
+        if (tlp_sending) begin
+          for (l = 0; l < lanes; l++) begin
+            automatic logic [15:0] lfsr = peer_lfsr[l];
+            for (s = 0; s < 2; s++) begin
+              automatic int unsigned stream_idx = tlp_sym + s * lanes + l;
+              automatic int unsigned framed_len = tlp_nbytes + 2;
+              if (stream_idx < framed_len)
+                tlp_sym9 = rivet_axi_tlp_util::framed_tlp_sym(
+                    stream_idx, tlp_frame, tlp_nbytes);
+              else
+                tlp_sym9 = {1'b0, 8'h00};
+              peer_tmp = tlp_sym9;
+              peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
+              vif.rxdata[16*l + 8*s +: 8] <= peer_out;
+              vif.rxdatak[2*l + s]        <= peer_tmp[8];
+            end
+            peer_lfsr[l] = lfsr;
+          end
+          tlp_sym += lanes * 2;
+          if (tlp_sym >= (tlp_nbytes + 2))
+            tlp_sending = 1'b0;
+        end else if (fc_sending) begin
           for (l = 0; l < lanes; l++) begin
             automatic logic [15:0] lfsr = peer_lfsr[l];
             for (s = 0; s < 2; s++) begin

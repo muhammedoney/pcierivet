@@ -78,4 +78,77 @@ class rivet_axi_tlp_util;
     beat0 = {dw1, dw0};
     beat1 = {data, dw2};
   endfunction
+
+  // Wire MemRd32 as two TL beats (exact layout from rivet_tl_cq_cc_tb).
+  static function void pack_memrd32_tl_beats(
+      input  logic [31:0] addr,
+      input  logic [7:0]  tag,
+      input  logic [15:0] requester_id,
+      input  logic [3:0]  first_be,
+      output logic [63:0] beat0,
+      output logic [63:0] beat1);
+    // {LBE=0,FBE, tag, req_id_hi, req_id_lo, len_hi, len_lo, rsvd, FmtType}
+    // smoke used: {8'h0F, 8'h23, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, MEMRD32}
+    beat0 = {4'h0, first_be, tag, requester_id[15:8], requester_id[7:0],
+             8'h00, 8'h01, 8'h00, rivet_pkg::RIVET_TLP_B0_MEMRD32};
+    beat1 = {32'h0, addr[7:0], addr[15:8], addr[23:16], addr[31:24]};
+  endfunction
+
+  // Wire CplD 1DW as two TL beats (exact layout from rivet_tl_rq_rc_tb).
+  static function void pack_cpld_tl_beats(
+      input  logic [15:0] requester_id,
+      input  logic [7:0]  tag,
+      input  logic [31:0] data,
+      output logic [63:0] beat0,
+      output logic [63:0] beat1);
+    // smoke: {8'h04, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, 8'h00, CPLD}
+    //         {data, 8'h00, tag, req_hi, req_lo}
+    beat0 = {8'h04, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, 8'h00,
+             rivet_pkg::RIVET_TLP_B0_CPLD};
+    beat1 = {data, 8'h00, tag, requester_id[15:8], requester_id[7:0]};
+  endfunction
+
+  // DLL framed image: Seq# + TLP payload + LCRC (byte0 in [7:0]).
+  static function void pack_dll_tlp_frame(
+      input  logic [11:0] seq,
+      input  logic [63:0] beat0,
+      input  logic [63:0] beat1,
+      input  int unsigned pld_bytes,
+      output logic [8*32-1:0] frame,
+      output int unsigned     frame_bytes);
+    logic [8*160-1:0] crc_in;
+    logic [15:0]      seq_w;
+    logic [31:0]      lcrc;
+    int unsigned      i, base;
+    frame = '0;
+    seq_w = rivet_pkg::rivet_tlp_seq_bytes(seq);
+    frame[7:0]  = seq_w[7:0];
+    frame[15:8] = seq_w[15:8];
+    for (i = 0; i < 8 && i < pld_bytes; i++)
+      frame[8*(2+i) +: 8] = beat0[8*i +: 8];
+    for (i = 0; i < 8 && (8+i) < pld_bytes; i++)
+      frame[8*(2+8+i) +: 8] = beat1[8*i +: 8];
+    crc_in = '0;
+    for (i = 0; i < 2 + pld_bytes; i++)
+      crc_in[8*i +: 8] = frame[8*i +: 8];
+    lcrc = rivet_pkg::rivet_lcrc32_calc(crc_in, 2 + pld_bytes);
+    base = 2 + pld_bytes;
+    frame[8*(base+0) +: 8] = lcrc[7:0];
+    frame[8*(base+1) +: 8] = lcrc[15:8];
+    frame[8*(base+2) +: 8] = lcrc[23:16];
+    frame[8*(base+3) +: 8] = lcrc[31:24];
+    frame_bytes = base + 4;
+  endfunction
+
+  // STP + payload + END (idx 0 = STP, idx nbytes+1 = END).
+  static function logic [8:0] framed_tlp_sym(
+      input int unsigned idx,
+      input logic [8*32-1:0] payload,
+      input int unsigned nbytes);
+    if (idx == 0) return {1'b1, rivet_pkg::RIVET_SYM_STP};
+    if (idx == nbytes + 1) return {1'b1, rivet_pkg::RIVET_SYM_END};
+    if (idx >= 1 && idx <= nbytes)
+      return {1'b0, payload[8*(idx-1) +: 8]};
+    return {1'b0, 8'h00};
+  endfunction
 endclass : rivet_axi_tlp_util
