@@ -83,12 +83,12 @@ class rivet_scoreboard extends uvm_scoreboard;
       comp_checked = 1;
       return;
     end
-    // Idle smoke: Detect/P1 — no FC init, companion outputs stay 0.
-    if (t.cq_np_req_count !== '0 || t.rq_seq_num_vld0 || t.rq_tag_vld0 ||
-        t.rq_tag_vld1 || t.rq_tag_av !== '0 || t.tfc_nph_av !== '0 ||
-        t.tfc_npd_av !== '0) begin
+    // Idle smoke (Detect/P1): RQ tag/seq stay quiet; CQ NP count is live (default
+    // credits + TB cq_np_req grants) so it may be non-zero. tfc_* stay 0 until L0/FC.
+    if (t.rq_seq_num_vld0 || t.rq_tag_vld0 || t.rq_tag_vld1 ||
+        t.rq_tag_av !== '0 || t.tfc_nph_av !== '0 || t.tfc_npd_av !== '0) begin
       comp_unexpected++;
-      `uvm_error(get_type_name(), "Companion outputs non-zero on idle smoke DUT")
+      `uvm_error(get_type_name(), "Companion RQ/tfc non-zero on idle smoke DUT")
     end else
       comp_idle_ok++;
     comp_checked = 1;
