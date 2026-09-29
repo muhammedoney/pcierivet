@@ -190,16 +190,30 @@ module rivet_pg239_ep #(
     .phy_rxdatak (phy_rxdatak)
   );
 
-  // CQ/CC wires for internal PIO app
-  logic [63:0] cq_tdata, cc_tdata;
-  logic [1:0]  cq_tkeep, cc_tkeep;
+  // CQ/CC/RQ/RC wires for dual-role app (completer + bus master)
+  logic [63:0] cq_tdata, cc_tdata, rq_tdata, rc_tdata;
+  logic [1:0]  cq_tkeep, cc_tkeep, rq_tkeep, rc_tkeep;
   logic        cq_tlast, cq_tvalid, cq_tready;
   logic        cc_tlast, cc_tvalid;
-  logic [3:0]  cc_tready;
+  logic [3:0]  cc_tready, rq_tready;
+  logic        rq_tlast, rq_tvalid;
+  logic        rc_tlast, rc_tvalid, rc_tready;
   logic [87:0] cq_tuser;
   logic [32:0] cc_tuser;
+  logic [84:0] rq_tuser;
+  logic [74:0] rc_tuser;
 
-  rivet_tl_pio_app u_pio (
+  // Bus-master knobs (board drives for Class C/D; idle keeps Class A PIO-only)
+  logic        bm_go, bm_do_wr, bm_do_rd, bm_busy, bm_done, bm_err;
+  logic [31:0] bm_host_addr, bm_wr_data, bm_rd_data;
+
+  assign bm_go        = 1'b0;
+  assign bm_do_wr     = 1'b0;
+  assign bm_do_rd     = 1'b0;
+  assign bm_host_addr = 32'h0;
+  assign bm_wr_data   = 32'h0;
+
+  rivet_ep_dual_app u_app (
     .clk_i            (user_clk),
     .rst_ni           (~phy_phystatus_rst & sys_rst_n),
     .m_axis_cq_tdata  (cq_tdata),
@@ -213,7 +227,28 @@ module rivet_pg239_ep #(
     .s_axis_cc_tlast  (cc_tlast),
     .s_axis_cc_tvalid (cc_tvalid),
     .s_axis_cc_tready (cc_tready),
-    .s_axis_cc_tuser  (cc_tuser)
+    .s_axis_cc_tuser  (cc_tuser),
+    .s_axis_rq_tdata  (rq_tdata),
+    .s_axis_rq_tkeep  (rq_tkeep),
+    .s_axis_rq_tlast  (rq_tlast),
+    .s_axis_rq_tvalid (rq_tvalid),
+    .s_axis_rq_tready (rq_tready),
+    .s_axis_rq_tuser  (rq_tuser),
+    .m_axis_rc_tdata  (rc_tdata),
+    .m_axis_rc_tkeep  (rc_tkeep),
+    .m_axis_rc_tlast  (rc_tlast),
+    .m_axis_rc_tvalid (rc_tvalid),
+    .m_axis_rc_tready (rc_tready),
+    .m_axis_rc_tuser  (rc_tuser),
+    .bm_go_i          (bm_go),
+    .bm_do_wr_i       (bm_do_wr),
+    .bm_do_rd_i       (bm_do_rd),
+    .bm_host_addr_i   (bm_host_addr),
+    .bm_wr_data_i     (bm_wr_data),
+    .bm_rd_data_o     (bm_rd_data),
+    .bm_busy_o        (bm_busy),
+    .bm_done_o        (bm_done),
+    .bm_err_o         (bm_err)
   );
 
   rivet_pcie_ctrl #(
@@ -241,18 +276,18 @@ module rivet_pg239_ep #(
     .s_axis_cc_tvalid (cc_tvalid),
     .s_axis_cc_tready (cc_tready),
     .s_axis_cc_tuser  (cc_tuser),
-    .s_axis_rq_tdata  ('0),
-    .s_axis_rq_tkeep  ('0),
-    .s_axis_rq_tlast  (1'b0),
-    .s_axis_rq_tvalid (1'b0),
-    .s_axis_rq_tready (),
-    .s_axis_rq_tuser  ('0),
-    .m_axis_rc_tdata  (),
-    .m_axis_rc_tkeep  (),
-    .m_axis_rc_tlast  (),
-    .m_axis_rc_tvalid (),
-    .m_axis_rc_tready (1'b1),
-    .m_axis_rc_tuser  (),
+    .s_axis_rq_tdata  (rq_tdata),
+    .s_axis_rq_tkeep  (rq_tkeep),
+    .s_axis_rq_tlast  (rq_tlast),
+    .s_axis_rq_tvalid (rq_tvalid),
+    .s_axis_rq_tready (rq_tready),
+    .s_axis_rq_tuser  (rq_tuser),
+    .m_axis_rc_tdata  (rc_tdata),
+    .m_axis_rc_tkeep  (rc_tkeep),
+    .m_axis_rc_tlast  (rc_tlast),
+    .m_axis_rc_tvalid (rc_tvalid),
+    .m_axis_rc_tready (rc_tready),
+    .m_axis_rc_tuser  (rc_tuser),
 
     .pcie_cq_np_req       (2'b01),
     .pcie_cq_np_req_count (),

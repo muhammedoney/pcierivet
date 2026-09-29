@@ -287,6 +287,7 @@ function New-RivetCompileDo {
     "rtl/pcie_ctrl/tl/rivet_tl_rc.sv",
     "rtl/pcie_ctrl/tl/rivet_tl_tx_mux.sv",
     "rtl/pcie_ctrl/tl/rivet_tl_pio_app.sv",
+    "tb/bfm/pg213_ep/rtl/rivet_ep_dual_app.sv",
     "rtl/pcie_ctrl/mac/rivet_mac_timer.sv",
     "rtl/pcie_ctrl/mac/rivet_ltssm.sv",
     "rtl/pcie_ctrl/mac/rivet_mac_os_tx.sv",
