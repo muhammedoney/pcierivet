@@ -9,6 +9,7 @@ class rivet_scoreboard extends uvm_scoreboard;
   uvm_analysis_imp_axi  #(rivet_axi_st_item, rivet_scoreboard)     axi_imp;
   uvm_analysis_imp_cfg  #(rivet_cfg_mgmt_item, rivet_scoreboard)   cfg_imp;
   uvm_analysis_imp_comp #(rivet_companion_item, rivet_scoreboard)  comp_imp;
+  uvm_analysis_imp_dllp #(rivet_dllp_item, rivet_scoreboard)       dllp_imp;
 
   int unsigned pipe_sample_count, mac_idle_ok;
   int unsigned axi_sample_count, axi_idle_ok, axi_unexpected;
@@ -22,6 +23,9 @@ class rivet_scoreboard extends uvm_scoreboard;
   bit ltssm_l0_mode;
   bit cfg_mgmt_mode;
   bit tlp_mode;
+  bit dllp_fc_mode;
+  int unsigned dllp_dut_fc, dllp_peer_fc, dllp_dut_init1, dllp_dut_init2;
+  int unsigned dllp_dut_update, dllp_crc_bad;
 
   // Per-channel packet assembly (accepted beats only).
   bit             pkt_active[string];
@@ -44,15 +48,17 @@ class rivet_scoreboard extends uvm_scoreboard;
     void'(uvm_config_db#(bit)::get(this, "", "ltssm_l0_mode", ltssm_l0_mode));
     void'(uvm_config_db#(bit)::get(this, "", "cfg_mgmt_mode", cfg_mgmt_mode));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_mode", tlp_mode));
+    void'(uvm_config_db#(bit)::get(this, "", "dllp_fc_mode", dllp_fc_mode));
     pipe_imp = new("pipe_imp", this);
     axi_imp  = new("axi_imp", this);
     cfg_imp  = new("cfg_imp", this);
     comp_imp = new("comp_imp", this);
+    dllp_imp = new("dllp_imp", this);
   endfunction
 
   function void write_pipe(rivet_pipe_item t);
     pipe_sample_count++;
-    if (ltssm_l0_mode || cfg_mgmt_mode) begin
+    if (ltssm_l0_mode || cfg_mgmt_mode || dllp_fc_mode) begin
       pipe_checked = 1;
       return;
     end
@@ -76,7 +82,7 @@ class rivet_scoreboard extends uvm_scoreboard;
 
     accepted = t.tvalid && ((t.tready & 4'hF) != 4'h0);
 
-    if (tlp_mode || cfg_mgmt_mode) begin
+    if (tlp_mode || cfg_mgmt_mode || dllp_fc_mode) begin
       axi_checked = 1;
       if (accepted) begin
         axi_xfer_count++;
@@ -189,7 +195,7 @@ class rivet_scoreboard extends uvm_scoreboard;
       return;
     end
 
-    if (ltssm_l0_mode) begin
+    if (ltssm_l0_mode || dllp_fc_mode) begin
       cfg_checked = 1;
       return;
     end
@@ -209,7 +215,7 @@ class rivet_scoreboard extends uvm_scoreboard;
   function void write_comp(rivet_companion_item t);
     comp_sample_count++;
     if (comp_sample_count < 5) return;
-    if (ltssm_l0_mode || cfg_mgmt_mode || tlp_mode) begin
+    if (ltssm_l0_mode || cfg_mgmt_mode || tlp_mode || dllp_fc_mode) begin
       comp_checked = 1;
       return;
     end
@@ -222,8 +228,50 @@ class rivet_scoreboard extends uvm_scoreboard;
     comp_checked = 1;
   endfunction
 
+
+  function void write_dllp(rivet_dllp_item t);
+    if (!t.crc_ok) begin
+      dllp_crc_bad++;
+      `uvm_error(get_type_name(), $sformatf("DLLP CRC fail: %s", t.convert2string()))
+      return;
+    end
+    if (!t.is_fc) return;
+    if (t.from_dut) begin
+      dllp_dut_fc++;
+      unique case (t.fc_kind)
+        rivet_pkg::RIVET_DLLP_FC_INIT1_P,
+        rivet_pkg::RIVET_DLLP_FC_INIT1_NP,
+        rivet_pkg::RIVET_DLLP_FC_INIT1_CPL: dllp_dut_init1++;
+        rivet_pkg::RIVET_DLLP_FC_INIT2_P,
+        rivet_pkg::RIVET_DLLP_FC_INIT2_NP,
+        rivet_pkg::RIVET_DLLP_FC_INIT2_CPL: dllp_dut_init2++;
+        rivet_pkg::RIVET_DLLP_FC_UPDATE_P,
+        rivet_pkg::RIVET_DLLP_FC_UPDATE_NP,
+        rivet_pkg::RIVET_DLLP_FC_UPDATE_CPL: dllp_dut_update++;
+        default: ;
+      endcase
+    end else
+      dllp_peer_fc++;
+  endfunction
+
   function void check_phase(uvm_phase phase);
     super.check_phase(phase);
+
+    if (dllp_fc_mode) begin
+      if (dllp_peer_fc == 0)
+        `uvm_error(get_type_name(), "dllp_fc mode: no peer FC DLLPs published")
+      if (dllp_dut_init1 == 0)
+        `uvm_error(get_type_name(), "dllp_fc mode: DUT did not send InitFC1")
+      if (dllp_dut_init2 == 0)
+        `uvm_error(get_type_name(), "dllp_fc mode: DUT did not send InitFC2")
+      if (dllp_crc_bad != 0)
+        `uvm_error(get_type_name(), $sformatf("dllp_fc mode: CRC errors=%0d", dllp_crc_bad))
+      `uvm_info(get_type_name(),
+        $sformatf("dllp_fc OK peer=%0d dut_fc=%0d init1=%0d init2=%0d upd=%0d",
+                  dllp_peer_fc, dllp_dut_fc, dllp_dut_init1, dllp_dut_init2,
+                  dllp_dut_update), UVM_LOW)
+      return;
+    end
 
     if (cfg_mgmt_mode) begin
       if (cfg_complete_ok == 0)

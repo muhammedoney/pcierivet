@@ -21,11 +21,14 @@ package rivet_uvm_pkg;
   `uvm_analysis_imp_decl(_axi)
   `uvm_analysis_imp_decl(_cfg)
   `uvm_analysis_imp_decl(_comp)
+  `uvm_analysis_imp_decl(_dllp)
 
   `include "seq/rivet_pipe_item.svh"
   `include "seq/rivet_axi_st_item.svh"
   `include "seq/rivet_cfg_mgmt_item.svh"
   `include "seq/rivet_companion_item.svh"
+  `include "seq/rivet_dllp_item.svh"
+  `include "seq/rivet_dllp_util.svh"
   `include "seq/rivet_axi_tlp_util.svh"
   `include "seq/rivet_pipe_idle_seq.svh"
   `include "seq/rivet_axi_st_idle_seq.svh"
@@ -39,6 +42,7 @@ package rivet_uvm_pkg;
   `include "agents/rivet_pipe_monitor.svh"
   `include "agents/rivet_pipe_agent.svh"
   `include "agents/rivet_pipe_ltssm_peer.svh"
+  `include "agents/rivet_pipe_dllp_monitor.svh"
   `include "agents/rivet_axi_st_sequencer.svh"
   `include "agents/rivet_axi_st_driver.svh"
   `include "agents/rivet_axi_st_monitor.svh"
@@ -55,6 +59,7 @@ package rivet_uvm_pkg;
   `include "seq/rivet_idle_smoke_vseq.svh"
   `include "seq/rivet_cfg_mgmt_vseq.svh"
   `include "seq/rivet_ltssm_l0_vseq.svh"
+  `include "seq/rivet_dllp_fc_vseq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
   `include "env/rivet_env.svh"
@@ -63,4 +68,5 @@ package rivet_uvm_pkg;
   `include "tests/smoke_gen2_x2_x4.svh"
   `include "tests/smoke_cfg_mgmt_gen2_x1.svh"
   `include "tests/ltssm_l0_gen2.svh"
+  `include "tests/smoke_dllp_fc_gen2_x1.svh"
 endpackage : rivet_uvm_pkg

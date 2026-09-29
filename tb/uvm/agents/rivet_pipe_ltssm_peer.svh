@@ -11,6 +11,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   rivet_pipe_vif vif;
   int unsigned   lanes = 1;
   bit            enable = 0;
+  bit            dllp_fc_enable = 0;
+  uvm_analysis_port #(rivet_dllp_item) dllp_ap;
 
   localparam logic [7:0] SYM_COM    = 8'hBC;
   localparam logic [7:0] SYM_PAD    = 8'hF7;
@@ -35,7 +37,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
+    dllp_ap = new("dllp_ap", this);
     void'(uvm_config_db#(bit)::get(this, "", "ltssm_peer_enable", enable));
+    void'(uvm_config_db#(bit)::get(this, "", "dllp_fc_enable", dllp_fc_enable));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
     if (!enable) return;
     if (!uvm_config_db#(rivet_pipe_vif)::get(this, "", "vif", vif))
@@ -61,14 +65,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   endfunction
 
   function automatic logic [23:0] peer_lfsr_step(input logic [15:0] lfsr_in);
-    logic [15:0] lfsr;
-    logic [7:0]  pad;
-    lfsr = lfsr_in;
-    for (int unsigned i = 0; i < 8; i++) begin
-      pad[i] = lfsr[15];
-      lfsr   = {lfsr[14:0], lfsr[15] ^ lfsr[4] ^ lfsr[3] ^ lfsr[2]};
-    end
-    return {lfsr, pad};
+    return rivet_pkg::rivet_lfsr_step(lfsr_in);
   endfunction
 
   function automatic logic [7:0] peer_scramble(
@@ -89,6 +86,51 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     return din;
   endfunction
 
+
+  function automatic rivet_pkg::rivet_dllp_fc_kind_e fc_kind_at(input int unsigned idx);
+    case (idx)
+      0: return rivet_pkg::RIVET_DLLP_FC_INIT1_P;
+      1: return rivet_pkg::RIVET_DLLP_FC_INIT1_NP;
+      2: return rivet_pkg::RIVET_DLLP_FC_INIT1_CPL;
+      3: return rivet_pkg::RIVET_DLLP_FC_INIT2_P;
+      4: return rivet_pkg::RIVET_DLLP_FC_INIT2_NP;
+      5: return rivet_pkg::RIVET_DLLP_FC_INIT2_CPL;
+      6: return rivet_pkg::RIVET_DLLP_FC_UPDATE_P;
+      7: return rivet_pkg::RIVET_DLLP_FC_UPDATE_NP;
+      default: return rivet_pkg::RIVET_DLLP_FC_UPDATE_CPL;
+    endcase
+  endfunction
+
+  function automatic void peer_fc_credits(
+      input  rivet_pkg::rivet_dllp_fc_kind_e kind,
+      output logic [7:0]  hdr,
+      output logic [11:0] data);
+    unique case (kind)
+      rivet_pkg::RIVET_DLLP_FC_INIT1_P,
+      rivet_pkg::RIVET_DLLP_FC_INIT2_P,
+      rivet_pkg::RIVET_DLLP_FC_UPDATE_P: begin hdr = 8'h20; data = 12'h100; end
+      rivet_pkg::RIVET_DLLP_FC_INIT1_NP,
+      rivet_pkg::RIVET_DLLP_FC_INIT2_NP,
+      rivet_pkg::RIVET_DLLP_FC_UPDATE_NP: begin hdr = 8'h10; data = 12'h080; end
+      default: begin hdr = 8'h00; data = 12'h000; end
+    endcase
+  endfunction
+
+  function void publish_peer_fc(rivet_pkg::rivet_dllp_fc_kind_e kind,
+                                logic [7:0] hdr, logic [11:0] data);
+    rivet_dllp_item item;
+    item = rivet_dllp_item::type_id::create("dllp_peer");
+    item.from_dut = 1'b0;
+    item.crc_ok   = 1'b1;
+    item.is_fc    = 1'b1;
+    item.fc_kind  = kind;
+    item.vc       = 3'd0;
+    item.hdr_fc   = hdr;
+    item.data_fc  = data;
+    item.type_byte = rivet_pkg::rivet_dllp_fc_type_byte(kind, 3'd0);
+    dllp_ap.write(item);
+  endfunction
+
   task run_phase(uvm_phase phase);
     peer_phase_e phase_q;
     logic [4:0]  peer_ptr;
@@ -104,6 +146,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     logic [8:0]  peer_tmp;
     logic [7:0]  peer_out;
     int unsigned l, s;
+    int unsigned fc_idx, fc_sym, fc_gap_left;
+    logic [47:0] fc_wire;
+    logic [7:0]  fc_hdr;
+    logic [11:0] fc_data;
+    rivet_pkg::rivet_dllp_fc_kind_e fc_kind;
+    bit          fc_sending;
+    logic [8:0]  fc_sym9;
 
     if (!enable) return;
 
@@ -118,6 +167,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     detect_ack   = 1'b0;
     txdetectrx_d = 1'b0;
     peer_active  = 1'b0;
+    fc_idx = 0; fc_sym = 0; fc_gap_left = 0; fc_wire = '0; fc_sending = 1'b0;
     for (l = 0; l < lanes; l++) peer_lfsr[l] = 16'hFFFF;
 
     vif.rxdata        <= '0;
@@ -176,19 +226,55 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         vif.rxelecidle <= '0;
       end
 
+
+      if (dllp_fc_enable && (lanes == 1) && peer_active && (phase_q == P_IDLE) && !fc_sending) begin
+        if (fc_gap_left != 0) begin
+          fc_gap_left--;
+        end else begin
+          fc_kind = fc_kind_at(fc_idx);
+          peer_fc_credits(fc_kind, fc_hdr, fc_data);
+          fc_wire    = rivet_dllp_util::pack_fc_wire(fc_kind, 3'd0, fc_hdr, fc_data);
+          fc_sym     = 0;
+          fc_sending = 1'b1;
+          publish_peer_fc(fc_kind, fc_hdr, fc_data);
+        end
+      end else if (phase_q != P_IDLE) begin
+        fc_idx = 0; fc_sym = 0; fc_gap_left = 64; fc_wire = '0; fc_sending = 1'b0;
+      end
+
       vif.rxdata  <= '0;
       vif.rxdatak <= '0;
       if (peer_active) begin
         for (l = 0; l < lanes; l++) begin
           automatic logic [15:0] lfsr = peer_lfsr[l];
           for (s = 0; s < 2; s++) begin
-            peer_tmp = send_os ? peer_sym(4'(peer_ptr + 5'(s)), send_ts2,
-                                          send_link_pad, send_lane_pad, 8'(l))
-                               : {1'b0, 8'h00};
-            peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8],
-                                     send_os && !peer_tmp[8], lfsr);
-            vif.rxdata[16*l + 8*s +: 8] <= peer_out;
-            vif.rxdatak[2*l + s]        <= peer_tmp[8];
+            if (fc_sending && (l == 0) && (lanes == 1)) begin
+              fc_sym9  = rivet_dllp_util::framed_sym(fc_sym, fc_wire);
+              peer_tmp = fc_sym9;
+              peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
+              vif.rxdata[16*l + 8*s +: 8] <= peer_out;
+              vif.rxdatak[2*l + s]        <= peer_tmp[8];
+              fc_sym++;
+              if (fc_sym >= 8) begin
+                fc_sending = 1'b0;
+                if (fc_idx < 5) begin
+                  fc_idx++; fc_gap_left = 8;
+                end else if (fc_idx == 5) begin
+                  fc_idx = 6; fc_gap_left = 16;
+                end else begin
+                  if (fc_idx >= 8) fc_idx = 6; else fc_idx++;
+                  fc_gap_left = 32;
+                end
+              end
+            end else begin
+              peer_tmp = send_os ? peer_sym(4'(peer_ptr + 5'(s)), send_ts2,
+                                            send_link_pad, send_lane_pad, 8'(l))
+                                 : {1'b0, 8'h00};
+              peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8],
+                                       send_os && !peer_tmp[8], lfsr);
+              vif.rxdata[16*l + 8*s +: 8] <= peer_out;
+              vif.rxdatak[2*l + s]        <= peer_tmp[8];
+            end
           end
           peer_lfsr[l] = lfsr;
         end
