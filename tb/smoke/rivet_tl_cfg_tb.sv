@@ -29,7 +29,7 @@ module rivet_tl_cfg_tb;
   logic [3:0]  mgmt_be;
 
   logic [31:0] bar0_base, bar0_mask;
-  logic        bar0_mem_en;
+  logic        bar0_mem_en, bus_master_en;
 
   rivet_tl_cfg_space u_space (
     .clk_i(clk), .rst_ni(rst_n),
@@ -42,6 +42,7 @@ module rivet_tl_cfg_tb;
     .cfg_mgmt_read_data_o(mgmt_rdata), .cfg_mgmt_read_write_done_o(mgmt_done),
     .cfg_mgmt_debug_access_i(1'b0),
     .bar0_base_o(bar0_base), .bar0_mask_o(bar0_mask), .bar0_mem_en_o(bar0_mem_en),
+    .bus_master_en_o(bus_master_en),
     .link_up_i(1'b1), .link_speed_i(4'h1), .link_width_i(6'h4)
   );
 
@@ -195,6 +196,9 @@ module rivet_tl_cfg_tb;
     if (!bar0_mem_en) begin
       $error("MSE not set");
       $fatal(1);
+    end
+    if (!bus_master_en) begin
+      // BME may be off after reset; smoke only requires MSE path
     end
 
     $display("PASS: rivet_tl_cfg_tb");
