@@ -200,7 +200,7 @@ module rivet_pg239_ep #(
   logic [32:0] cc_tuser;
 
   rivet_tl_pio_app u_pio (
-    .clk_i            (pipe_clk),
+    .clk_i            (user_clk),
     .rst_ni           (~phy_phystatus_rst & sys_rst_n),
     .m_axis_cq_tdata  (cq_tdata),
     .m_axis_cq_tkeep  (cq_tkeep),

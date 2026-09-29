@@ -1,21 +1,22 @@
-# Local reference clones
+# Local reference trees
 
-Cloned under `third_party/ref/` for investigation only (**gitignored** — never commit sources; only this README is tracked).
+Investigation clones (gitignored under `third_party/ref/*`) stay local-only.
 
-| Repo | Path | Role for Rivet |
-|------|------|----------------|
-| [PCI_Express_Gen7.0](https://github.com/rkingsly2025/PCI_Express_Gen7.0) | `PCI_Express_Gen7.0/` | Educational layer diagram — [docs/ref-pci-express-gen7.md](../../docs/ref-pci-express-gen7.md) |
-| [pcievhost](https://github.com/wyvernSemi/pcievhost) | `pcievhost/` | GPL-3 Gen1–2 VIP — [docs/ref-pcievhost.md](../../docs/ref-pcievhost.md) |
-| [lowRISC/style-guides](https://github.com/lowRISC/style-guides) | `style-guides/` | SV + DV coding style (CC-BY-4.0) — [docs/ref-lowrisc-style.md](../../docs/ref-lowrisc-style.md), [docs/rtl-style.md](../../docs/rtl-style.md) |
+## Tracked git submodules
+
+| Path | Upstream | License | Product RTL? |
+|------|----------|---------|--------------|
+| `common_cells/` | [pulp-platform/common_cells](https://github.com/pulp-platform/common_cells) | Solderpad SHL-0.51 | **Yes** — CDC (`cc_cdc_2phase`, `cc_rstgen`, …) |
+| `tech_cells_generic/` | [pulp-platform/tech_cells_generic](https://github.com/pulp-platform/tech_cells_generic) | Solderpad | **Yes** — `tc_sync` |
+| `verilog-axis/` | [alexforencich/verilog-axis](https://github.com/alexforencich/verilog-axis) | MIT | **Yes** — `axis_async_fifo` (CQ/CC) |
+| `verilog-axi/` | [alexforencich/verilog-axi](https://github.com/alexforencich/verilog-axi) | MIT | Future AXI/AXI-lite helpers (`axil_cdc`); not in current filelist |
+| `taxi/` | [fpganinja/taxi](https://github.com/fpganinja/taxi) | CERN-OHL-S-2.0 | **No** — reference only (incompatible with Apache-2.0 product without commercial license) |
+| `litepcie/` | [enjoy-digital/litepcie](https://github.com/enjoy-digital/litepcie) | LiteX / Python | **No** — architecture reference only |
+
+Clone / update:
 
 ```powershell
-git clone --depth 1 git@github.com:rkingsly2025/PCI_Express_Gen7.0.git third_party/ref/PCI_Express_Gen7.0
-git clone --depth 1 git@github.com:wyvernSemi/pcievhost.git third_party/ref/pcievhost
-git clone --depth 1 git@github.com:lowRISC/style-guides.git third_party/ref/style-guides
+git submodule update --init --recursive
 ```
 
-If `git clone` fails (TLS/proxy), fetch the style-guide markdown files from  
-`https://raw.githubusercontent.com/lowRISC/style-guides/master/` into `third_party/ref/style-guides/`.
-
-Do not copy GPL-3 or license-unclear RTL into Rivet product sources.  
-lowRISC guides are **style reference** (CC-BY-4.0) — Rivet’s condensed rules live in-repo with attribution; do not vendor the full guide as product IP.
+Rivet wrappers live in `rtl/pcie_ctrl/cdc/` and pull only the product rows above via `rtl/filelist_cdc.f`.

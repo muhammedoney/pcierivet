@@ -60,9 +60,15 @@ third_party/xilinx_ip/**
 # PG239 / PG213 BFM local work (logs, questa_lib, generated compile.do)
 tb/bfm/pg239_phy/work/
 tb/bfm/pg213_ep/work/
-# Local reference clones (investigation only; never commit sources)
-third_party/ref/**
+# Local reference: ignore top-level clones by default; allow tracked submodules
+third_party/ref/*
 !third_party/ref/README.md
+!third_party/ref/common_cells
+!third_party/ref/tech_cells_generic
+!third_party/ref/verilog-axis
+!third_party/ref/verilog-axi
+!third_party/ref/taxi
+!third_party/ref/litepcie
 
 # Local proprietary specifications (never commit)
 specs/
