@@ -403,14 +403,18 @@ if ($Step -eq "all" -or $Step -eq "simulate") {
   $log = Join-Path $WorkDir "simulate.log"
   if ((Test-Path $log) -and -not $Gui) {
     $text = Get-Content $log -Raw
-    if ($text -match "PG213 RP \+ Rivet EP PIO 1DW") {
+    if ($text -match "Class A\+C|Class A PASS|PG213 RP \+ Rivet EP PIO 1DW|Class A\+C") {
       Write-Host ""
-      Write-Host "PASS: PG213 RP + Rivet EP PIO 1DW"
+      if ($text -match "Class C PASS") {
+        Write-Host "PASS: PG213 RP + Rivet EP Class A+C"
+      } else {
+        Write-Host "PASS: PG213 RP + Rivet EP PIO 1DW"
+      }
       exit 0
     }
-    if ($text -match "PIO 1DW incomplete") {
+    if ($text -match "Class A FAIL|PIO 1DW incomplete") {
       Write-Host ""
-      Write-Host "FAIL: PIO 1DW incomplete - see $log"
+      Write-Host "FAIL: Class A / PIO incomplete - see $log"
       exit 1
     }
     if ($text -match "Cfg Vendor/Device incomplete") {

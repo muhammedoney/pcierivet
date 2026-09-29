@@ -203,15 +203,17 @@ module rivet_pg239_ep #(
   logic [84:0] rq_tuser;
   logic [74:0] rc_tuser;
 
-  // Bus-master knobs (board drives for Class C/D; idle keeps Class A PIO-only)
+  // Bus-master knobs (board may force for Class C/D; idle keeps Class A PIO-only)
   logic        bm_go, bm_do_wr, bm_do_rd, bm_busy, bm_done, bm_err;
   logic [31:0] bm_host_addr, bm_wr_data, bm_rd_data;
 
-  assign bm_go        = 1'b0;
-  assign bm_do_wr     = 1'b0;
-  assign bm_do_rd     = 1'b0;
-  assign bm_host_addr = 32'h0;
-  assign bm_wr_data   = 32'h0;
+  initial begin
+    bm_go        = 1'b0;
+    bm_do_wr     = 1'b0;
+    bm_do_rd     = 1'b0;
+    bm_host_addr = 32'h0;
+    bm_wr_data   = 32'h0;
+  end
 
   rivet_ep_dual_app u_app (
     .clk_i            (user_clk),
