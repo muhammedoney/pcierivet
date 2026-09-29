@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Mux TL→DLL TX from fabric Cfg completer and CC (Cfg has priority).
+// Mux TL→DLL TX from fabric Cfg, CC, and RQ (priority Cfg > CC > RQ).
 
 module rivet_tl_tx_mux (
   input  logic        clk_i,
@@ -19,6 +19,12 @@ module rivet_tl_tx_mux (
   input  logic        cc_tvalid_i,
   output logic        cc_tready_o,
 
+  input  logic [63:0] rq_tdata_i,
+  input  logic [7:0]  rq_tkeep_i,
+  input  logic        rq_tlast_i,
+  input  logic        rq_tvalid_i,
+  output logic        rq_tready_o,
+
   output logic [63:0] m_tdata_o,
   output logic [7:0]  m_tkeep_o,
   output logic        m_tlast_o,
@@ -29,7 +35,8 @@ module rivet_tl_tx_mux (
   typedef enum logic [1:0] {
     ST_IDLE = 2'd0,
     ST_CFG  = 2'd1,
-    ST_CC   = 2'd2
+    ST_CC   = 2'd2,
+    ST_RQ   = 2'd3
   } st_e;
 
   st_e st_q;
@@ -41,6 +48,7 @@ module rivet_tl_tx_mux (
     m_tvalid_o   = 1'b0;
     cfg_tready_o = 1'b0;
     cc_tready_o  = 1'b0;
+    rq_tready_o  = 1'b0;
     unique case (st_q)
       ST_IDLE: begin
         if (cfg_tvalid_i) begin
@@ -55,6 +63,12 @@ module rivet_tl_tx_mux (
           m_tlast_o   = cc_tlast_i;
           m_tvalid_o  = 1'b1;
           cc_tready_o = m_tready_i;
+        end else if (rq_tvalid_i) begin
+          m_tdata_o   = rq_tdata_i;
+          m_tkeep_o   = rq_tkeep_i;
+          m_tlast_o   = rq_tlast_i;
+          m_tvalid_o  = 1'b1;
+          rq_tready_o = m_tready_i;
         end
       end
       ST_CFG: begin
@@ -71,6 +85,13 @@ module rivet_tl_tx_mux (
         m_tvalid_o  = cc_tvalid_i;
         cc_tready_o = m_tready_i;
       end
+      ST_RQ: begin
+        m_tdata_o   = rq_tdata_i;
+        m_tkeep_o   = rq_tkeep_i;
+        m_tlast_o   = rq_tlast_i;
+        m_tvalid_o  = rq_tvalid_i;
+        rq_tready_o = m_tready_i;
+      end
       default: ;
     endcase
   end
@@ -83,9 +104,12 @@ module rivet_tl_tx_mux (
         ST_IDLE: begin
           if (cfg_tvalid_i && !cfg_tlast_i) st_q <= ST_CFG;
           else if (!cfg_tvalid_i && cc_tvalid_i && !cc_tlast_i) st_q <= ST_CC;
+          else if (!cfg_tvalid_i && !cc_tvalid_i && rq_tvalid_i && !rq_tlast_i)
+            st_q <= ST_RQ;
         end
         ST_CFG: if (cfg_tlast_i) st_q <= ST_IDLE;
         ST_CC:  if (cc_tlast_i)  st_q <= ST_IDLE;
+        ST_RQ:  if (rq_tlast_i)  st_q <= ST_IDLE;
         default: st_q <= ST_IDLE;
       endcase
     end

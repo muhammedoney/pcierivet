@@ -32,6 +32,7 @@ module rivet_tl_cfg_space (
   output logic [31:0] bar0_base_o,
   output logic [31:0] bar0_mask_o,
   output logic        bar0_mem_en_o,
+  output logic        bus_master_en_o,
 
   // Link Status inject (negotiated)
   input  logic        link_up_i,
@@ -155,9 +156,10 @@ module rivet_tl_cfg_space (
   assign cfg_mgmt_read_data_o       = rdata_q;
   assign cfg_mgmt_read_write_done_o = mgmt_done_q;
 
-  assign bar0_base_o  = mem_q[4] & RIVET_CFG_BAR0_MASK;
-  assign bar0_mask_o  = RIVET_CFG_BAR0_MASK;
-  assign bar0_mem_en_o = mem_q[1][1]; // Command.Memory Space Enable
+  assign bar0_base_o     = mem_q[4] & RIVET_CFG_BAR0_MASK;
+  assign bar0_mask_o     = RIVET_CFG_BAR0_MASK;
+  assign bar0_mem_en_o   = mem_q[1][1]; // Command.Memory Space Enable
+  assign bus_master_en_o = mem_q[1][2]; // Command.Bus Master Enable
 
   // Live Link Status overlay on DW32
   logic [31:0] link_status_overlay;
