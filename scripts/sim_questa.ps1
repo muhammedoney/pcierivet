@@ -25,6 +25,7 @@ Write-Host "Compiling Rivet UVM (test=$TestName lanes=$Lanes)..."
   "+define+RIVET_TB_LANES=$Lanes" `
   "+incdir+tb/uvm" `
   "+incdir+rtl/interfaces" `
+  "+incdir+third_party/ref/common_cells/include" `
   @UvmInc `
   -f tb/uvm/filelist_uvm.f
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

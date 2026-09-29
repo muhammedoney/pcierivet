@@ -28,6 +28,7 @@ vlog -sv -work work \
   "+define+RIVET_TB_LANES=${LANES}" \
   +incdir+tb/uvm \
   +incdir+rtl/interfaces \
+  +incdir+third_party/ref/common_cells/include \
   "${UVM_INC[@]}" \
   -f tb/uvm/filelist_uvm.f
 
