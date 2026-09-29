@@ -98,7 +98,7 @@ Status: missing; defer until ASPM is implemented.
 Rivet decision: expose **`cfg_mgmt_*`** directly (**live** on PF0 4 KiB file shared
 with fabric CfgRd0/CfgWr0). Config-space atomicity and DW addressing follow PG213;
 non-PF0 reads 0 / ignores writes; `cfg_mgmt_debug_access` is a no-op in EP.
-Same-clock as config file (`pclk`) for now; CDC to `user_clk` is a follow-up.
+Same-clock as config file (`pclk`) for fabric Cfg; **user `cfg_mgmt_*` and AXI-ST CQ/CC live on `user_clk`** with CDC (`axis_async_fifo` + `cc_cdc_2phase`). See `rtl/pcie_ctrl/cdc/` and `third_party/ref/README.md`.
 
 ### Configuration/link status (Table 27)
 

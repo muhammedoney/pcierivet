@@ -253,6 +253,15 @@ function New-RivetCompileDo {
   )
 
   $rivetSv = @(
+    "third_party/ref/tech_cells_generic/src/rtl/tc_sync.sv",
+    "third_party/ref/tech_cells_generic/src/rtl/tc_clk.sv",
+    "third_party/ref/common_cells/src/cc_rstgen_bypass.sv",
+    "third_party/ref/common_cells/src/cc_rstgen.sv",
+    "third_party/ref/common_cells/src/cc_cdc_2phase.sv",
+    "third_party/ref/verilog-axis/rtl/axis_async_fifo.v",
+    "rtl/pcie_ctrl/cdc/rivet_cdc_sync_bus.sv",
+    "rtl/pcie_ctrl/cdc/rivet_cdc_axis.sv",
+    "rtl/pcie_ctrl/cdc/rivet_cdc_cfg_mgmt.sv",
     "rtl/pcie_ctrl/rivet_pkg.sv",
     "rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv",
     "rtl/pcie_ctrl/dll/rivet_dll_crc16.sv",
@@ -330,7 +339,7 @@ function New-RivetCompileDo {
   [void]$sb.AppendLine("vlog -work xil_defaultlib \")
   [void]$sb.AppendLine(('"{0}/glbl.v"' -f $WorkUnix))
   [void]$sb.AppendLine("")
-  [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}" \' -f $Imp213))
+  [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}" "+incdir+{1}/third_party/ref/common_cells/include" \' -f $Imp213, $RepoUnix))
   for ($i = 0; $i -lt $rivetSv.Count; $i++) {
     $suffix = if ($i -lt $rivetSv.Count - 1) { " \" } else { "" }
     [void]$sb.AppendLine("$($rivetSv[$i])$suffix")

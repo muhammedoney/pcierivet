@@ -1,4 +1,7 @@
 # Soft controller only (UVM primary DUT / Verilator / Yosys)
+# CDC first (axis_async_fifo + common_cells)
+-f rtl/filelist_cdc.f
+
 rtl/pcie_ctrl/rivet_pkg.sv
 rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv
 rtl/pcie_ctrl/dll/rivet_dll_crc16.sv

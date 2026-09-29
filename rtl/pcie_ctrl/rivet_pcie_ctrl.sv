@@ -171,7 +171,31 @@ module rivet_pcie_ctrl #(
   assign pcie_rq_tag_av       = '0;
 
   // -------------------------------------------------------------------------
-  // DLL + TL (pclk) — CQ/CC + cfg_mgmt; CDC to user_clk later
+  // CDC resets (async assert both domains; sync deassert per clk)
+  // -------------------------------------------------------------------------
+  logic rst_n_por;
+  logic user_rst_sync_n, pclk_rst_sync_n;
+  logic user_rst_init_n, pclk_rst_init_n;
+
+  assign rst_n_por = user_resetn & preset_n;
+
+  cc_rstgen u_rst_user (
+    .clk_i       (user_clk),
+    .rst_ni      (rst_n_por),
+    .test_mode_i (1'b0),
+    .rst_no      (user_rst_sync_n),
+    .init_no     (user_rst_init_n)
+  );
+  cc_rstgen u_rst_pclk (
+    .clk_i       (pclk),
+    .rst_ni      (rst_n_por),
+    .test_mode_i (1'b0),
+    .rst_no      (pclk_rst_sync_n),
+    .init_no     (pclk_rst_init_n)
+  );
+
+  // -------------------------------------------------------------------------
+  // DLL + TL (pclk); user AXI-ST / cfg_mgmt via CDC
   // -------------------------------------------------------------------------
   rivet_dll_mac_tx_beat_t dll_tx_beat;
   logic                   dll_tx_valid;
@@ -228,17 +252,18 @@ module rivet_pcie_ctrl #(
   assign cr_tx_h0  = cr_tx_acc_cfg ? cr_tx_h0_cfg : cr_tx_h0_cc;
   assign cr_tx_len = cr_tx_acc_cfg ? cr_tx_len_cfg : cr_tx_len_cc;
 
-  rivet_tl_cfg_space u_cfg_space (
-    .clk_i                        (pclk),
-    .rst_ni                       (preset_n),
-    .fab_req_i                    (fab_req),
-    .fab_write_i                  (fab_write),
-    .fab_addr_i                   (fab_addr),
-    .fab_be_i                     (fab_be),
-    .fab_wdata_i                  (fab_wdata),
-    .fab_rdata_o                  (fab_rdata),
-    .fab_ack_o                    (fab_ack),
-    .fab_busy_o                   (fab_busy),
+  logic [9:0]  mgmt_p_addr;
+  logic [7:0]  mgmt_p_fn;
+  logic        mgmt_p_write, mgmt_p_read, mgmt_p_done;
+  logic [31:0] mgmt_p_wdata, mgmt_p_rdata;
+  logic [3:0]  mgmt_p_be;
+  logic        mgmt_p_debug;
+
+  rivet_cdc_cfg_mgmt u_cdc_cfg_mgmt (
+    .user_clk_i                   (user_clk),
+    .user_rst_ni                  (user_rst_sync_n),
+    .pclk_i                       (pclk),
+    .preset_ni                    (pclk_rst_sync_n),
     .cfg_mgmt_addr_i              (cfg_mgmt_addr),
     .cfg_mgmt_function_number_i   (cfg_mgmt_function_number),
     .cfg_mgmt_write_i             (cfg_mgmt_write),
@@ -248,11 +273,42 @@ module rivet_pcie_ctrl #(
     .cfg_mgmt_read_data_o         (cfg_mgmt_read_data),
     .cfg_mgmt_read_write_done_o   (cfg_mgmt_read_write_done),
     .cfg_mgmt_debug_access_i      (cfg_mgmt_debug_access),
+    .space_addr_o                 (mgmt_p_addr),
+    .space_function_number_o      (mgmt_p_fn),
+    .space_write_o                (mgmt_p_write),
+    .space_write_data_o           (mgmt_p_wdata),
+    .space_byte_enable_o          (mgmt_p_be),
+    .space_read_o                 (mgmt_p_read),
+    .space_read_data_i            (mgmt_p_rdata),
+    .space_read_write_done_i      (mgmt_p_done),
+    .space_debug_access_o         (mgmt_p_debug)
+  );
+
+  rivet_tl_cfg_space u_cfg_space (
+    .clk_i                        (pclk),
+    .rst_ni                       (pclk_rst_sync_n),
+    .fab_req_i                    (fab_req),
+    .fab_write_i                  (fab_write),
+    .fab_addr_i                   (fab_addr),
+    .fab_be_i                     (fab_be),
+    .fab_wdata_i                  (fab_wdata),
+    .fab_rdata_o                  (fab_rdata),
+    .fab_ack_o                    (fab_ack),
+    .fab_busy_o                   (fab_busy),
+    .cfg_mgmt_addr_i              (mgmt_p_addr),
+    .cfg_mgmt_function_number_i   (mgmt_p_fn),
+    .cfg_mgmt_write_i             (mgmt_p_write),
+    .cfg_mgmt_write_data_i        (mgmt_p_wdata),
+    .cfg_mgmt_byte_enable_i       (mgmt_p_be),
+    .cfg_mgmt_read_i              (mgmt_p_read),
+    .cfg_mgmt_read_data_o         (mgmt_p_rdata),
+    .cfg_mgmt_read_write_done_o   (mgmt_p_done),
+    .cfg_mgmt_debug_access_i      (mgmt_p_debug),
     .bar0_base_o                  (bar0_base),
     .bar0_mask_o                  (bar0_mask),
     .bar0_mem_en_o                (bar0_mem_en),
     .link_up_i                    (link_up),
-    .link_speed_i                 (4'h1), // negotiated; Gen1 BFM for now
+    .link_speed_i                 (4'h1),
     .link_width_i                 (6'(LANES))
   );
 
@@ -305,20 +361,30 @@ module rivet_pcie_ctrl #(
     .tx_len_dw_o  (cr_tx_len_cfg)
   );
 
-  logic [AXI_DATA_WIDTH-1:0] cq_tdata_w;
-  logic [AXI_KEEP_WIDTH-1:0] cq_tkeep_w;
-  logic                      cq_tlast_w, cq_tvalid_w;
-  logic [AXI_CQ_USER_W-1:0]  cq_tuser_w;
+  logic [AXI_DATA_WIDTH-1:0] cq_p_tdata, cq_u_tdata;
+  logic [AXI_KEEP_WIDTH-1:0] cq_p_tkeep, cq_u_tkeep;
+  logic                      cq_p_tlast, cq_p_tvalid, cq_p_tready;
+  logic                      cq_u_tlast, cq_u_tvalid;
+  logic [AXI_CQ_USER_W-1:0]  cq_p_tuser, cq_u_tuser;
+  logic [1:0]                cq_np_req_p;
+  logic [5:0]                cq_np_cnt_p;
 
-  assign m_axis_cq_tdata  = cq_tdata_w;
-  assign m_axis_cq_tkeep  = cq_tkeep_w;
-  assign m_axis_cq_tlast  = cq_tlast_w;
-  assign m_axis_cq_tvalid = cq_tvalid_w;
-  assign m_axis_cq_tuser  = cq_tuser_w;
+  rivet_cdc_sync_bus #(.WIDTH(2)) u_sync_np_req (
+    .dst_clk_i  (pclk),
+    .dst_rst_ni (pclk_rst_sync_n),
+    .src_i      (pcie_cq_np_req),
+    .dst_o      (cq_np_req_p)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(6)) u_sync_np_cnt (
+    .dst_clk_i  (user_clk),
+    .dst_rst_ni (user_rst_sync_n),
+    .src_i      (cq_np_cnt_p),
+    .dst_o      (pcie_cq_np_req_count)
+  );
 
   rivet_tl_cq u_tl_cq (
     .clk_i              (pclk),
-    .rst_ni             (preset_n),
+    .rst_ni             (pclk_rst_sync_n),
     .rx_tdata_i         (cq_rx_d),
     .rx_tkeep_i         (cq_rx_k),
     .rx_tlast_i         (cq_rx_l),
@@ -327,31 +393,95 @@ module rivet_pcie_ctrl #(
     .bar0_base_i        (bar0_base),
     .bar0_mask_i        (bar0_mask),
     .bar0_mem_en_i      (bar0_mem_en),
-    .cq_np_req_i        (pcie_cq_np_req),
-    .cq_np_req_count_o  (pcie_cq_np_req_count),
-    .m_axis_cq_tdata    (cq_tdata_w),
-    .m_axis_cq_tkeep    (cq_tkeep_w),
-    .m_axis_cq_tlast    (cq_tlast_w),
-    .m_axis_cq_tvalid   (cq_tvalid_w),
-    .m_axis_cq_tready   (m_axis_cq_tready),
-    .m_axis_cq_tuser    (cq_tuser_w),
+    .cq_np_req_i        (cq_np_req_p),
+    .cq_np_req_count_o  (cq_np_cnt_p),
+    .m_axis_cq_tdata    (cq_p_tdata),
+    .m_axis_cq_tkeep    (cq_p_tkeep),
+    .m_axis_cq_tlast    (cq_p_tlast),
+    .m_axis_cq_tvalid   (cq_p_tvalid),
+    .m_axis_cq_tready   (cq_p_tready),
+    .m_axis_cq_tuser    (cq_p_tuser),
     .rx_accept_o        (cr_rx_acc_cq),
     .rx_hdr0_o          (cr_rx_h0_cq),
     .rx_len_dw_o        (cr_rx_len_cq)
   );
 
-  logic cc_tready_1;
-  assign s_axis_cc_tready = {4{cc_tready_1}};
+  rivet_cdc_axis #(
+    .DATA_W (AXI_DATA_WIDTH),
+    .KEEP_W (AXI_KEEP_WIDTH),
+    .USER_W (AXI_CQ_USER_W),
+    .DEPTH  (32)
+  ) u_cdc_cq (
+    .s_clk_i    (pclk),
+    .s_rst_ni   (pclk_rst_sync_n),
+    .s_tdata_i  (cq_p_tdata),
+    .s_tkeep_i  (cq_p_tkeep),
+    .s_tlast_i  (cq_p_tlast),
+    .s_tvalid_i (cq_p_tvalid),
+    .s_tready_o (cq_p_tready),
+    .s_tuser_i  (cq_p_tuser),
+    .m_clk_i    (user_clk),
+    .m_rst_ni   (user_rst_sync_n),
+    .m_tdata_o  (cq_u_tdata),
+    .m_tkeep_o  (cq_u_tkeep),
+    .m_tlast_o  (cq_u_tlast),
+    .m_tvalid_o (cq_u_tvalid),
+    .m_tready_i (m_axis_cq_tready),
+    .m_tuser_o  (cq_u_tuser)
+  );
+
+  assign m_axis_cq_tdata  = cq_u_tdata;
+  assign m_axis_cq_tkeep  = cq_u_tkeep;
+  assign m_axis_cq_tlast  = cq_u_tlast;
+  assign m_axis_cq_tvalid = cq_u_tvalid;
+  assign m_axis_cq_tuser  = cq_u_tuser;
+
+  logic [AXI_DATA_WIDTH-1:0] cc_u_tdata, cc_p_tdata;
+  logic [AXI_KEEP_WIDTH-1:0] cc_u_tkeep, cc_p_tkeep;
+  logic                      cc_u_tlast, cc_u_tvalid, cc_u_tready;
+  logic                      cc_p_tlast, cc_p_tvalid, cc_p_tready;
+  logic [AXI_CC_USER_W-1:0]  cc_u_tuser, cc_p_tuser;
+
+  assign cc_u_tdata  = s_axis_cc_tdata;
+  assign cc_u_tkeep  = s_axis_cc_tkeep;
+  assign cc_u_tlast  = s_axis_cc_tlast;
+  assign cc_u_tvalid = s_axis_cc_tvalid;
+  assign cc_u_tuser  = s_axis_cc_tuser;
+  assign s_axis_cc_tready = {4{cc_u_tready}};
+
+  rivet_cdc_axis #(
+    .DATA_W (AXI_DATA_WIDTH),
+    .KEEP_W (AXI_KEEP_WIDTH),
+    .USER_W (AXI_CC_USER_W),
+    .DEPTH  (32)
+  ) u_cdc_cc (
+    .s_clk_i    (user_clk),
+    .s_rst_ni   (user_rst_sync_n),
+    .s_tdata_i  (cc_u_tdata),
+    .s_tkeep_i  (cc_u_tkeep),
+    .s_tlast_i  (cc_u_tlast),
+    .s_tvalid_i (cc_u_tvalid),
+    .s_tready_o (cc_u_tready),
+    .s_tuser_i  (cc_u_tuser),
+    .m_clk_i    (pclk),
+    .m_rst_ni   (pclk_rst_sync_n),
+    .m_tdata_o  (cc_p_tdata),
+    .m_tkeep_o  (cc_p_tkeep),
+    .m_tlast_o  (cc_p_tlast),
+    .m_tvalid_o (cc_p_tvalid),
+    .m_tready_i (cc_p_tready),
+    .m_tuser_o  (cc_p_tuser)
+  );
 
   rivet_tl_cc u_tl_cc (
     .clk_i            (pclk),
-    .rst_ni           (preset_n),
-    .s_axis_cc_tdata  (s_axis_cc_tdata),
-    .s_axis_cc_tkeep  (s_axis_cc_tkeep[1:0]),
-    .s_axis_cc_tlast  (s_axis_cc_tlast),
-    .s_axis_cc_tvalid (s_axis_cc_tvalid),
-    .s_axis_cc_tready (cc_tready_1),
-    .s_axis_cc_tuser  (s_axis_cc_tuser),
+    .rst_ni           (pclk_rst_sync_n),
+    .s_axis_cc_tdata  (cc_p_tdata),
+    .s_axis_cc_tkeep  (cc_p_tkeep[1:0]),
+    .s_axis_cc_tlast  (cc_p_tlast),
+    .s_axis_cc_tvalid (cc_p_tvalid),
+    .s_axis_cc_tready (cc_p_tready),
+    .s_axis_cc_tuser  (cc_p_tuser),
     .tx_tdata_o       (cc_tx_d),
     .tx_tkeep_o       (cc_tx_k),
     .tx_tlast_o       (cc_tx_l),
@@ -477,67 +607,91 @@ module rivet_pcie_ctrl #(
     .tl_rx_seq_o    ()
   );
 
-  // PG213 tfc: NP TX credit availability (0 = none … 15 = 15+)
-  assign pcie_tfc_nph_av = dll_to_tl_fc.tx_gate_ready
+  // PG213 tfc / cfg_fc on pclk, then sync to user_clk
+  logic [3:0]  tfc_nph_p, tfc_npd_p;
+  logic [2:0]  cfg_fc_sel_p;
+  logic [7:0]  cfg_fc_ph_p, cfg_fc_nph_p, cfg_fc_cplh_p;
+  logic [11:0] cfg_fc_pd_p, cfg_fc_npd_p, cfg_fc_cpld_p;
+
+  assign tfc_nph_p = dll_to_tl_fc.tx_gate_ready
       ? rivet_fc_tfc_scale({4'h0, dll_to_tl_fc.av.nph}, dll_to_tl_fc.av.nph_inf)
       : 4'h0;
-  assign pcie_tfc_npd_av = dll_to_tl_fc.tx_gate_ready
+  assign tfc_npd_p = dll_to_tl_fc.tx_gate_ready
       ? rivet_fc_tfc_scale(dll_to_tl_fc.av.npd, dll_to_tl_fc.av.npd_inf)
       : 4'h0;
 
-  // cfg_fc_* mux (pclk). RX consumed not tracked yet → 0 for sel=010.
+  rivet_cdc_sync_bus #(.WIDTH(3)) u_sync_fc_sel (
+    .dst_clk_i(pclk), .dst_rst_ni(pclk_rst_sync_n),
+    .src_i(cfg_fc_sel), .dst_o(cfg_fc_sel_p)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(4)) u_sync_tfc_nph (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(tfc_nph_p), .dst_o(pcie_tfc_nph_av)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(4)) u_sync_tfc_npd (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(tfc_npd_p), .dst_o(pcie_tfc_npd_av)
+  );
+
   always_comb begin
-    cfg_fc_ph   = '0;
-    cfg_fc_pd   = '0;
-    cfg_fc_nph  = '0;
-    cfg_fc_npd  = '0;
-    cfg_fc_cplh = '0;
-    cfg_fc_cpld = '0;
-    unique case (cfg_fc_sel)
+    cfg_fc_ph_p   = '0;
+    cfg_fc_pd_p   = '0;
+    cfg_fc_nph_p  = '0;
+    cfg_fc_npd_p  = '0;
+    cfg_fc_cplh_p = '0;
+    cfg_fc_cpld_p = '0;
+    unique case (cfg_fc_sel_p)
       RIVET_CFG_FC_SEL_RX_AVAIL: begin
-        cfg_fc_ph   = tl_to_dll_fc.ca.ph_inf   ? 8'h00  : tl_to_dll_fc.ca.ph;
-        cfg_fc_pd   = tl_to_dll_fc.ca.pd_inf   ? 12'h000 : tl_to_dll_fc.ca.pd;
-        cfg_fc_nph  = tl_to_dll_fc.ca.nph_inf  ? 8'h00  : tl_to_dll_fc.ca.nph;
-        cfg_fc_npd  = tl_to_dll_fc.ca.npd_inf  ? 12'h000 : tl_to_dll_fc.ca.npd;
-        cfg_fc_cplh = tl_to_dll_fc.ca.cplh_inf ? 8'h00  : tl_to_dll_fc.ca.cplh;
-        cfg_fc_cpld = tl_to_dll_fc.ca.cpld_inf ? 12'h000 : tl_to_dll_fc.ca.cpld;
+        cfg_fc_ph_p   = tl_to_dll_fc.ca.ph_inf   ? 8'h00  : tl_to_dll_fc.ca.ph;
+        cfg_fc_pd_p   = tl_to_dll_fc.ca.pd_inf   ? 12'h000 : tl_to_dll_fc.ca.pd;
+        cfg_fc_nph_p  = tl_to_dll_fc.ca.nph_inf  ? 8'h00  : tl_to_dll_fc.ca.nph;
+        cfg_fc_npd_p  = tl_to_dll_fc.ca.npd_inf  ? 12'h000 : tl_to_dll_fc.ca.npd;
+        cfg_fc_cplh_p = tl_to_dll_fc.ca.cplh_inf ? 8'h00  : tl_to_dll_fc.ca.cplh;
+        cfg_fc_cpld_p = tl_to_dll_fc.ca.cpld_inf ? 12'h000 : tl_to_dll_fc.ca.cpld;
       end
       RIVET_CFG_FC_SEL_RX_CONS: begin
-        cfg_fc_ph = '0; cfg_fc_pd = '0; cfg_fc_nph = '0;
-        cfg_fc_npd = '0; cfg_fc_cplh = '0; cfg_fc_cpld = '0;
+        cfg_fc_ph_p = '0; cfg_fc_pd_p = '0; cfg_fc_nph_p = '0;
+        cfg_fc_npd_p = '0; cfg_fc_cplh_p = '0; cfg_fc_cpld_p = '0;
       end
       RIVET_CFG_FC_SEL_TX_AVAIL: begin
         if (!dll_to_tl_fc.tx_gate_ready) begin
-          cfg_fc_ph = '0; cfg_fc_pd = '0; cfg_fc_nph = '0;
-          cfg_fc_npd = '0; cfg_fc_cplh = '0; cfg_fc_cpld = '0;
+          cfg_fc_ph_p = '0; cfg_fc_pd_p = '0; cfg_fc_nph_p = '0;
+          cfg_fc_npd_p = '0; cfg_fc_cplh_p = '0; cfg_fc_cpld_p = '0;
         end else begin
-          cfg_fc_ph   = dll_to_tl_fc.av.ph_inf   ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.ph;
-          cfg_fc_pd   = dll_to_tl_fc.av.pd_inf   ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.pd;
-          cfg_fc_nph  = dll_to_tl_fc.av.nph_inf  ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.nph;
-          cfg_fc_npd  = dll_to_tl_fc.av.npd_inf  ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.npd;
-          cfg_fc_cplh = dll_to_tl_fc.av.cplh_inf ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.cplh;
-          cfg_fc_cpld = dll_to_tl_fc.av.cpld_inf ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.cpld;
+          cfg_fc_ph_p   = dll_to_tl_fc.av.ph_inf   ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.ph;
+          cfg_fc_pd_p   = dll_to_tl_fc.av.pd_inf   ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.pd;
+          cfg_fc_nph_p  = dll_to_tl_fc.av.nph_inf  ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.nph;
+          cfg_fc_npd_p  = dll_to_tl_fc.av.npd_inf  ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.npd;
+          cfg_fc_cplh_p = dll_to_tl_fc.av.cplh_inf ? RIVET_CFG_FC_HDR_INF_TX_AV  : dll_to_tl_fc.av.cplh;
+          cfg_fc_cpld_p = dll_to_tl_fc.av.cpld_inf ? RIVET_CFG_FC_DATA_INF_TX_AV : dll_to_tl_fc.av.cpld;
         end
       end
       RIVET_CFG_FC_SEL_TX_LIMIT: begin
-        cfg_fc_ph   = dll_to_tl_fc.cl.ph_inf   ? 8'h00  : dll_to_tl_fc.cl.ph;
-        cfg_fc_pd   = dll_to_tl_fc.cl.pd_inf   ? 12'h000 : dll_to_tl_fc.cl.pd;
-        cfg_fc_nph  = dll_to_tl_fc.cl.nph_inf  ? 8'h00  : dll_to_tl_fc.cl.nph;
-        cfg_fc_npd  = dll_to_tl_fc.cl.npd_inf  ? 12'h000 : dll_to_tl_fc.cl.npd;
-        cfg_fc_cplh = dll_to_tl_fc.cl.cplh_inf ? 8'h00  : dll_to_tl_fc.cl.cplh;
-        cfg_fc_cpld = dll_to_tl_fc.cl.cpld_inf ? 12'h000 : dll_to_tl_fc.cl.cpld;
+        cfg_fc_ph_p   = dll_to_tl_fc.cl.ph_inf   ? 8'h00  : dll_to_tl_fc.cl.ph;
+        cfg_fc_pd_p   = dll_to_tl_fc.cl.pd_inf   ? 12'h000 : dll_to_tl_fc.cl.pd;
+        cfg_fc_nph_p  = dll_to_tl_fc.cl.nph_inf  ? 8'h00  : dll_to_tl_fc.cl.nph;
+        cfg_fc_npd_p  = dll_to_tl_fc.cl.npd_inf  ? 12'h000 : dll_to_tl_fc.cl.npd;
+        cfg_fc_cplh_p = dll_to_tl_fc.cl.cplh_inf ? 8'h00  : dll_to_tl_fc.cl.cplh;
+        cfg_fc_cpld_p = dll_to_tl_fc.cl.cpld_inf ? 12'h000 : dll_to_tl_fc.cl.cpld;
       end
       RIVET_CFG_FC_SEL_TX_CONS: begin
-        cfg_fc_ph   = dll_to_tl_fc.cl.ph_inf   ? 8'h00  : dll_to_tl_fc.cc.ph;
-        cfg_fc_pd   = dll_to_tl_fc.cl.pd_inf   ? 12'h000 : dll_to_tl_fc.cc.pd;
-        cfg_fc_nph  = dll_to_tl_fc.cl.nph_inf  ? 8'h00  : dll_to_tl_fc.cc.nph;
-        cfg_fc_npd  = dll_to_tl_fc.cl.npd_inf  ? 12'h000 : dll_to_tl_fc.cc.npd;
-        cfg_fc_cplh = dll_to_tl_fc.cl.cplh_inf ? 8'h00  : dll_to_tl_fc.cc.cplh;
-        cfg_fc_cpld = dll_to_tl_fc.cl.cpld_inf ? 12'h000 : dll_to_tl_fc.cc.cpld;
+        cfg_fc_ph_p   = dll_to_tl_fc.cl.ph_inf   ? 8'h00  : dll_to_tl_fc.cc.ph;
+        cfg_fc_pd_p   = dll_to_tl_fc.cl.pd_inf   ? 12'h000 : dll_to_tl_fc.cc.pd;
+        cfg_fc_nph_p  = dll_to_tl_fc.cl.nph_inf  ? 8'h00  : dll_to_tl_fc.cc.nph;
+        cfg_fc_npd_p  = dll_to_tl_fc.cl.npd_inf  ? 12'h000 : dll_to_tl_fc.cc.npd;
+        cfg_fc_cplh_p = dll_to_tl_fc.cl.cplh_inf ? 8'h00  : dll_to_tl_fc.cc.cplh;
+        cfg_fc_cpld_p = dll_to_tl_fc.cl.cpld_inf ? 12'h000 : dll_to_tl_fc.cc.cpld;
       end
       default: ;
     endcase
   end
+
+  rivet_cdc_sync_bus #(.WIDTH(8))  u_sync_fc_ph   (.dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n), .src_i(cfg_fc_ph_p),   .dst_o(cfg_fc_ph));
+  rivet_cdc_sync_bus #(.WIDTH(12)) u_sync_fc_pd   (.dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n), .src_i(cfg_fc_pd_p),   .dst_o(cfg_fc_pd));
+  rivet_cdc_sync_bus #(.WIDTH(8))  u_sync_fc_nph  (.dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n), .src_i(cfg_fc_nph_p),  .dst_o(cfg_fc_nph));
+  rivet_cdc_sync_bus #(.WIDTH(12)) u_sync_fc_npd  (.dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n), .src_i(cfg_fc_npd_p),  .dst_o(cfg_fc_npd));
+  rivet_cdc_sync_bus #(.WIDTH(8))  u_sync_fc_cplh (.dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n), .src_i(cfg_fc_cplh_p), .dst_o(cfg_fc_cplh));
+  rivet_cdc_sync_bus #(.WIDTH(12)) u_sync_fc_cpld (.dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n), .src_i(cfg_fc_cpld_p), .dst_o(cfg_fc_cpld));
 
   rivet_mac #(
     .MODE              (MODE),
@@ -604,11 +758,11 @@ module rivet_pcie_ctrl #(
 
   assign cfg_ltssm_state = ltssm_state;
 
-  logic _unused_user;
-  assign _unused_user = user_clk ^ user_resetn ^
-                        dll_tx_ready ^ dll_rx_valid ^
-                        (|mac_to_dll_sb) ^
-                        m_axis_rc_tready ^
-                        s_axis_rq_tvalid ^ (|s_axis_rq_tdata);
+  logic _unused_tie;
+  assign _unused_tie = dll_tx_ready ^ dll_rx_valid ^
+                       (|mac_to_dll_sb) ^
+                       m_axis_rc_tready ^
+                       s_axis_rq_tvalid ^ (|s_axis_rq_tdata) ^
+                       user_rst_init_n ^ pclk_rst_init_n;
 
 endmodule : rivet_pcie_ctrl

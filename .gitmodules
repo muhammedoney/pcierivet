@@ -1,0 +1,18 @@
+[submodule "third_party/ref/common_cells"]
+	path = third_party/ref/common_cells
+	url = https://github.com/pulp-platform/common_cells.git
+[submodule "third_party/ref/tech_cells_generic"]
+	path = third_party/ref/tech_cells_generic
+	url = https://github.com/pulp-platform/tech_cells_generic.git
+[submodule "third_party/ref/verilog-axis"]
+	path = third_party/ref/verilog-axis
+	url = https://github.com/alexforencich/verilog-axis.git
+[submodule "third_party/ref/verilog-axi"]
+	path = third_party/ref/verilog-axi
+	url = https://github.com/alexforencich/verilog-axi.git
+[submodule "third_party/ref/taxi"]
+	path = third_party/ref/taxi
+	url = https://github.com/fpganinja/taxi.git
+[submodule "third_party/ref/litepcie"]
+	path = third_party/ref/litepcie
+	url = https://github.com/enjoy-digital/litepcie.git
