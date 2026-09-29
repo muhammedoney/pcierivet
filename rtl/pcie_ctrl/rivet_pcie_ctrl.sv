@@ -153,24 +153,15 @@ module rivet_pcie_ctrl #(
 `endif
 
   // -------------------------------------------------------------------------
-  // User / TL stubs (user_clk) — CDC to pclk later
+  // RQ/RC stubs (requester path later)
   // -------------------------------------------------------------------------
-  assign m_axis_cq_tdata  = '0;
-  assign m_axis_cq_tkeep  = '0;
-  assign m_axis_cq_tlast  = 1'b0;
-  assign m_axis_cq_tvalid = 1'b0;
-  assign m_axis_cq_tuser  = '0;
-
   assign m_axis_rc_tdata  = '0;
   assign m_axis_rc_tkeep  = '0;
   assign m_axis_rc_tlast  = 1'b0;
   assign m_axis_rc_tvalid = 1'b0;
   assign m_axis_rc_tuser  = '0;
-
-  assign s_axis_cc_tready = '1;
   assign s_axis_rq_tready = '1;
 
-  assign pcie_cq_np_req_count = '0;
   assign pcie_rq_seq_num0     = '0;
   assign pcie_rq_seq_num_vld0 = 1'b0;
   assign pcie_rq_tag0         = '0;
@@ -179,11 +170,8 @@ module rivet_pcie_ctrl #(
   assign pcie_rq_tag_vld1     = 1'b0;
   assign pcie_rq_tag_av       = '0;
 
-  assign cfg_mgmt_read_data       = '0;
-  assign cfg_mgmt_read_write_done = cfg_mgmt_read || cfg_mgmt_write;
-
   // -------------------------------------------------------------------------
-  // DLL + TL FC stub (pclk)
+  // DLL + TL (pclk) — CQ/CC + cfg_mgmt; CDC to user_clk later
   // -------------------------------------------------------------------------
   rivet_dll_mac_tx_beat_t dll_tx_beat;
   logic                   dll_tx_valid;
@@ -200,6 +188,12 @@ module rivet_pcie_ctrl #(
   logic        cr_rx_acc, cr_tx_acc;
   logic [7:0]  cr_rx_h0, cr_tx_h0;
   logic [9:0]  cr_rx_len, cr_tx_len;
+  logic        cr_rx_acc_cfg, cr_rx_acc_cq;
+  logic [7:0]  cr_rx_h0_cfg, cr_rx_h0_cq;
+  logic [9:0]  cr_rx_len_cfg, cr_rx_len_cq;
+  logic        cr_tx_acc_cfg, cr_tx_acc_cc;
+  logic [7:0]  cr_tx_h0_cfg, cr_tx_h0_cc;
+  logic [9:0]  cr_tx_len_cfg, cr_tx_len_cc;
   logic        cr_free_ph, cr_free_pd, cr_free_nph, cr_free_npd, cr_free_cplh, cr_free_cpld;
   logic [7:0]  cr_free_ph_a, cr_free_nph_a, cr_free_cplh_a;
   logic [11:0] cr_free_pd_a, cr_free_npd_a, cr_free_cpld_a;
@@ -213,25 +207,179 @@ module rivet_pcie_ctrl #(
   logic        tl_rx_tvalid, tl_tx_tvalid;
   logic        tl_rx_tready, tl_tx_tready;
 
+  logic [63:0] cfg_rx_d, cq_rx_d, cfg_tx_d, cc_tx_d;
+  logic [7:0]  cfg_rx_k, cq_rx_k, cfg_tx_k, cc_tx_k;
+  logic        cfg_rx_l, cq_rx_l, cfg_tx_l, cc_tx_l;
+  logic        cfg_rx_v, cq_rx_v, cfg_tx_v, cc_tx_v;
+  logic        cfg_rx_r, cq_rx_r, cfg_tx_r, cc_tx_r;
+
+  logic        fab_req, fab_write, fab_ack, fab_busy;
+  logic [9:0]  fab_addr;
+  logic [3:0]  fab_be;
+  logic [31:0] fab_wdata, fab_rdata;
+  logic [31:0] bar0_base, bar0_mask;
+  logic        bar0_mem_en;
+
+  // Credit OR of Cfg + CQ/CC paths (at most one accept per cycle in practice)
+  assign cr_rx_acc = cr_rx_acc_cfg | cr_rx_acc_cq;
+  assign cr_rx_h0  = cr_rx_acc_cfg ? cr_rx_h0_cfg : cr_rx_h0_cq;
+  assign cr_rx_len = cr_rx_acc_cfg ? cr_rx_len_cfg : cr_rx_len_cq;
+  assign cr_tx_acc = cr_tx_acc_cfg | cr_tx_acc_cc;
+  assign cr_tx_h0  = cr_tx_acc_cfg ? cr_tx_h0_cfg : cr_tx_h0_cc;
+  assign cr_tx_len = cr_tx_acc_cfg ? cr_tx_len_cfg : cr_tx_len_cc;
+
+  rivet_tl_cfg_space u_cfg_space (
+    .clk_i                        (pclk),
+    .rst_ni                       (preset_n),
+    .fab_req_i                    (fab_req),
+    .fab_write_i                  (fab_write),
+    .fab_addr_i                   (fab_addr),
+    .fab_be_i                     (fab_be),
+    .fab_wdata_i                  (fab_wdata),
+    .fab_rdata_o                  (fab_rdata),
+    .fab_ack_o                    (fab_ack),
+    .fab_busy_o                   (fab_busy),
+    .cfg_mgmt_addr_i              (cfg_mgmt_addr),
+    .cfg_mgmt_function_number_i   (cfg_mgmt_function_number),
+    .cfg_mgmt_write_i             (cfg_mgmt_write),
+    .cfg_mgmt_write_data_i        (cfg_mgmt_write_data),
+    .cfg_mgmt_byte_enable_i       (cfg_mgmt_byte_enable),
+    .cfg_mgmt_read_i              (cfg_mgmt_read),
+    .cfg_mgmt_read_data_o         (cfg_mgmt_read_data),
+    .cfg_mgmt_read_write_done_o   (cfg_mgmt_read_write_done),
+    .cfg_mgmt_debug_access_i      (cfg_mgmt_debug_access),
+    .bar0_base_o                  (bar0_base),
+    .bar0_mask_o                  (bar0_mask),
+    .bar0_mem_en_o                (bar0_mem_en),
+    .link_up_i                    (link_up),
+    .link_speed_i                 (4'h1), // negotiated; Gen1 BFM for now
+    .link_width_i                 (6'(LANES))
+  );
+
+  rivet_tl_rx_route u_rx_route (
+    .clk_i       (pclk),
+    .rst_ni      (preset_n),
+    .s_tdata_i   (tl_rx_tdata),
+    .s_tkeep_i   (tl_rx_tkeep),
+    .s_tlast_i   (tl_rx_tlast),
+    .s_tvalid_i  (tl_rx_tvalid),
+    .s_tready_o  (tl_rx_tready),
+    .cfg_tdata_o (cfg_rx_d),
+    .cfg_tkeep_o (cfg_rx_k),
+    .cfg_tlast_o (cfg_rx_l),
+    .cfg_tvalid_o(cfg_rx_v),
+    .cfg_tready_i(cfg_rx_r),
+    .cq_tdata_o  (cq_rx_d),
+    .cq_tkeep_o  (cq_rx_k),
+    .cq_tlast_o  (cq_rx_l),
+    .cq_tvalid_o (cq_rx_v),
+    .cq_tready_i (cq_rx_r)
+  );
+
   rivet_tl_cfg u_tl_cfg (
     .clk_i        (pclk),
     .rst_ni       (preset_n),
-    .rx_tdata_i   (tl_rx_tdata),
-    .rx_tkeep_i   (tl_rx_tkeep),
-    .rx_tlast_i   (tl_rx_tlast),
-    .rx_tvalid_i  (tl_rx_tvalid),
-    .rx_tready_o  (tl_rx_tready),
-    .tx_tdata_o   (tl_tx_tdata),
-    .tx_tkeep_o   (tl_tx_tkeep),
-    .tx_tlast_o   (tl_tx_tlast),
-    .tx_tvalid_o  (tl_tx_tvalid),
-    .tx_tready_i  (tl_tx_tready),
-    .rx_accept_o  (cr_rx_acc),
-    .rx_hdr0_o    (cr_rx_h0),
-    .rx_len_dw_o  (cr_rx_len),
-    .tx_accept_o  (cr_tx_acc),
-    .tx_hdr0_o    (cr_tx_h0),
-    .tx_len_dw_o  (cr_tx_len)
+    .rx_tdata_i   (cfg_rx_d),
+    .rx_tkeep_i   (cfg_rx_k),
+    .rx_tlast_i   (cfg_rx_l),
+    .rx_tvalid_i  (cfg_rx_v),
+    .rx_tready_o  (cfg_rx_r),
+    .tx_tdata_o   (cfg_tx_d),
+    .tx_tkeep_o   (cfg_tx_k),
+    .tx_tlast_o   (cfg_tx_l),
+    .tx_tvalid_o  (cfg_tx_v),
+    .tx_tready_i  (cfg_tx_r),
+    .fab_req_o    (fab_req),
+    .fab_write_o  (fab_write),
+    .fab_addr_o   (fab_addr),
+    .fab_be_o     (fab_be),
+    .fab_wdata_o  (fab_wdata),
+    .fab_rdata_i  (fab_rdata),
+    .fab_ack_i    (fab_ack),
+    .fab_busy_i   (fab_busy),
+    .rx_accept_o  (cr_rx_acc_cfg),
+    .rx_hdr0_o    (cr_rx_h0_cfg),
+    .rx_len_dw_o  (cr_rx_len_cfg),
+    .tx_accept_o  (cr_tx_acc_cfg),
+    .tx_hdr0_o    (cr_tx_h0_cfg),
+    .tx_len_dw_o  (cr_tx_len_cfg)
+  );
+
+  logic [AXI_DATA_WIDTH-1:0] cq_tdata_w;
+  logic [AXI_KEEP_WIDTH-1:0] cq_tkeep_w;
+  logic                      cq_tlast_w, cq_tvalid_w;
+  logic [AXI_CQ_USER_W-1:0]  cq_tuser_w;
+
+  assign m_axis_cq_tdata  = cq_tdata_w;
+  assign m_axis_cq_tkeep  = cq_tkeep_w;
+  assign m_axis_cq_tlast  = cq_tlast_w;
+  assign m_axis_cq_tvalid = cq_tvalid_w;
+  assign m_axis_cq_tuser  = cq_tuser_w;
+
+  rivet_tl_cq u_tl_cq (
+    .clk_i              (pclk),
+    .rst_ni             (preset_n),
+    .rx_tdata_i         (cq_rx_d),
+    .rx_tkeep_i         (cq_rx_k),
+    .rx_tlast_i         (cq_rx_l),
+    .rx_tvalid_i        (cq_rx_v),
+    .rx_tready_o        (cq_rx_r),
+    .bar0_base_i        (bar0_base),
+    .bar0_mask_i        (bar0_mask),
+    .bar0_mem_en_i      (bar0_mem_en),
+    .cq_np_req_i        (pcie_cq_np_req),
+    .cq_np_req_count_o  (pcie_cq_np_req_count),
+    .m_axis_cq_tdata    (cq_tdata_w),
+    .m_axis_cq_tkeep    (cq_tkeep_w),
+    .m_axis_cq_tlast    (cq_tlast_w),
+    .m_axis_cq_tvalid   (cq_tvalid_w),
+    .m_axis_cq_tready   (m_axis_cq_tready),
+    .m_axis_cq_tuser    (cq_tuser_w),
+    .rx_accept_o        (cr_rx_acc_cq),
+    .rx_hdr0_o          (cr_rx_h0_cq),
+    .rx_len_dw_o        (cr_rx_len_cq)
+  );
+
+  logic cc_tready_1;
+  assign s_axis_cc_tready = {4{cc_tready_1}};
+
+  rivet_tl_cc u_tl_cc (
+    .clk_i            (pclk),
+    .rst_ni           (preset_n),
+    .s_axis_cc_tdata  (s_axis_cc_tdata),
+    .s_axis_cc_tkeep  (s_axis_cc_tkeep[1:0]),
+    .s_axis_cc_tlast  (s_axis_cc_tlast),
+    .s_axis_cc_tvalid (s_axis_cc_tvalid),
+    .s_axis_cc_tready (cc_tready_1),
+    .s_axis_cc_tuser  (s_axis_cc_tuser),
+    .tx_tdata_o       (cc_tx_d),
+    .tx_tkeep_o       (cc_tx_k),
+    .tx_tlast_o       (cc_tx_l),
+    .tx_tvalid_o      (cc_tx_v),
+    .tx_tready_i      (cc_tx_r),
+    .tx_accept_o      (cr_tx_acc_cc),
+    .tx_hdr0_o        (cr_tx_h0_cc),
+    .tx_len_dw_o      (cr_tx_len_cc)
+  );
+
+  rivet_tl_tx_mux u_tx_mux (
+    .clk_i        (pclk),
+    .rst_ni       (preset_n),
+    .cfg_tdata_i  (cfg_tx_d),
+    .cfg_tkeep_i  (cfg_tx_k),
+    .cfg_tlast_i  (cfg_tx_l),
+    .cfg_tvalid_i (cfg_tx_v),
+    .cfg_tready_o (cfg_tx_r),
+    .cc_tdata_i   (cc_tx_d),
+    .cc_tkeep_i   (cc_tx_k),
+    .cc_tlast_i   (cc_tx_l),
+    .cc_tvalid_i  (cc_tx_v),
+    .cc_tready_o  (cc_tx_r),
+    .m_tdata_o    (tl_tx_tdata),
+    .m_tkeep_o    (tl_tx_tkeep),
+    .m_tlast_o    (tl_tx_tlast),
+    .m_tvalid_o   (tl_tx_tvalid),
+    .m_tready_i   (tl_tx_tready)
   );
 
   rivet_tl_credit u_tl_credit (
@@ -457,13 +605,10 @@ module rivet_pcie_ctrl #(
   assign cfg_ltssm_state = ltssm_state;
 
   logic _unused_user;
-  assign _unused_user = user_clk ^ user_resetn ^ (|pcie_cq_np_req) ^
-                        (|cfg_mgmt_addr) ^ (|cfg_mgmt_function_number) ^
-                        (|cfg_mgmt_write_data) ^ (|cfg_mgmt_byte_enable) ^
-                        cfg_mgmt_debug_access ^ dll_tx_ready ^ dll_rx_valid ^
+  assign _unused_user = user_clk ^ user_resetn ^
+                        dll_tx_ready ^ dll_rx_valid ^
                         (|mac_to_dll_sb) ^
-                        m_axis_cq_tready ^ m_axis_rc_tready ^
-                        s_axis_cc_tvalid ^ s_axis_rq_tvalid ^
-                        (|s_axis_cc_tdata) ^ (|s_axis_rq_tdata);
+                        m_axis_rc_tready ^
+                        s_axis_rq_tvalid ^ (|s_axis_rq_tdata);
 
 endmodule : rivet_pcie_ctrl

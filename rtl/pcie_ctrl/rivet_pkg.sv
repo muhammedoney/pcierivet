@@ -361,13 +361,107 @@ package rivet_pkg;
   // MAC assemble buffer (Cfg/Cpl-class TLPs). Larger payloads come later.
   localparam int unsigned RIVET_MAC_TLP_BUF_BYTES = 64;
 
-  // Type 0 config space (EP smoke)
+  // Type 0 config space (PF0 Gen2 EP)
+  localparam int unsigned RIVET_CFG_DW_N = 1024; // 4 KiB
   localparam logic [15:0] RIVET_CFG_VENDOR_ID = 16'h1EE0;
   localparam logic [15:0] RIVET_CFG_DEVICE_ID = 16'h0001;
   localparam logic [15:0] RIVET_CFG_CLASS_REV = 16'h0000;
   localparam logic [7:0]  RIVET_CFG_REV_ID    = 8'h01;
   localparam logic [23:0] RIVET_CFG_CLASS     = 24'h120000;
+  localparam logic [15:0] RIVET_CFG_SUBSYS_VEN = 16'h1EE0;
+  localparam logic [15:0] RIVET_CFG_SUBSYS_ID  = 16'h0001;
   localparam logic [31:0] RIVET_CFG_BAR0_MASK = 32'hFFFF_0000; // 64 KiB MMIO
+  localparam logic [31:0] RIVET_CFG_BAR1_MASK = 32'h0000_0000;
+  localparam logic [31:0] RIVET_CFG_BAR2_MASK = 32'h0000_0000;
+  localparam logic [31:0] RIVET_CFG_BAR3_MASK = 32'h0000_0000;
+  localparam logic [31:0] RIVET_CFG_BAR4_MASK = 32'h0000_0000;
+  localparam logic [31:0] RIVET_CFG_BAR5_MASK = 32'h0000_0000;
+  localparam logic [31:0] RIVET_CFG_ROM_MASK  = 32'h0000_0000;
+  // Cap chain: PM @0x40 → MSI @0x50 → PCIe @0x70
+  localparam logic [7:0]  RIVET_CFG_CAP_PTR   = 8'h40;
+  localparam logic [7:0]  RIVET_CFG_PM_OFF    = 8'h40;
+  localparam logic [7:0]  RIVET_CFG_MSI_OFF   = 8'h50;
+  localparam logic [7:0]  RIVET_CFG_PCIE_OFF  = 8'h70;
+  localparam logic [2:0]  RIVET_CFG_CMPS      = 3'b000; // Device Cap MPS = 128 B
+  localparam logic [3:0]  RIVET_CFG_LINK_SPEED_CAP = 4'h2; // Gen2 capable
+  localparam logic [5:0]  RIVET_CFG_LINK_WIDTH_CAP = 6'h4; // x4
+
+  // PG213 CQ tuser (64/128/256-bit IF):
+  // [3:0] first_be, [7:4] last_be, [39:8] byte_en,
+  // [40] sop, [41] discontinue, [42] tph_present, [44:43] tph_type,
+  // [45] tph_indirect_tag_en, [55:46] tph_st_tag[9:0], [87:56] parity.
+  localparam int unsigned RIVET_AXI_CQ_USER_W = 88;
+  localparam int unsigned RIVET_AXI_CC_USER_W = 33;
+  localparam int unsigned RIVET_AXI_RQ_USER_W = 85;
+  localparam int unsigned RIVET_AXI_RC_USER_W = 75;
+
+  // CQ request type in descriptor DW2[14:11]
+  localparam logic [3:0] RIVET_CQ_REQ_MEMRD = 4'b0000;
+  localparam logic [3:0] RIVET_CQ_REQ_MEMWR = 4'b0001;
+
+  // Dword-aligned CQ descriptor (4 DW) on 64-bit AXI-ST: two beats.
+  typedef struct packed {
+    logic [1:0]  at;           // DW0[1:0]
+    logic [29:0] addr_lo;      // DW0[31:2] = addr[31:2]
+    logic [31:0] addr_hi;      // DW1 (0 for Mem32)
+    logic [10:0] dword_count;  // DW2[10:0]
+    logic [3:0]  req_type;     // DW2[14:11]
+    logic [2:0]  reserved0;    // DW2[17:15]
+    logic        poisoned;     // DW2[18]
+    logic [2:0]  tc;           // DW2[21:19]
+    logic [2:0]  attr;         // DW2[24:22]
+    logic        reserved1;    // DW2[25]
+    logic [7:0]  reserved2;    // DW2[31:26] (includes ARI etc. unused)
+    logic [7:0]  tag;          // DW3[7:0]
+    logic [15:0] requester_id; // DW3[23:8]
+    logic [2:0]  bar_id;       // DW3[26:24]
+    logic [2:0]  bar_aperture; // DW3[29:27]
+    logic [2:0]  target_fn;    // DW3[32:30] — only low bits in 64b beat1
+  } rivet_cq_desc_t;
+
+  // Dword-aligned CC descriptor (3 DW) + optional payload on 64-bit AXI-ST.
+  typedef struct packed {
+    logic [6:0]  lower_addr;     // DW0[6:0]
+    logic        reserved0;      // DW0[7]
+    logic [1:0]  at;             // DW0[9:8]
+    logic [1:0]  reserved1;      // DW0[11:10]
+    logic [12:0] byte_count;     // DW0[24:12] — PG213 uses [28:16]; we pack [27:16]
+    logic [10:0] dword_count;    // DW1[10:0]
+    logic [2:0]  cpl_status;     // DW1[13:11]
+    logic        poisoned;       // DW1[14]
+    logic        reserved2;      // DW1[15]
+    logic [15:0] requester_id;   // DW1[31:16]
+    logic [7:0]  tag;            // DW2[7:0]
+    logic [15:0] completer_id;   // DW2[23:8]
+    logic        completer_id_en;// DW2[24]
+    logic [2:0]  tc;             // DW2[27:25]
+    logic [2:0]  attr;           // DW2[30:28]
+    logic        force_ecrc;     // DW2[31]
+  } rivet_cc_desc_t;
+
+  function automatic logic [87:0] rivet_cq_tuser_pack(
+      input logic [3:0]  first_be,
+      input logic [3:0]  last_be,
+      input logic [31:0] byte_en,
+      input logic        sop,
+      input logic        discontinue);
+    return {32'h0, 10'h0, 1'b0, 2'b00, 1'b0, discontinue, sop, byte_en, last_be, first_be};
+  endfunction
+
+  function automatic logic [3:0] rivet_cq_tuser_first_be(input logic [87:0] u);
+    return u[3:0];
+  endfunction
+  function automatic logic [3:0] rivet_cq_tuser_last_be(input logic [87:0] u);
+    return u[7:4];
+  endfunction
+  function automatic logic rivet_cq_tuser_sop(input logic [87:0] u);
+    return u[40];
+  endfunction
+
+  // CC tuser: [0] discontinue, [32:1] parity
+  function automatic logic [32:0] rivet_cc_tuser_pack(input logic discontinue);
+    return {32'h0, discontinue};
+  endfunction
 
   // TLP Fmt/Type in header byte 0: {Fmt[2:0], Type[4:0]}.
   localparam logic [4:0] RIVET_TLP_TYPE_MEM = 5'b00000;

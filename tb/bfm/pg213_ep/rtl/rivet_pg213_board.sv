@@ -237,7 +237,7 @@ module board;
         $display("[%t] : CplD TX   data=%016h vendor_le=%04h",
                  $realtime,
                  EP.u_rivet_ep.u_ctrl.tl_tx_tdata,
-                 EP.u_rivet_ep.u_ctrl.u_tl_cfg.cfg_q[0][15:0]);
+                 EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[0][15:0]);
       end
       cpl_n   = cpl_n + 1;
       saw_cpl = 1'b1;
@@ -248,8 +248,8 @@ module board;
     end
   end
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
-    if (EP.u_rivet_ep.u_ctrl.u_tl_cfg.rx_accept_o &&
-        (EP.u_rivet_ep.u_ctrl.u_tl_cfg.hdr0_q == rivet_pkg::RIVET_TLP_B0_MEMWR32)) begin
+    if (EP.u_rivet_ep.u_ctrl.u_tl_cq.rx_accept_o &&
+        (EP.u_rivet_ep.u_ctrl.u_tl_cq.hdr0_q == rivet_pkg::RIVET_TLP_B0_MEMWR32)) begin
       if (!saw_memwr)
         $display("[%t] : MemWr32 accept", $realtime);
       saw_memwr <= 1'b1;
