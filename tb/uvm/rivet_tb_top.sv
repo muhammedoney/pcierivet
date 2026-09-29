@@ -176,6 +176,7 @@ module rivet_tb_top;
   initial begin
     uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent*", "vif", pipe_if);
     uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.ltssm_peer*", "vif", pipe_if);
+    uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.dllp_mon*", "vif", pipe_if);
     uvm_config_db#(rivet_link_status_vif)::set(null, "uvm_test_top", "status_vif", status_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.cq_agent*", "vif", cq_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.cc_agent*", "vif", cc_if);

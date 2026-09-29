@@ -6,6 +6,7 @@ class rivet_env extends uvm_env;
 
   rivet_pipe_agent         pipe_agent;
   rivet_pipe_ltssm_peer    ltssm_peer;
+  rivet_pipe_dllp_monitor  dllp_mon;
   rivet_axi_st_agent       cq_agent, cc_agent, rq_agent, rc_agent;
   rivet_cfg_mgmt_agent     cfg_agent;
   rivet_companion_agent    companion_agent;
@@ -31,6 +32,7 @@ class rivet_env extends uvm_env;
 
     pipe_agent       = rivet_pipe_agent::type_id::create("pipe_agent", this);
     ltssm_peer       = rivet_pipe_ltssm_peer::type_id::create("ltssm_peer", this);
+    dllp_mon         = rivet_pipe_dllp_monitor::type_id::create("dllp_mon", this);
     cq_agent         = rivet_axi_st_agent::type_id::create("cq_agent", this);
     cc_agent         = rivet_axi_st_agent::type_id::create("cc_agent", this);
     rq_agent         = rivet_axi_st_agent::type_id::create("rq_agent", this);
@@ -65,5 +67,9 @@ class rivet_env extends uvm_env;
     cfg_agent.ap.connect(scoreboard.cfg_imp);
     cfg_agent.ap.connect(coverage.cfg_imp);
     companion_agent.ap.connect(scoreboard.comp_imp);
+    dllp_mon.ap.connect(scoreboard.dllp_imp);
+    dllp_mon.ap.connect(coverage.dllp_imp);
+    ltssm_peer.dllp_ap.connect(scoreboard.dllp_imp);
+    ltssm_peer.dllp_ap.connect(coverage.dllp_imp);
   endfunction
 endclass : rivet_env

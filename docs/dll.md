@@ -377,7 +377,7 @@ only. Directed tests may shrink slots (e.g. 4) for fast fill/starve cases.
 - [x] Drive InitFC1/2 only when MAC `accept_dll_tlp`  
 - [x] Capture peer credits into CL; publish `fc_init_done`  
 - [x] Dual-DLL Verilator TB (`scripts/sim_dll_fc_init.ps1`) — beat cross-connect (no MAC)  
-- [x] Gate: Verilator `sim_dll_fc_init` + Questa `ltssm_l0_gen2_x{1,2,4}` (FC UVM peer later)  
+- [x] Gate: Verilator `sim_dll_fc_init` + Questa `ltssm_l0_gen2_x{1,2,4}` + UVM `smoke_dllp_fc_gen2_x1`  
 
 ### D2 — UpdateFC + credit return
 
