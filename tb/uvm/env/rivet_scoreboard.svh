@@ -283,6 +283,8 @@ class rivet_scoreboard extends uvm_scoreboard;
     end
 
     if (tlp_mode) begin
+      if (axi_pkt_count == 0)
+        `uvm_error(get_type_name(), "TLP mode: no AXI-ST packets observed")
       if (tlp_mismatch != 0)
         `uvm_error(get_type_name(), $sformatf("TLP mismatches=%0d", tlp_mismatch))
       if (tlp_cq_np_outstanding != 0)
@@ -292,10 +294,11 @@ class rivet_scoreboard extends uvm_scoreboard;
         `uvm_error(get_type_name(),
           $sformatf("Unmatched RQ NP outstanding=%0d", tlp_rq_np_outstanding))
       `uvm_info(get_type_name(),
-        $sformatf("TLP mode: pkts=%0d cc_match=%0d rc_match=%0d",
+        $sformatf("TLP mode OK: pkts=%0d cc_match=%0d rc_match=%0d",
                   axi_pkt_count, tlp_cc_matched, tlp_rc_matched), UVM_LOW)
       return;
     end
+
 
     if (ltssm_l0_mode) begin
       `uvm_info(get_type_name(), "LTSSM L0 mode — idle PIPE checks skipped (vseq owns L0)", UVM_LOW)

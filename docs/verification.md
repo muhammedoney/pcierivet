@@ -46,12 +46,14 @@ Known: PG239 stage-2 uses EP+RC shells; re-check link_up after Downstream Config
 | Coverage (PIPE + cfg_mgmt + AXI ch) | Done (grow bins with traffic) |
 | LTSSM L0 (Questa, Downstream peer) | Done (`ltssm_l0_gen2_x1/x2/x4`) |
 | `cfg_mgmt` directed R/W smoke | Done (`smoke_cfg_mgmt_gen2_x1`) |
-| AXI TLP helpers + CQ↔CC / RQ↔RC scoreboard | Started (`tlp_mode`; sequences RQ MemWr / CC CplD) |
+| AXI TLP helpers + CQ↔CC / RQ↔RC scoreboard | Started (`tlp_mode`; RQ MemWr smoke; CQ↔CC / RQ↔RC next) |
 | DLLP FC over PIPE after L0 | Done (`smoke_dllp_fc_gen2_x1`; peer InitFC/UpdateFC) |
+| RQ MemWr after L0 + FC + BME | Done (`smoke_tlp_rq_memwr_gen2_x1`) |
 
 ```powershell
 .\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x1 1
 .\scripts\sim_questa.ps1 smoke_dllp_fc_gen2_x1 1
+.\scripts\sim_questa.ps1 smoke_tlp_rq_memwr_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
@@ -69,6 +71,7 @@ Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then:
 .\scripts\sim_questa.ps1 smoke_gen2_x4 4
 .\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x1 1
 .\scripts\sim_questa.ps1 smoke_dllp_fc_gen2_x1 1
+.\scripts\sim_questa.ps1 smoke_tlp_rq_memwr_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
