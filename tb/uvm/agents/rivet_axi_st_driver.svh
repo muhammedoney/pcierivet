@@ -60,6 +60,9 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
           if ((vif.tready & 4'hF) != 4'h0)
             break;
         end
+        // Drop valid after accept so the beat is not re-sampled every cycle.
+        vif.tvalid <= 1'b0;
+        vif.tlast  <= 1'b0;
       end
     end else begin
       @(posedge vif.aclk);

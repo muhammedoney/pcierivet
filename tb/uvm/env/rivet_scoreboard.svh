@@ -24,12 +24,15 @@ class rivet_scoreboard extends uvm_scoreboard;
   bit cfg_mgmt_mode;
   bit tlp_mode;
   bit dllp_fc_mode;
+  bit tlp_require_cc;
+  bit tlp_require_rc;
   int unsigned dllp_dut_fc, dllp_peer_fc, dllp_dut_init1, dllp_dut_init2;
   int unsigned dllp_dut_update, dllp_crc_bad;
 
   // Per-channel packet assembly (accepted beats only).
   bit             pkt_active[string];
   logic [63:0]    pkt_beat0[string];
+  logic [63:0]    pkt_beat1[string];
   int unsigned    pkt_beats[string];
   bit [7:0]       pkt_tag[string];
   bit [15:0]      pkt_req_id[string];
@@ -49,6 +52,8 @@ class rivet_scoreboard extends uvm_scoreboard;
     void'(uvm_config_db#(bit)::get(this, "", "cfg_mgmt_mode", cfg_mgmt_mode));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_mode", tlp_mode));
     void'(uvm_config_db#(bit)::get(this, "", "dllp_fc_mode", dllp_fc_mode));
+    void'(uvm_config_db#(bit)::get(this, "", "tlp_require_cc", tlp_require_cc));
+    void'(uvm_config_db#(bit)::get(this, "", "tlp_require_rc", tlp_require_rc));
     pipe_imp = new("pipe_imp", this);
     axi_imp  = new("axi_imp", this);
     cfg_imp  = new("cfg_imp", this);
@@ -118,12 +123,24 @@ class rivet_scoreboard extends uvm_scoreboard;
     end
     pkt_beats[ch]++;
 
-    if (pkt_beats[ch] == 2 && (ch == "cq" || ch == "rq")) begin
-      rivet_axi_tlp_util::unpack_mem_desc_2beat(
-        pkt_beat0[ch], t.tdata, addr_u, dcount, rtype, tag, rid);
-      pkt_tag[ch]      = tag;
-      pkt_req_id[ch]   = rid;
-      pkt_req_type[ch] = rtype;
+    if (pkt_beats[ch] == 2) begin
+      pkt_beat1[ch] = t.tdata;
+      if (ch == "rq") begin
+        rivet_axi_tlp_util::unpack_mem_desc_2beat(
+          pkt_beat0[ch], t.tdata, addr_u, dcount, rtype, tag, rid);
+        pkt_tag[ch]      = tag;
+        pkt_req_id[ch]   = rid;
+        pkt_req_type[ch] = rtype;
+      end
+      if (ch == "cq") begin
+        pkt_req_type[ch] = t.tdata[14:11];
+        pkt_req_id[ch]   = t.tdata[47:32];
+        pkt_tag[ch]      = t.tdata[55:48];
+      end
+      if (ch == "rc") begin
+        pkt_tag[ch]    = t.tdata[7:0];
+        pkt_req_id[ch] = t.tdata[31:16];
+      end
     end
 
     if (!t.tlast)
@@ -159,16 +176,28 @@ class rivet_scoreboard extends uvm_scoreboard;
         end
       end
     end else if (ch == "rq") begin
-      if (pkt_req_type[ch] == rivet_pkg::RIVET_CQ_REQ_MEMRD) begin
-        key = {pkt_req_id[ch], pkt_tag[ch]};
-        outstanding_rq[key] = 1'b1;
-        tlp_rq_np_outstanding++;
+      `uvm_info(get_type_name(),
+        $sformatf("RQ tlast beats=%0d type=%0h tag=%02h rid=%04h",
+                  pkt_beats[ch],
+                  pkt_beats[ch] >= 2 ? pkt_req_type[ch] : 4'hX,
+                  pkt_beats[ch] >= 2 ? pkt_tag[ch] : 8'h0,
+                  pkt_beats[ch] >= 2 ? pkt_req_id[ch] : 16'h0), UVM_LOW)
+      if (pkt_beats[ch] >= 2) begin
+        rivet_axi_tlp_util::unpack_mem_desc_2beat(
+          pkt_beat0[ch], pkt_beat1[ch], addr_u, dcount, rtype, tag, rid);
+        if (rtype == rivet_pkg::RIVET_CQ_REQ_MEMRD) begin
+          key = {rid, tag};
+          outstanding_rq[key] = 1'b1;
+          tlp_rq_np_outstanding++;
+          `uvm_info(get_type_name(),
+            $sformatf("RQ MemRd outstanding tag=0x%02h req=0x%04h", tag, rid),
+            UVM_LOW)
+        end
       end
-      // MemWr posted: no completion expected.
     end else if (ch == "rc") begin
       if (pkt_beats[ch] >= 2) begin
-        tag = t.tdata[7:0];
-        rid = pkt_beat0[ch][63:48];
+        tag = pkt_tag[ch];
+        rid = pkt_req_id[ch];
         key = {rid, tag};
         if (outstanding_rq.exists(key) && outstanding_rq[key]) begin
           outstanding_rq.delete(key);
@@ -293,6 +322,10 @@ class rivet_scoreboard extends uvm_scoreboard;
       if (tlp_rq_np_outstanding != 0)
         `uvm_error(get_type_name(),
           $sformatf("Unmatched RQ NP outstanding=%0d", tlp_rq_np_outstanding))
+      if (tlp_require_cc && (tlp_cc_matched == 0))
+        `uvm_error(get_type_name(), "TLP mode: expected CQ↔CC match")
+      if (tlp_require_rc && (tlp_rc_matched == 0))
+        `uvm_error(get_type_name(), "TLP mode: expected RQ↔RC match")
       `uvm_info(get_type_name(),
         $sformatf("TLP mode OK: pkts=%0d cc_match=%0d rc_match=%0d",
                   axi_pkt_count, tlp_cc_matched, tlp_rc_matched), UVM_LOW)
