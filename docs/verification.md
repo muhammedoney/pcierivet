@@ -40,14 +40,17 @@ Known: PG239 stage-2 uses EP+RC shells; re-check link_up after Downstream Config
 |------|--------|
 | PIPE agent + idle smoke | Done (`smoke_gen2_x1`) |
 | AXI-ST CQ/CC/RQ/RC agents | Done |
-| `cfg_mgmt` agent + companion monitor | Done |
+| `cfg_mgmt` agent + companion agent | Done (R/W handshake + NP grant driver) |
 | Virtual sequencer + shared idle vseq | Done |
 | Smokes ×2 / ×4 | Done (`smoke_gen2_x2`, `smoke_gen2_x4`) |
-| Coverage (PIPE idle + lanes) | Started |
+| Coverage (PIPE + cfg_mgmt + AXI ch) | Done (grow bins with traffic) |
 | LTSSM L0 (Questa, Downstream peer) | Done (`ltssm_l0_gen2_x1/x2/x4`) |
-| DLLP sequences / TLP scoreboard | Next |
+| `cfg_mgmt` directed R/W smoke | Done (`smoke_cfg_mgmt_gen2_x1`) |
+| AXI TLP helpers + CQ↔CC / RQ↔RC scoreboard | Started (`tlp_mode`; sequences RQ MemWr / CC CplD) |
+| DLLP sequences over PIPE | Next |
 
 ```powershell
+.\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
@@ -63,6 +66,7 @@ Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then:
 .\scripts\sim_questa.ps1 smoke_gen2_x1 1
 .\scripts\sim_questa.ps1 smoke_gen2_x2 2
 .\scripts\sim_questa.ps1 smoke_gen2_x4 4
+.\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
 .\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4

@@ -47,14 +47,22 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
   endtask
 
   task drive_item(rivet_axi_st_item req);
-    @(posedge vif.aclk);
     if (is_master) begin
+      @(posedge vif.aclk);
       vif.tdata  <= req.tdata;
       vif.tkeep  <= req.tkeep;
       vif.tlast  <= req.tlast;
       vif.tvalid <= req.tvalid;
       vif.tuser  <= req.tuser;
+      if (req.tvalid) begin
+        forever begin
+          @(posedge vif.aclk);
+          if ((vif.tready & 4'hF) != 4'h0)
+            break;
+        end
+      end
     end else begin
+      @(posedge vif.aclk);
       vif.tready <= req.tready;
     end
   endtask

@@ -4,7 +4,7 @@
 class rivet_companion_item extends uvm_sequence_item;
   `uvm_object_utils(rivet_companion_item)
 
-  bit [1:0] cq_np_req;
+  rand bit [1:0] cq_np_req;
   bit [5:0] cq_np_req_count;
   bit [5:0] rq_seq_num0;
   bit       rq_seq_num_vld0;
@@ -15,5 +15,6 @@ class rivet_companion_item extends uvm_sequence_item;
 
   function new(string name = "rivet_companion_item");
     super.new(name);
+    cq_np_req = 2'b01;
   endfunction
 endclass : rivet_companion_item

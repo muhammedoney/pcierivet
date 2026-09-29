@@ -265,7 +265,7 @@ the controller remains independently testable at user clock + PIPE.
 - [x] Correct AXI-ST `tkeep` to Dword granularity.
 - [x] Add CQ NP credit and RQ tag/sequence/credit companion ports (stub behavior).
 - [x] Define packed `tuser` / CQ+CC descriptor types and bit maps in `rivet_pkg`.
-- [ ] Bind all four AXI-ST channels and companion ports into UVM agents.
+- [x] Bind all four AXI-ST channels and companion ports into UVM agents.
 - [x] Replace AXI-Lite with PG213 `cfg_mgmt_*` ports (**live** PF0).
 - [ ] Add canonical link/config status types and remaining `cfg_*` ports.
 
