@@ -55,12 +55,21 @@ Rivet supports 64-bit AXI-ST first. The 512-bit PG213 interface has different
 
 The packed fields stay in `tuser`; they are not separate top-level ports.
 
+`rivet_pkg` documents the 64-bit dword-aligned layouts:
+
+- **CQ `tuser`**: `rivet_cq_tuser_pack` — `[3:0]` first_be, `[7:4]` last_be, `[39:8]` byte_en, `[40]` sop, `[41]` discontinue, … parity `[87:56]`.
+- **CC `tuser`**: `rivet_cc_tuser_pack` — `[0]` discontinue, `[32:1]` parity.
+- **CQ descriptor** (`rivet_cq_desc_t`, 4 DW / 2 beats): addr + AT, dword_count, req_type (`RIVET_CQ_REQ_MEMRD`/`MEMWR`), requester_id, tag, bar_id.
+- **CC descriptor** (`rivet_cc_desc_t`, 3 DW + optional data): lower_addr, byte_count, dword_count, cpl_status, requester_id, tag, completer_id.
+
+CQ/CC datapath is live for BAR0 Mem32; RQ/RC remain stubbed.
+
 ### Companion packet-flow ports
 
 | Signals | Direction from core | Purpose | Current status |
 |---------|---------------------|---------|----------------|
-| `pcie_cq_np_req[1:0]` | input | Grant CQ Non-Posted delivery credits | Present (stub) |
-| `pcie_cq_np_req_count[5:0]` | output | Current CQ NP credit count | Present (stub) |
+| `pcie_cq_np_req[1:0]` | input | Grant CQ Non-Posted delivery credits | Live (CQ MemRd) |
+| `pcie_cq_np_req_count[5:0]` | output | Current CQ NP credit count | Live (CQ MemRd) |
 | `pcie_rq_seq_num0[5:0]`, `pcie_rq_seq_num_vld0` | output | RQ ordering/progress feedback | Present (stub) |
 | second sequence output | output | Multiple requests per cycle / wide interfaces | Deferred with wide/straddled AXI |
 | `pcie_rq_tag0`, `pcie_rq_tag_vld0` | output | First core-managed NP request tag | Present (stub) |
@@ -86,8 +95,10 @@ Status: missing; defer until ASPM is implemented.
   `cfg_mgmt_byte_enable[3:0]`, `cfg_mgmt_read`, `cfg_mgmt_debug_access`
 - Outputs: `cfg_mgmt_read_data[31:0]`, `cfg_mgmt_read_write_done`
 
-Rivet decision: expose **`cfg_mgmt_*`** directly (present as stub). Config-space
-atomicity and DW addressing follow PG213; `cfg_mgmt_debug_access` is a no-op in EP.
+Rivet decision: expose **`cfg_mgmt_*`** directly (**live** on PF0 4 KiB file shared
+with fabric CfgRd0/CfgWr0). Config-space atomicity and DW addressing follow PG213;
+non-PF0 reads 0 / ignores writes; `cfg_mgmt_debug_access` is a no-op in EP.
+Same-clock as config file (`pclk`) for now; CDC to `user_clk` is a follow-up.
 
 ### Configuration/link status (Table 27)
 
@@ -253,14 +264,14 @@ the controller remains independently testable at user clock + PIPE.
 
 - [x] Correct AXI-ST `tkeep` to Dword granularity.
 - [x] Add CQ NP credit and RQ tag/sequence/credit companion ports (stub behavior).
-- [ ] Define packed `tuser` types/bit positions in `rivet_pkg`.
+- [x] Define packed `tuser` / CQ+CC descriptor types and bit maps in `rivet_pkg`.
 - [ ] Bind all four AXI-ST channels and companion ports into UVM agents.
-- [x] Replace AXI-Lite with PG213 `cfg_mgmt_*` ports (stub).
+- [x] Replace AXI-Lite with PG213 `cfg_mgmt_*` ports (**live** PF0).
 - [ ] Add canonical link/config status types and remaining `cfg_*` ports.
 
 ### Before Phase 2 functional endpoint
 
-- [ ] Config-space management/status/control and identity.
+- [x] Config-space Type 0 + cap chain + fabric Cfg / `cfg_mgmt` (RQ/RC still stub).
 - [ ] FLR and power-state handshakes.
 - [ ] Message receive/transmit.
 - [ ] MSI, then INTx/MSI-X according to enabled feature set.

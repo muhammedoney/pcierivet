@@ -15,7 +15,13 @@ rtl/pcie_ctrl/dll/rivet_dll_tl_unpack.sv
 rtl/pcie_ctrl/dll/rivet_dll.sv
 rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv
 rtl/pcie_ctrl/tl/rivet_tl_credit.sv
+rtl/pcie_ctrl/tl/rivet_tl_cfg_space.sv
 rtl/pcie_ctrl/tl/rivet_tl_cfg.sv
+rtl/pcie_ctrl/tl/rivet_tl_rx_route.sv
+rtl/pcie_ctrl/tl/rivet_tl_cq.sv
+rtl/pcie_ctrl/tl/rivet_tl_cc.sv
+rtl/pcie_ctrl/tl/rivet_tl_tx_mux.sv
+rtl/pcie_ctrl/tl/rivet_tl_pio_app.sv
 rtl/pcie_ctrl/mac/rivet_mac_timer.sv
 rtl/pcie_ctrl/mac/rivet_ltssm.sv
 rtl/pcie_ctrl/mac/rivet_mac_os_tx.sv

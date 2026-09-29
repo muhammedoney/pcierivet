@@ -190,6 +190,32 @@ module rivet_pg239_ep #(
     .phy_rxdatak (phy_rxdatak)
   );
 
+  // CQ/CC wires for internal PIO app
+  logic [63:0] cq_tdata, cc_tdata;
+  logic [1:0]  cq_tkeep, cc_tkeep;
+  logic        cq_tlast, cq_tvalid, cq_tready;
+  logic        cc_tlast, cc_tvalid;
+  logic [3:0]  cc_tready;
+  logic [87:0] cq_tuser;
+  logic [32:0] cc_tuser;
+
+  rivet_tl_pio_app u_pio (
+    .clk_i            (pipe_clk),
+    .rst_ni           (~phy_phystatus_rst & sys_rst_n),
+    .m_axis_cq_tdata  (cq_tdata),
+    .m_axis_cq_tkeep  (cq_tkeep),
+    .m_axis_cq_tlast  (cq_tlast),
+    .m_axis_cq_tvalid (cq_tvalid),
+    .m_axis_cq_tready (cq_tready),
+    .m_axis_cq_tuser  (cq_tuser),
+    .s_axis_cc_tdata  (cc_tdata),
+    .s_axis_cc_tkeep  (cc_tkeep),
+    .s_axis_cc_tlast  (cc_tlast),
+    .s_axis_cc_tvalid (cc_tvalid),
+    .s_axis_cc_tready (cc_tready),
+    .s_axis_cc_tuser  (cc_tuser)
+  );
+
   rivet_pcie_ctrl #(
     .MODE              (MODE),
     .GEN               (GEN),
@@ -203,18 +229,18 @@ module rivet_pg239_ep #(
     .pclk        (pipe_clk),
     .preset_n    (~phy_phystatus_rst & sys_rst_n),
 
-    .m_axis_cq_tdata  (),
-    .m_axis_cq_tkeep  (),
-    .m_axis_cq_tlast  (),
-    .m_axis_cq_tvalid (),
-    .m_axis_cq_tready (1'b1),
-    .m_axis_cq_tuser  (),
-    .s_axis_cc_tdata  ('0),
-    .s_axis_cc_tkeep  ('0),
-    .s_axis_cc_tlast  (1'b0),
-    .s_axis_cc_tvalid (1'b0),
-    .s_axis_cc_tready (),
-    .s_axis_cc_tuser  ('0),
+    .m_axis_cq_tdata  (cq_tdata),
+    .m_axis_cq_tkeep  (cq_tkeep),
+    .m_axis_cq_tlast  (cq_tlast),
+    .m_axis_cq_tvalid (cq_tvalid),
+    .m_axis_cq_tready (cq_tready),
+    .m_axis_cq_tuser  (cq_tuser),
+    .s_axis_cc_tdata  (cc_tdata),
+    .s_axis_cc_tkeep  (cc_tkeep),
+    .s_axis_cc_tlast  (cc_tlast),
+    .s_axis_cc_tvalid (cc_tvalid),
+    .s_axis_cc_tready (cc_tready),
+    .s_axis_cc_tuser  (cc_tuser),
     .s_axis_rq_tdata  ('0),
     .s_axis_rq_tkeep  ('0),
     .s_axis_rq_tlast  (1'b0),

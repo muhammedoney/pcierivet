@@ -27,7 +27,7 @@ Soft Rivet RC is **not** used. Partner is the **PG213 RP BFM**:
         │◄──────────── serial ×4 ───────────────────►│
         │                                            │  rivet_pcie_ctrl ──PIPE── PG239
         │                                            │         ▲
-        │                                            │         └── AXI-ST / cfg_mgmt (TL still stub)
+        │                                            │         └── CQ/CC + live cfg_mgmt (RQ/RC stub)
 ```
 
 Board module name is `board` and RP instance is `RP` (usrapp hierarchical refs).
