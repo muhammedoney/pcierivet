@@ -3,6 +3,7 @@
 
 package rivet_uvm_pkg;
   import uvm_pkg::*;
+  import rivet_pkg::*;
   `include "uvm_macros.svh"
 
 `ifndef RIVET_TB_LANES
@@ -25,9 +26,14 @@ package rivet_uvm_pkg;
   `include "seq/rivet_axi_st_item.svh"
   `include "seq/rivet_cfg_mgmt_item.svh"
   `include "seq/rivet_companion_item.svh"
+  `include "seq/rivet_axi_tlp_util.svh"
   `include "seq/rivet_pipe_idle_seq.svh"
   `include "seq/rivet_axi_st_idle_seq.svh"
   `include "seq/rivet_cfg_mgmt_idle_seq.svh"
+  `include "seq/rivet_cfg_mgmt_rw_seq.svh"
+  `include "seq/rivet_companion_grant_seq.svh"
+  `include "seq/rivet_axi_rq_memwr32_seq.svh"
+  `include "seq/rivet_axi_cc_cpld_seq.svh"
   `include "agents/rivet_pipe_sequencer.svh"
   `include "agents/rivet_pipe_driver.svh"
   `include "agents/rivet_pipe_monitor.svh"
@@ -41,9 +47,13 @@ package rivet_uvm_pkg;
   `include "agents/rivet_cfg_mgmt_driver.svh"
   `include "agents/rivet_cfg_mgmt_monitor.svh"
   `include "agents/rivet_cfg_mgmt_agent.svh"
+  `include "agents/rivet_companion_sequencer.svh"
+  `include "agents/rivet_companion_driver.svh"
   `include "agents/rivet_companion_monitor.svh"
+  `include "agents/rivet_companion_agent.svh"
   `include "env/rivet_virtual_sequencer.svh"
   `include "seq/rivet_idle_smoke_vseq.svh"
+  `include "seq/rivet_cfg_mgmt_vseq.svh"
   `include "seq/rivet_ltssm_l0_vseq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
@@ -51,5 +61,6 @@ package rivet_uvm_pkg;
   `include "tests/rivet_base_test.svh"
   `include "tests/smoke_gen2_x1.svh"
   `include "tests/smoke_gen2_x2_x4.svh"
+  `include "tests/smoke_cfg_mgmt_gen2_x1.svh"
   `include "tests/ltssm_l0_gen2.svh"
 endpackage : rivet_uvm_pkg

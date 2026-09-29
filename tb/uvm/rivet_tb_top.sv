@@ -60,8 +60,7 @@ module rivet_tb_top;
   rivet_cfg_mgmt_if cfg_if (.aclk(user_clk), .aresetn(user_resetn));
   rivet_companion_if comp_if (.aclk(user_clk), .aresetn(user_resetn));
 
-  // Default CQ NP grant (PG213); sequences may override later via force/driver.
-  assign comp_if.cq_np_req = 2'b01;
+  // cq_np_req driven by companion_agent (defaults to 2'b01 in driver).
 
   rivet_pcie_ctrl #(
     .MODE(0),
@@ -183,7 +182,7 @@ module rivet_tb_top;
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rq_agent*", "vif", rq_if);
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rc_agent*", "vif", rc_if);
     uvm_config_db#(rivet_cfg_mgmt_vif)::set(null, "uvm_test_top.env.cfg_agent*", "vif", cfg_if);
-    uvm_config_db#(rivet_companion_vif)::set(null, "uvm_test_top.env.companion_mon*", "vif", comp_if);
+    uvm_config_db#(rivet_companion_vif)::set(null, "uvm_test_top.env.companion_agent*", "vif", comp_if);
     uvm_config_db#(int unsigned)::set(null, "*", "lanes", LANES);
     run_test();
   end
