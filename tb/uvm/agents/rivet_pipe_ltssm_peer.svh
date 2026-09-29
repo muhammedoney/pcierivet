@@ -227,7 +227,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       end
 
 
-      if (dllp_fc_enable && (lanes == 1) && peer_active && (phase_q == P_IDLE) && !fc_sending) begin
+      // FC DLLP inject in L0: stripe SDP+6+END like MAC (stream_idx = s*LANES+l).
+      if (dllp_fc_enable && peer_active && (phase_q == P_IDLE) && !fc_sending) begin
         if (fc_gap_left != 0) begin
           fc_gap_left--;
         end else begin
@@ -245,28 +246,38 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       vif.rxdata  <= '0;
       vif.rxdatak <= '0;
       if (peer_active) begin
-        for (l = 0; l < lanes; l++) begin
-          automatic logic [15:0] lfsr = peer_lfsr[l];
-          for (s = 0; s < 2; s++) begin
-            if (fc_sending && (l == 0) && (lanes == 1)) begin
-              fc_sym9  = rivet_dllp_util::framed_sym(fc_sym, fc_wire);
-              peer_tmp = fc_sym9;
+        if (fc_sending) begin
+          for (l = 0; l < lanes; l++) begin
+            automatic logic [15:0] lfsr = peer_lfsr[l];
+            for (s = 0; s < 2; s++) begin
+              automatic int unsigned stream_idx = fc_sym + s * lanes + l;
+              if (stream_idx < 8) begin
+                fc_sym9  = rivet_dllp_util::framed_sym(stream_idx, fc_wire);
+                peer_tmp = fc_sym9;
+              end else
+                peer_tmp = {1'b0, 8'h00};
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
               vif.rxdata[16*l + 8*s +: 8] <= peer_out;
               vif.rxdatak[2*l + s]        <= peer_tmp[8];
-              fc_sym++;
-              if (fc_sym >= 8) begin
-                fc_sending = 1'b0;
-                if (fc_idx < 5) begin
-                  fc_idx++; fc_gap_left = 8;
-                end else if (fc_idx == 5) begin
-                  fc_idx = 6; fc_gap_left = 16;
-                end else begin
-                  if (fc_idx >= 8) fc_idx = 6; else fc_idx++;
-                  fc_gap_left = 32;
-                end
-              end
+            end
+            peer_lfsr[l] = lfsr;
+          end
+          fc_sym += lanes * 2;
+          if (fc_sym >= 8) begin
+            fc_sending = 1'b0;
+            if (fc_idx < 5) begin
+              fc_idx++; fc_gap_left = 8;
+            end else if (fc_idx == 5) begin
+              fc_idx = 6; fc_gap_left = 16;
             end else begin
+              if (fc_idx >= 8) fc_idx = 6; else fc_idx++;
+              fc_gap_left = 32;
+            end
+          end
+        end else begin
+          for (l = 0; l < lanes; l++) begin
+            automatic logic [15:0] lfsr = peer_lfsr[l];
+            for (s = 0; s < 2; s++) begin
               peer_tmp = send_os ? peer_sym(4'(peer_ptr + 5'(s)), send_ts2,
                                             send_link_pad, send_lane_pad, 8'(l))
                                  : {1'b0, 8'h00};
@@ -275,16 +286,16 @@ class rivet_pipe_ltssm_peer extends uvm_component;
               vif.rxdata[16*l + 8*s +: 8] <= peer_out;
               vif.rxdatak[2*l + s]        <= peer_tmp[8];
             end
+            peer_lfsr[l] = lfsr;
           end
-          peer_lfsr[l] = lfsr;
-        end
 
-        if (send_os) begin
-          if (peer_ptr >= 5'd14) begin
-            peer_ptr   = '0;
-            phase_sets = phase_sets + 12'd1;
-          end else
-            peer_ptr = peer_ptr + 5'd2;
+          if (send_os) begin
+            if (peer_ptr >= 5'd14) begin
+              peer_ptr   = '0;
+              phase_sets = phase_sets + 12'd1;
+            end else
+              peer_ptr = peer_ptr + 5'd2;
+          end
         end
       end
 
