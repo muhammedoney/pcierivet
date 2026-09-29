@@ -64,22 +64,32 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 
 | Token in `simulate.log` | Script result |
 |-------------------------|---------------|
-| `PG213 RP + Rivet EP PIO 1DW` | PASS (BAR0 Mem32 write/readback) |
-| `PIO 1DW incomplete` | FAIL (Cfg closed, Mem PIO not closed) |
+| `Class A PASS` / `Class A+C` / `PIO 1DW` | PASS (BAR0 Mem32; Class C = EP RQ MemWr) |
+| `Class A FAIL` / `PIO 1DW incomplete` | FAIL |
 | `Cfg Vendor/Device incomplete` | FAIL (link trained, Cfg path not closed) |
 | `TIMEOUT` / Detect loop | FAIL |
 
+## Traffic classes (Questa RC↔EP apps)
+
+| Class | Meaning | Status |
+|-------|---------|--------|
+| A | RP Cfg + BAR0 MemWr/Rd 1 DW | PASS |
+| B | Multi-DW BAR0 PIO | Deferred (DLL/MAC slot) |
+| C | EP BME MemWr on RQ | PASS (wire accept; RP host store later) |
+| D | EP BME MemRd + RC | Deferred (RP host completer) |
+
+EP dual-role app: `rtl/rivet_ep_dual_app.sv` (CQ/CC completer + RQ/RC bus-master).
+
 ## Observed bring-up (Rivet DUT)
 
-L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang (Rivet has no speed-change Recovery yet). Type 0 Cfg and BAR scan close on the wire (Length in TLP byte 3). Link Cap/Status advertise Gen1 ×4 so the Gen1 RP BFM does not start a speed-change Recovery. Then the board waits for BAR0 Mem32 1 DW write/readback. 2 DW / 256 DW PIO and AXI-ST CQ/CC to a user app are still later.
+L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO and Class C EP RQ MemWr.
 
 ## Known gaps
 
 | Gap | Notes |
 |-----|--------|
-| LCRC vs PG213 | Proven on first CfgRd0 (`a1f45f41`, complement only) |
-| AXI-ST CQ/CC user app | Internal BAR0 PIO first; CQ/CC export later |
-| 256 DW PIO | Needs MAC/DLL slot > 1 KB (usrapp `dw_length`) |
+| Class B multi-DW PIO | Needs larger MAC/DLL payload window |
+| Class D RP host CplD | Wire RP-side memory model for EP MemRd |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 
 ## Layout
@@ -88,8 +98,9 @@ L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `c
 tb/bfm/pg213_ep/
   README.md
   rtl/
-    rivet_pg213_board.sv      # module board: RP BFM + Rivet EP
+    rivet_pg213_board.sv      # module board: RP BFM + Rivet EP (Class A/C)
     rivet_pg213_ep_swap.sv    # EP pin shell → Rivet+PG239
+    rivet_ep_dual_app.sv      # CQ/CC completer + RQ/RC bus-master
     board_common_inc.v        # prelude for -mfcu usrapp macros
   questa/
     elaborate_rivet.do

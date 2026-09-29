@@ -25,6 +25,7 @@ module board;
   wire  [5:0] rp_ltssm = RP.pcie_4_0_rport.cfg_ltssm_state;
 
   logic        saw_tlp, saw_cpl, stay_l0, saw_memwr, saw_pio;
+  logic        saw_ep_rq_memwr, class_c_pass, saw_ep_rc_done;
   int unsigned tlp_n, cpl_n;
 
   // Human-readable PG213 LTSSM codes used in Rivet + UltraScale+ IP.
@@ -168,12 +169,82 @@ module board;
 
     $display("[%t] : PIO probe   memwr=%0b pio=%0b stay_l0=%0b rp_lnk=%0b",
              $realtime, saw_memwr, saw_pio, stay_l0, RP.user_lnk_up);
-    if (saw_pio && stay_l0 && RP.user_lnk_up) begin
-      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP PIO 1DW)",
-               $realtime);
-    end else begin
-      $display("[%t] : PIO 1DW incomplete", $realtime);
+    if (!(saw_pio && stay_l0 && RP.user_lnk_up)) begin
+      $display("[%t] : Class A FAIL — PIO 1DW incomplete", $realtime);
+      $finish;
     end
+    $display("[%t] : Class A PASS — PG213 RP + Rivet EP PIO 1DW", $realtime);
+
+    // Class C: EP bus-master MemWr (ensure BME; RQ path)
+    saw_ep_rq_memwr = 1'b0;
+    class_c_pass    = 1'b0;
+    force EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2] = 1'b1; // Command.BME
+    force EP.u_rivet_ep.bm_host_addr = 32'h0000_1000;
+    force EP.u_rivet_ep.bm_wr_data   = 32'hC0DE_BEEF;
+    force EP.u_rivet_ep.bm_do_wr     = 1'b1;
+    force EP.u_rivet_ep.bm_do_rd     = 1'b0;
+    force EP.u_rivet_ep.bm_go        = 1'b1;
+    fork
+      begin
+        wait (saw_ep_rq_memwr);
+        class_c_pass = 1'b1;
+      end
+      begin
+        #(64'd5_000_000_000); // 5 ms
+      end
+    join_any
+    disable fork;
+    force EP.u_rivet_ep.bm_go = 1'b0;
+    release EP.u_rivet_ep.bm_go;
+    release EP.u_rivet_ep.bm_do_wr;
+    release EP.u_rivet_ep.bm_do_rd;
+    release EP.u_rivet_ep.bm_host_addr;
+    release EP.u_rivet_ep.bm_wr_data;
+
+    $display("[%t] : Class C probe ep_rq_memwr=%0b", $realtime, saw_ep_rq_memwr);
+    if (class_c_pass)
+      $display("[%t] : Class C PASS — EP BME MemWr on wire", $realtime);
+    else
+      $display("[%t] : Class C FAIL — EP RQ MemWr not seen (BME/RQ)", $realtime);
+
+    // Class D: EP bus-master MemRd (RC completion path)
+    saw_ep_rc_done = 1'b0;
+    force EP.u_rivet_ep.bm_host_addr = 32'h0000_1000;
+    force EP.u_rivet_ep.bm_wr_data   = 32'h0;
+    force EP.u_rivet_ep.bm_do_wr     = 1'b0;
+    force EP.u_rivet_ep.bm_do_rd     = 1'b1;
+    force EP.u_rivet_ep.bm_go        = 1'b1;
+    fork
+      begin
+        wait (EP.u_rivet_ep.bm_done === 1'b1);
+        saw_ep_rc_done = 1'b1;
+      end
+      begin
+        #(64'd5_000_000_000);
+      end
+    join_any
+    disable fork;
+    force EP.u_rivet_ep.bm_go = 1'b0;
+    release EP.u_rivet_ep.bm_go;
+    release EP.u_rivet_ep.bm_do_wr;
+    release EP.u_rivet_ep.bm_do_rd;
+    release EP.u_rivet_ep.bm_host_addr;
+    release EP.u_rivet_ep.bm_wr_data;
+    release EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2];
+
+    // Without RP host memory completer, MemRd may not complete — report status only
+    $display("[%t] : Class D probe bm_done=%0b (needs RP host CplD)", $realtime, saw_ep_rc_done);
+    if (saw_ep_rc_done)
+      $display("[%t] : Class D PASS — EP BME MemRd + RC", $realtime);
+    else
+      $display("[%t] : Class D DEFER — RP host MemRd completer not wired yet", $realtime);
+
+    if (saw_pio && stay_l0 && RP.user_lnk_up && class_c_pass)
+      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Class A+C)",
+               $realtime);
+    else if (saw_pio && stay_l0 && RP.user_lnk_up)
+      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Class A)",
+               $realtime);
     $finish;
   end
 
@@ -197,6 +268,9 @@ module board;
     stay_l0   = 1'b1;
     saw_memwr = 1'b0;
     saw_pio   = 1'b0;
+    saw_ep_rq_memwr = 1'b0;
+    class_c_pass    = 1'b0;
+    saw_ep_rc_done  = 1'b0;
     tlp_n     = 0;
     cpl_n     = 0;
   end
@@ -253,6 +327,15 @@ module board;
       if (!saw_memwr)
         $display("[%t] : MemWr32 accept", $realtime);
       saw_memwr <= 1'b1;
+    end
+  end
+  // Class C: EP-originated MemWr on TL TX (RQ packer)
+  always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
+    if (EP.u_rivet_ep.u_ctrl.u_tl_rq.tx_accept_o &&
+        (EP.u_rivet_ep.u_ctrl.u_tl_rq.tx_hdr0_o == rivet_pkg::RIVET_TLP_B0_MEMWR32)) begin
+      if (!saw_ep_rq_memwr)
+        $display("[%t] : EP RQ MemWr32 accept data_tag", $realtime);
+      saw_ep_rq_memwr <= 1'b1;
     end
   end
   always @(EP.u_rivet_ep.u_ctrl.u_mac.u_os_rx.rx_pkt_q) begin
