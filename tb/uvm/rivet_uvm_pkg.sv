@@ -60,7 +60,9 @@ package rivet_uvm_pkg;
   `include "seq/rivet_cfg_mgmt_vseq.svh"
   `include "seq/rivet_ltssm_l0_vseq.svh"
   `include "seq/rivet_dllp_fc_vseq.svh"
+  `include "seq/rivet_tlp_rq_memwr_vseq.svh"
   `include "env/rivet_scoreboard.svh"
+
   `include "env/rivet_coverage.svh"
   `include "env/rivet_env.svh"
   `include "tests/rivet_base_test.svh"
@@ -69,4 +71,6 @@ package rivet_uvm_pkg;
   `include "tests/smoke_cfg_mgmt_gen2_x1.svh"
   `include "tests/ltssm_l0_gen2.svh"
   `include "tests/smoke_dllp_fc_gen2_x1.svh"
+  `include "tests/smoke_tlp_rq_memwr_gen2_x1.svh"
 endpackage : rivet_uvm_pkg
+
