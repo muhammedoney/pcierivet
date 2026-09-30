@@ -2,9 +2,9 @@
 
 ## Principle
 
-**Verification before features.** For Phase 1, the **top priority is building out the UVM environment** (`tb/uvm`) for **Gen2**. New Gen2 RTL lands in small slices only when the UVM path can exercise or at least compile/elaborate against it.
+**Verification before features.** Primary DUT is **`rivet_pcie_ctrl`** at PIPE (Questa UVM). Verilator is lint/elaborate; Vivado BFM is complementary. Active generation: **Gen2**. Gen3/4 deferred — [gen-evolution.md](gen-evolution.md).
 
-Active generation under test: **Gen2**. Gen3/4 TB work is deferred — tracked in [gen-evolution.md](gen-evolution.md).
+Primary verified width: **Gen2 EP ×4** (`LANES=4`). ×1/×2 remain fast regression.
 
 ## Tracks
 
@@ -15,69 +15,70 @@ Active generation under test: **Gen2**. Gen3/4 TB work is deferred — tracked i
 | **Synth sanity** | Yosys | Open synth of controller stub |
 | **Side-path** | Vivado BFM → Questa | Complementary; not a UVM substitute |
 
-Primary DUT: **`rivet_pcie_ctrl`**. Full IP `rivet_pcie` is for FPGA / BFM bring-up.
-
-### PG239 PHY / Rivet ctrl (BFM)
+### BFM scripts
 
 ```powershell
-.\scripts\sim_bfm_pg239.ps1              # phy_ctrl pattern
-.\scripts\sim_bfm_pg239.ps1 -Dut rivet   # rivet EP + RC over PG239
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet   # Stage-2 dual link_up @ ×4
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet   # Class A+C (+ B WAIVE / D PASS|WAIVE)
 ```
 
-### PG213 EP example (BFM)
+---
 
-Stock RP model ↔ Xilinx EP (+ PIO). Rivet EP swap is scaffolded — see [tb/bfm/pg213_ep/README.md](../tb/bfm/pg213_ep/README.md).
+## MVP Gen2 EP ×4 gate (`mvp-gen2-ep-x4`)
+
+| Gate | Command / token | Status |
+|------|-----------------|--------|
+| Link L0 | `.\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4` | PASS |
+| DLLP FC | `.\scripts\sim_questa.ps1 smoke_dllp_fc_gen2_x4 4` | PASS |
+| cfg_mgmt @ L0 | `.\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x4 4` | PASS |
+| RQ MemWr | `.\scripts\sim_questa.ps1 smoke_tlp_rq_memwr_gen2_x4 4` | PASS |
+| CQ↔CC | `.\scripts\sim_questa.ps1 smoke_tlp_cq_cc_gen2_x4 4` | PASS |
+| RQ↔RC | `.\scripts\sim_questa.ps1 smoke_tlp_rq_rc_gen2_x4 4` | PASS |
+| PG213 Class A+C | `.\scripts\sim_bfm_pg213.ps1 -Dut rivet` → `Class A PASS` / `Class C PASS` | PASS |
+| PG213 Class B | usrapp 1DW-only; MAC buf=160 + multi-DW PIO ready | **WAIVE** (UVM CQ/CC) |
+| PG213 Class D | EP MemRd + RC | PASS (or WAIVE → UVM RQ↔RC) |
+| PG239 Stage-2 | `.\scripts\sim_bfm_pg239.ps1 -Dut rivet` → `Test Completed Successfully (Rivet+PG239 link_up)` | PASS |
 
 ```powershell
-.\scripts\sim_bfm_pg213.ps1
+.\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
+.\scripts\sim_questa.ps1 smoke_dllp_fc_gen2_x4 4
+.\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x4 4
+.\scripts\sim_questa.ps1 smoke_tlp_rq_memwr_gen2_x4 4
+.\scripts\sim_questa.ps1 smoke_tlp_cq_cc_gen2_x4 4
+.\scripts\sim_questa.ps1 smoke_tlp_rq_rc_gen2_x4 4
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet
 ```
 
-Known: PG239 stage-2 uses EP+RC shells; re-check link_up after Downstream Config lands. PIO/system BFM still needs TL.
+Annotated tag: **`mvp-gen2-ep-x4`**.
 
-## Phase 1 UVM build-out (priority)
+## Phase B UVM (post-MVP)
+
+| Gate | Command | Notes |
+|------|---------|-------|
+| Recovery → L0 | `.\scripts\sim_questa.ps1 smoke_recovery_l0_gen2_x4 4` | RcvrLock/Cfg/Idle; **no** Recovery.Speed yet |
+| M3 link-width | TBD | Peer narrower than port |
+| Recovery.Speed | TBD | Gen1↔Gen2 rate change |
+
+---
+
+## Phase 1 UVM build-out (historical)
 
 | Step | Status |
 |------|--------|
-| PIPE agent + idle smoke | Done (`smoke_gen2_x1`) |
-| AXI-ST CQ/CC/RQ/RC agents | Done |
-| `cfg_mgmt` agent + companion agent | Done (R/W handshake + NP grant driver) |
-| Virtual sequencer + shared idle vseq | Done |
-| Smokes ×2 / ×4 | Done (`smoke_gen2_x2`, `smoke_gen2_x4`) |
-| Coverage (PIPE + cfg_mgmt + AXI ch) | Done (grow bins with traffic) |
-| LTSSM L0 (Questa, Downstream peer) | Done (`ltssm_l0_gen2_x1/x2/x4`) |
-| `cfg_mgmt` directed R/W smoke | Done (`smoke_cfg_mgmt_gen2_x1`) |
-| AXI TLP helpers + CQ↔CC / RQ↔RC scoreboard | Started (`tlp_mode`; RQ MemWr smoke; CQ↔CC / RQ↔RC next) |
-| DLLP FC over PIPE after L0 | Done (`smoke_dllp_fc_gen2_x1`; peer InitFC/UpdateFC) |
-| RQ MemWr after L0 + FC + BME | Done (`smoke_tlp_rq_memwr_gen2_x1`) |
-
-```powershell
-.\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x1 1
-.\scripts\sim_questa.ps1 smoke_dllp_fc_gen2_x1 1
-.\scripts\sim_questa.ps1 smoke_tlp_rq_memwr_gen2_x1 1
-.\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
-.\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
-.\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
-```
-
-Do not block UVM progress on Gen3/4 features. Keep Gen3+ PIPE fields in the interface unused/idle in Gen2 tests.
+| PIPE / AXI / cfg_mgmt agents | Done |
+| Smokes ×1/×2/×4 idle | Done |
+| LTSSM L0 | Done (`ltssm_l0_gen2_x1/x2/x4`) |
+| DLLP FC | Done (`smoke_dllp_fc_gen2_x1/x4`) |
+| cfg_mgmt | Done (`smoke_cfg_mgmt_gen2_x1/x4`) |
+| RQ MemWr / CQ↔CC / RQ↔RC | Done @ ×4 |
+| Coverage | Done (grow bins with traffic) |
 
 ## QuestaSim (local)
 
-Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then:
+Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then run recipes above.
 
-```powershell
-.\scripts\sim_questa.ps1 smoke_gen2_x1 1
-.\scripts\sim_questa.ps1 smoke_gen2_x2 2
-.\scripts\sim_questa.ps1 smoke_gen2_x4 4
-.\scripts\sim_questa.ps1 smoke_cfg_mgmt_gen2_x1 1
-.\scripts\sim_questa.ps1 smoke_dllp_fc_gen2_x1 1
-.\scripts\sim_questa.ps1 smoke_tlp_rq_memwr_gen2_x1 1
-.\scripts\sim_questa.ps1 ltssm_l0_gen2_x1 1
-.\scripts\sim_questa.ps1 ltssm_l0_gen2_x2 2
-.\scripts\sim_questa.ps1 ltssm_l0_gen2_x4 4
-```
-
-Uses built-in `-L mtiUvm` (match `UVM_HOME` to uvm-1.1d). Lane width is a **compile-time** `+define+RIVET_TB_LANES=N`.
+Uses built-in `-L mtiUvm` (match `UVM_HOME` to uvm-1.1d). Lane width is compile-time `+define+RIVET_TB_LANES=N`.
 
 | Tool | Version |
 |------|---------|
@@ -86,7 +87,7 @@ Uses built-in `-L mtiUvm` (match `UVM_HOME` to uvm-1.1d). Lane width is a **comp
 | Verilator | _TBD_ |
 | Yosys | _TBD_ |
 
-If Questa is not installed: continue UVM source work and Verilator lint; note **UVM deferred — Questa not installed** in PRs.
+If Questa is not installed: note **UVM deferred — Questa not installed**.
 
 ## Spec policy
 
@@ -94,8 +95,7 @@ Do not commit PCIe / PIPE / PG213 / PG239 PDFs. Keep local copies under `specs/`
 
 | Doc | Why |
 |-----|-----|
-| PG239 | PHY wrapper ports; AMD EQ/assist (authoritative for FPGA PHY) |
-| PIPE **4.4.1** | Classic PIPE Gen1–Gen4 semantics (preferred next add) |
-| PIPE **5.x** (optional) | Gen5 Rate / SerDes notes — PG239 stays classic-oriented |
-| PG213 | User AXI-ST CQ/CC/RQ/RC and companion/config interfaces (not PIPE); see [PG213 interface audit](pg213-interface.md) |
-| PCIe Base (Gen2 chapter focus now) | LTSSM / DLLP / TLP for current phase |
+| PG239 | PHY wrapper ports; AMD EQ/assist |
+| PIPE **4.4.1** | Classic PIPE Gen1–Gen4 semantics |
+| PG213 | User AXI-ST CQ/CC/RQ/RC ([audit](pg213-interface.md)) |
+| PCIe Base (Gen2 focus) | LTSSM / DLLP / TLP |

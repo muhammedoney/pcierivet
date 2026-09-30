@@ -332,8 +332,10 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 
 ### M4 — Recovery / errors (still Gen2)
 
-- [ ] RxValid loss / RxStatus overflow → Recovery → L0  
+- [x] Recovery.RcvrLock → RcvrCfg → Idle → L0 (UVM `smoke_recovery_l0_gen2_x4`)
+- [ ] **Recovery.Speed** Gen1↔Gen2 (PhyStatus / PCLK / 8-symbol EIOS)
 - [ ] Hot reset / Disabled as needed
+- [ ] RxValid loss / RxStatus overflow stress beyond directed smoke
 
 ### Later phases
 

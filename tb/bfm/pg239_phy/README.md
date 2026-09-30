@@ -18,7 +18,7 @@ Later stages (not this README):
 | **3** | PG213 EP example → swap EP for Rivet+PG239 — [pg213_ep](../pg213_ep/README.md) |
 | **4** | PG213 RP ↔ Rivet+PG239 (system-level) |
 
-**Stage 2 note:** Earlier dual-EP topology stuck at Configuration.Linkwidth.Start (`0x05`) because neither side offered a Link number. The board now pairs `MODE=EP` with `MODE=RC`.
+**Stage 2 note:** EP+RC shells; Downstream Config offers Link#. Dual `link_up` @ Gen2 ×4 is a **PASS** gate (`Test Completed Successfully (Rivet+PG239 link_up)`). Compile filelist includes CDC + full TL (keep in sync with `sim_bfm_pg213.ps1`).
 
 ## What the test does
 

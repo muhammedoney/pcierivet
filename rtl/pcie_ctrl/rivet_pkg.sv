@@ -358,8 +358,8 @@ package rivet_pkg;
   // DLL TLP framing sizes (seq + LCRC around TL payload).
   localparam int unsigned RIVET_TLP_SEQ_BYTES  = 2;
   localparam int unsigned RIVET_TLP_LCRC_BYTES = 4;
-  // MAC assemble buffer (Cfg/Cpl-class TLPs). Larger payloads come later.
-  localparam int unsigned RIVET_MAC_TLP_BUF_BYTES = 64;
+  // MAC assemble buffer — sized to DLL REPLAY_SLOT_BYTES (multi-DW Class B).
+  localparam int unsigned RIVET_MAC_TLP_BUF_BYTES = 160;
 
   // Type 0 config space (PF0 Gen2 EP)
   localparam int unsigned RIVET_CFG_DW_N = 1024; // 4 KiB

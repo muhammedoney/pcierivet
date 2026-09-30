@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Tiny BAR0 Mem32 PIO on CQ/CC (1 DW). For BFM / smoke until a user app exists.
+// BAR0 Mem32 PIO on CQ/CC. Supports multi-DW MemWr/MemRd (Class B).
 
 module rivet_tl_pio_app #(
   parameter int unsigned PIO_N = 256
@@ -40,6 +40,7 @@ module rivet_tl_pio_app #(
   logic [15:0]  req_id_q;
   logic [7:0]   tag_q;
   logic [9:0]   len_q;
+  logic [9:0]   rem_q;
   logic         is_wr_q;
   logic [3:0]   fbe_q;
   logic [31:0]  data_q;
@@ -49,16 +50,16 @@ module rivet_tl_pio_app #(
   assign s_axis_cc_tuser  = rivet_cc_tuser_pack(1'b0);
   assign s_axis_cc_tkeep  = 2'b11;
   assign s_axis_cc_tvalid = (st_q == ST_CC0) || (st_q == ST_CC1) || (st_q == ST_CCD);
-  assign s_axis_cc_tlast  = (st_q == ST_CC1 && !is_wr_q && len_q == 10'd0) ||
-                            (st_q == ST_CCD);
+  assign s_axis_cc_tlast  = (st_q == ST_CC1 && !is_wr_q && rem_q == 10'd0) ||
+                            (st_q == ST_CCD && rem_q <= 10'd1);
 
   always_comb begin
     s_axis_cc_tdata = '0;
     unique case (st_q)
       ST_CC0: begin
         s_axis_cc_tdata[6:0]   = addr_q[6:0];
-        s_axis_cc_tdata[27:16] = 12'h4;
-        s_axis_cc_tdata[41:32] = 10'd1;
+        s_axis_cc_tdata[27:16] = {len_q, 2'b00}; // byte count = 4*DW
+        s_axis_cc_tdata[41:32] = len_q;
         s_axis_cc_tdata[45:43] = 3'b000; // SC
       end
       ST_CC1: begin
@@ -78,6 +79,7 @@ module rivet_tl_pio_app #(
       req_id_q <= '0;
       tag_q    <= '0;
       len_q    <= '0;
+      rem_q    <= '0;
       is_wr_q  <= 1'b0;
       fbe_q    <= '0;
       data_q   <= '0;
@@ -94,6 +96,7 @@ module rivet_tl_pio_app #(
         ST_CQ1: begin
           if (m_axis_cq_tvalid && m_axis_cq_tready) begin
             len_q    <= m_axis_cq_tdata[9:0];
+            rem_q    <= m_axis_cq_tdata[9:0];
             is_wr_q  <= (m_axis_cq_tdata[14:11] == RIVET_CQ_REQ_MEMWR);
             req_id_q <= m_axis_cq_tdata[47:32];
             tag_q    <= m_axis_cq_tdata[55:48];
@@ -106,9 +109,25 @@ module rivet_tl_pio_app #(
         end
         ST_CQD: begin
           if (m_axis_cq_tvalid && m_axis_cq_tready) begin
-            pio_q[addr_q[9:2]] <= m_axis_cq_tdata[31:0];
-            // Posted write — no completion
-            st_q <= ST_CQ0;
+            automatic logic [31:0] waddr = addr_q;
+            automatic logic [9:0]  wrem  = rem_q;
+            // 64-bit CQ: up to two DW per beat
+            if (wrem != 10'd0) begin
+              pio_q[waddr[9:2]] <= m_axis_cq_tdata[31:0];
+              waddr = waddr + 32'd4;
+              wrem  = wrem - 10'd1;
+            end
+            if (wrem != 10'd0 && m_axis_cq_tkeep[1]) begin
+              pio_q[waddr[9:2]] <= m_axis_cq_tdata[63:32];
+              waddr = waddr + 32'd4;
+              wrem  = wrem - 10'd1;
+            end
+            addr_q <= waddr;
+            rem_q  <= wrem;
+            if (m_axis_cq_tlast || wrem == 10'd0)
+              st_q <= ST_CQ0; // Posted write — no completion
+            else
+              st_q <= ST_CQD;
           end
         end
         ST_CC0: begin
@@ -118,12 +137,26 @@ module rivet_tl_pio_app #(
           end
         end
         ST_CC1: begin
-          if (s_axis_cc_tvalid && s_axis_cc_tready[0])
-            st_q <= ST_CCD;
+          if (s_axis_cc_tvalid && s_axis_cc_tready[0]) begin
+            if (rem_q == 10'd0)
+              st_q <= ST_CQ0; // zero-length (should not happen)
+            else
+              st_q <= ST_CCD;
+          end
         end
         ST_CCD: begin
-          if (s_axis_cc_tvalid && s_axis_cc_tready[0])
-            st_q <= ST_CQ0;
+          if (s_axis_cc_tvalid && s_axis_cc_tready[0]) begin
+            if (rem_q <= 10'd1) begin
+              rem_q <= 10'd0;
+              st_q  <= ST_CQ0;
+            end else begin
+              automatic logic [31:0] naddr = addr_q + 32'd4;
+              addr_q <= naddr;
+              rem_q  <= rem_q - 10'd1;
+              data_q <= pio_q[naddr[9:2]];
+              st_q   <= ST_CCD;
+            end
+          end
         end
         default: st_q <= ST_CQ0;
       endcase

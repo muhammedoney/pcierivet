@@ -204,7 +204,17 @@ function New-CompileDo {
   [void]$sb.AppendLine(('"{0}/glbl.v"' -f $workUnix))
 
   if ($Dut -eq "rivet") {
+    # Keep in sync with sim_bfm_pg213.ps1 Rivet SV set (CDC + full TL).
     $rivetSv = @(
+      "third_party/ref/tech_cells_generic/src/rtl/tc_sync.sv",
+      "third_party/ref/tech_cells_generic/src/rtl/tc_clk.sv",
+      "third_party/ref/common_cells/src/cc_rstgen_bypass.sv",
+      "third_party/ref/common_cells/src/cc_rstgen.sv",
+      "third_party/ref/common_cells/src/cc_cdc_2phase.sv",
+      "third_party/ref/verilog-axis/rtl/axis_async_fifo.v",
+      "rtl/pcie_ctrl/cdc/rivet_cdc_sync_bus.sv",
+      "rtl/pcie_ctrl/cdc/rivet_cdc_axis.sv",
+      "rtl/pcie_ctrl/cdc/rivet_cdc_cfg_mgmt.sv",
       "rtl/pcie_ctrl/rivet_pkg.sv",
       "rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv",
       "rtl/pcie_ctrl/dll/rivet_dll_crc16.sv",
@@ -220,6 +230,17 @@ function New-CompileDo {
       "rtl/pcie_ctrl/dll/rivet_dll_tl_unpack.sv",
       "rtl/pcie_ctrl/dll/rivet_dll.sv",
       "rtl/pcie_ctrl/tl/rivet_tl_fc_stub.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_credit.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_cfg_space.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_cfg.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_rx_route.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_cq.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_cc.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_rq.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_rc.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_tx_mux.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_pio_app.sv",
+      "tb/bfm/pg213_ep/rtl/rivet_ep_dual_app.sv",
       "rtl/pcie_ctrl/mac/rivet_mac_timer.sv",
       "rtl/pcie_ctrl/mac/rivet_ltssm.sv",
       "rtl/pcie_ctrl/mac/rivet_mac_os_tx.sv",
@@ -234,7 +255,7 @@ function New-CompileDo {
       "tb/bfm/pg239_phy/rtl/rivet_pg239_board.sv"
     ) | ForEach-Object { ('"{0}/{1}"' -f $repoUnix, $_) }
     [void]$sb.AppendLine("")
-    [void]$sb.AppendLine("vlog -work xil_defaultlib -sv -incr -mfcu \")
+    [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}/third_party/ref/common_cells/include" \' -f $repoUnix))
     for ($i = 0; $i -lt $rivetSv.Count; $i++) {
       $suffix = if ($i -lt $rivetSv.Count - 1) { " \" } else { "" }
       [void]$sb.AppendLine("$($rivetSv[$i])$suffix")
