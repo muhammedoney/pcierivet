@@ -26,7 +26,7 @@ Ordered ×4 gates ([verification.md](verification.md)):
 
 | Slice | Content | Gate |
 |-------|---------|------|
-| **B1 MAC M3** | Partner narrower than port / link-width negotiate | Done — `smoke_linkwidth_peer_x2_dut_x4` |
+| **B1 MAC M3** | Partner narrower than port / link-width negotiate; NLW; full lane reversal | Done — `smoke_linkwidth_peer_x{1,2}_dut_x4`, `smoke_link_reversed_x{2,4}` |
 | **B2 MAC M4** | Recovery.RcvrLock/Cfg/Idle + **Recovery.Speed** Gen1→Gen2 | Done — `smoke_recovery_l0_gen2_x4`, `smoke_recovery_speed_gen2_x4` |
 | **B3 Power / reset** | Hot Reset, Disabled; L0s/L1 if needed | Done — Hot Reset + Disabled @ ×4 (L0s/L1 later) |
 | **B4 TL richer** | Mem64, IO, Msg; real RX buffer vs `rivet_tl_fc_stub` | Done — Mem64 CQ + IO/Msg route + finite CA buffer |

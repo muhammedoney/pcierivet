@@ -106,6 +106,10 @@ Phase 1/2 status that must be directly visible as dedicated `cfg_*` ports:
 
 - `cfg_phy_link_down`, `cfg_phy_link_status[1:0]`
 - `cfg_negotiated_width[2:0]`, `cfg_current_speed[1:0]`
+
+Rivet today: PCIe Cap **Link Status** NLW/CLS are overlaid from MAC
+`negotiated_width` / trained PIPE rate (readable via `cfg_mgmt` @ cap 0x80 DW).
+Dedicated `cfg_negotiated_width` / `cfg_current_speed` ports remain a follow-on.
 - `cfg_max_payload[1:0]`, `cfg_max_read_req[2:0]`
 - `cfg_function_status[15:0]` (PF0 is bits `[3:0]`)
 - `cfg_function_power_state[11:0]` (PF0 is bits `[2:0]`)

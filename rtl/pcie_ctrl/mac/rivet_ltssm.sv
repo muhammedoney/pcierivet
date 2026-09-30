@@ -103,7 +103,9 @@ module rivet_ltssm #(
   output logic [1:0]                    negotiated_speed_o,
   output logic                          accept_dll_tlp_o,
   output logic [7:0]                    remote_rate_id_o,
-  output logic [7:0]                    remote_n_fts_o
+  output logic [7:0]                    remote_n_fts_o,
+  // Sticky until Detect: full reverse of enabled set (0..W-1 ↔ W-1..0).
+  output logic                          lane_reversed_o
 );
 
   import rivet_pkg::*;
@@ -172,6 +174,7 @@ module rivet_ltssm #(
   logic [2:0]       rate_q,        rate_d;
   logic             speed_ei_q,    speed_ei_d;   // Electrical Idle after EIOS
   logic [LANES-1:0] phy_ack_q,     phy_ack_d;    // PhyStatus seen per lane
+  logic             lane_rev_q,    lane_rev_d;   // full lane reversal sticky
 
   logic timer_expired;
   logic timer_load;
@@ -187,6 +190,50 @@ module rivet_ltssm #(
   assign detect_done = (detect_seen_q == {LANES{1'b1}});
   assign detect_all  = (detect_map_q  == {LANES{1'b1}});
   assign detect_none = (detect_map_q  == '0);
+
+  // Enabled physical Lanes numbered 0..W-1 in ascending phys order.
+  function automatic logic lanes_num_forward(
+      input logic [LANES-1:0]     en,
+      input logic [8*LANES-1:0]   nums
+  );
+    int unsigned w;
+    int unsigned e[LANES];
+    w = 0;
+    for (int unsigned i = 0; i < LANES; i++) begin
+      e[i] = 0;
+      if (en[i]) begin
+        e[w] = i;
+        w++;
+      end
+    end
+    if (w == 0) return 1'b0;
+    for (int unsigned k = 0; k < w; k++) begin
+      if (nums[8*e[k] +: 8] != 8'(k)) return 1'b0;
+    end
+    return 1'b1;
+  endfunction
+
+  // Full reverse only: nums on enabled phys = W-1 .. 0 (×1 is never reverse).
+  function automatic logic lanes_num_reverse(
+      input logic [LANES-1:0]     en,
+      input logic [8*LANES-1:0]   nums
+  );
+    int unsigned w;
+    int unsigned e[LANES];
+    w = 0;
+    for (int unsigned i = 0; i < LANES; i++) begin
+      e[i] = 0;
+      if (en[i]) begin
+        e[w] = i;
+        w++;
+      end
+    end
+    if (w <= 1) return 1'b0;
+    for (int unsigned k = 0; k < w; k++) begin
+      if (nums[8*e[k] +: 8] != 8'(w - 1 - k)) return 1'b0;
+    end
+    return 1'b1;
+  endfunction
 
   always_comb begin
     lane_num_match = 1'b1;
@@ -236,6 +283,7 @@ module rivet_ltssm #(
     rate_d          = rate_q;
     speed_ei_d      = speed_ei_q;
     phy_ack_d       = phy_ack_q;
+    lane_rev_d      = lane_rev_q;
 
     os_req_o           = RIVET_MAC_OS_NONE;
     txdetectrx_o       = 1'b0;
@@ -266,6 +314,7 @@ module rivet_ltssm #(
         rate_d             = RIVET_PIPE_RATE_GEN1;
         speed_ei_d         = 1'b0;
         phy_ack_d          = '0;
+        lane_rev_d         = 1'b0;
 
         // 12 ms, or as soon as Electrical Idle is broken on any Lane.
         if (timer_expired || (rxelecidle_i != {LANES{1'b1}}))
@@ -386,15 +435,27 @@ module rivet_ltssm #(
             state_d = RIVET_LTSSM_DETECT_QUIET;
         end else begin
           // Upstream: optionally tighten further to Lanes with numbered Lane#.
+          // Adopt forward (0..W-1) or full reverse (W-1..0) only; exotic maps
+          // stay here until timeout → Detect.
           if (ts1_lane_any_i) begin
             automatic logic [LANES-1:0] numbered = lane_en_q & ts1_lane_lanes_i;
             if (numbered != '0)
               lane_en_d = numbered;
           end
           if (ts1_lane_all_i) begin
-            lane_num_d = rx_lane_num_i; // no Lane reversal in this milestone
-            lane_pad_d = 1'b0;
-            state_d    = RIVET_LTSSM_CFG_LANENUM_WAIT;
+            automatic logic [LANES-1:0] en_now = lane_en_d;
+            if (lanes_num_forward(en_now, rx_lane_num_i)) begin
+              lane_num_d = rx_lane_num_i;
+              lane_pad_d = 1'b0;
+              lane_rev_d = 1'b0;
+              state_d    = RIVET_LTSSM_CFG_LANENUM_WAIT;
+            end else if (lanes_num_reverse(en_now, rx_lane_num_i)) begin
+              // Logical MAC view becomes sequential; pipe map flips wires.
+              lane_num_d = default_lane_num;
+              lane_pad_d = 1'b0;
+              lane_rev_d = 1'b1;
+              state_d    = RIVET_LTSSM_CFG_LANENUM_WAIT;
+            end
           end else if (timer_expired) begin
             state_d = RIVET_LTSSM_DETECT_QUIET;
           end
@@ -409,7 +470,16 @@ module rivet_ltssm #(
           state_d = RIVET_LTSSM_CFG_LANENUM_ACCEPT;
         end else if (ts1_lane_all_i && !lane_num_match) begin
           // Upstream may be told a new set; Downstream keeps its assignment.
-          if (!IS_DOWNSTREAM) lane_num_d = rx_lane_num_i;
+          // Once reverse is sticky, ignore remapped RX "forward" looks until Detect.
+          if (!IS_DOWNSTREAM && !lane_rev_q) begin
+            if (lanes_num_forward(lane_en_q, rx_lane_num_i)) begin
+              lane_num_d = rx_lane_num_i;
+              lane_rev_d = 1'b0;
+            end else if (lanes_num_reverse(lane_en_q, rx_lane_num_i)) begin
+              lane_num_d = default_lane_num;
+              lane_rev_d = 1'b1;
+            end
+          end
         end else if (timer_expired) begin
           state_d = RIVET_LTSSM_DETECT_QUIET;
         end
@@ -678,6 +748,7 @@ module rivet_ltssm #(
       rate_q          <= RIVET_PIPE_RATE_GEN1;
       speed_ei_q      <= 1'b0;
       phy_ack_q       <= '0;
+      lane_rev_q      <= 1'b0;
     end else begin
       state_q         <= state_d;
       lane_en_q       <= lane_en_d;
@@ -700,6 +771,7 @@ module rivet_ltssm #(
       rate_q          <= rate_d;
       speed_ei_q      <= speed_ei_d;
       phy_ack_q       <= phy_ack_d;
+      lane_rev_q      <= lane_rev_d;
     end
   end
 
@@ -737,6 +809,7 @@ module rivet_ltssm #(
 
   assign remote_rate_id_o = remote_rate_q;
   assign remote_n_fts_o   = remote_nfts_q;
+  assign lane_reversed_o  = lane_rev_q;
 
   always_comb begin
     negotiated_width_o = '0;
