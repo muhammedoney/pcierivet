@@ -167,6 +167,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     bit          tlp_sending;
     bit          tlp_memrd_done;
     bit          tlp_cpld_done;
+    bit          recovery_go;
+    bit          recovery_pulse;
     int unsigned tlp_sym;
     int unsigned tlp_nbytes;
     logic [8*32-1:0] tlp_frame;
@@ -189,6 +191,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     fc_idx = 0; fc_sym = 0; fc_gap_left = 0; fc_wire = '0; fc_sending = 1'b0;
     tlp_sending = 1'b0; tlp_memrd_done = 1'b0; tlp_cpld_done = 1'b0;
     tlp_sym = 0; tlp_nbytes = 0; tlp_frame = '0;
+    recovery_go = 1'b0; recovery_pulse = 1'b0;
     for (l = 0; l < lanes; l++) peer_lfsr[l] = 16'hFFFF;
 
     vif.rxdata        <= '0;
@@ -243,7 +246,18 @@ class rivet_pipe_ltssm_peer extends uvm_component;
 
       if (detect_ack) begin
         peer_active    = 1'b1;
-        vif.rxvalid    <= '1;
+        // One-cycle RxValid drop forces DUT L0 → Recovery.RcvrLock.
+        recovery_go = 1'b0;
+        void'(uvm_config_db#(bit)::get(null, "*", "peer_recovery_go", recovery_go));
+        if (recovery_go && (phase_q == P_IDLE) && !recovery_pulse) begin
+          vif.rxvalid     <= '0;
+          recovery_pulse  = 1'b1;
+          uvm_config_db#(bit)::set(null, "*", "peer_recovery_go", 1'b0);
+          uvm_config_db#(bit)::set(null, "*", "peer_recovery_fired", 1'b1);
+        end else begin
+          vif.rxvalid    <= '1;
+          recovery_pulse = 1'b0;
+        end
         vif.rxelecidle <= '0;
       end
 
@@ -396,6 +410,15 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             if (dut_tx_data_only) idle_seen = idle_seen + 8'd1;
             else                  idle_seen = '0;
             if (idle_seen >= 8'd4) phase_q = P_IDLE;
+          end
+          P_IDLE: begin
+            // DUT entered Recovery (TS1/TS2 again) — rejoin numbered training.
+            if (dut_tx_ts1 || dut_tx_ts2) begin
+              phase_q    = dut_tx_ts2 ? P_TS2_CFG : P_TS1_LANE;
+              phase_sets = '0;
+              peer_ptr   = '0;
+              idle_seen  = '0;
+            end
           end
           default: ;
         endcase

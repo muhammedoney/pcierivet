@@ -443,11 +443,45 @@ module rivet_ltssm #(
           state_d = RIVET_LTSSM_RECOVERY_RCVRLOCK;
       end
 
-      // Minimal Recovery so timeouts and link errors cannot dead-end. The real
-      // Recovery ladder (RcvrCfg / Idle / Speed) is a later milestone.
+      // Recovery ladder (Gen2 EP, no Speed change yet — rate stays 2.5 GT/s).
+      // RcvrLock → RcvrCfg → Idle → L0. Recovery.Speed is Phase B remaining.
       RIVET_LTSSM_RECOVERY_RCVRLOCK: begin
-        os_req_o = RIVET_MAC_OS_TS1;
-        if (timer_expired) state_d = RIVET_LTSSM_DETECT_QUIET;
+        os_req_o    = RIVET_MAC_OS_TS1;
+        link_pad_d  = 1'b0;
+        lane_pad_d  = 1'b0;
+        // Keep negotiated Link# / Lane# from Configuration.
+        if (ts1_link_any_i || ts1_lane_any_i || ts2_cfg_any_i ||
+            ts1_pad_any_i || ts2_pad_any_i)
+          rx_seen_d = 1'b1;
+        if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
+          state_d = RIVET_LTSSM_RECOVERY_RCVRCFG;
+        else if (timer_expired)
+          state_d = RIVET_LTSSM_DETECT_QUIET;
+      end
+
+      RIVET_LTSSM_RECOVERY_RCVRCFG: begin
+        os_req_o   = RIVET_MAC_OS_TS2;
+        link_pad_d = 1'b0;
+        lane_pad_d = 1'b0;
+        if (ts2_cfg_any_i || ts2_pad_any_i)
+          rx_seen_d = 1'b1;
+        if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
+          state_d = RIVET_LTSSM_RECOVERY_IDLE;
+        else if (timer_expired)
+          state_d = RIVET_LTSSM_DETECT_QUIET;
+      end
+
+      RIVET_LTSSM_RECOVERY_IDLE: begin
+        os_req_o = RIVET_MAC_OS_IDLE;
+        if (idle_all_i)
+          idle_rx_ok_d = 1'b1;
+        if (idle_sym_any_i && !rx_seen_q)
+          rx_seen_d = 1'b1;
+        if (idle_rx_ok_q && rx_seen_q &&
+            (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
+          state_d = RIVET_LTSSM_L0;
+        else if (timer_expired)
+          state_d = RIVET_LTSSM_DETECT_QUIET;
       end
 
       default: state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -482,7 +516,9 @@ module rivet_ltssm #(
       RIVET_LTSSM_CFG_LANENUM_WAIT:      timer_limit = T_CONFIG_CYC;
       RIVET_LTSSM_CFG_COMPLETE:          timer_limit = T_CFG_COMPLETE_CYC;
       RIVET_LTSSM_CFG_IDLE:              timer_limit = T_CFG_IDLE_CYC;
-      RIVET_LTSSM_RECOVERY_RCVRLOCK:     timer_limit = T_RCVRLOCK_CYC;
+      RIVET_LTSSM_RECOVERY_RCVRLOCK,
+      RIVET_LTSSM_RECOVERY_RCVRCFG,
+      RIVET_LTSSM_RECOVERY_IDLE:         timer_limit = T_RCVRLOCK_CYC;
       default:                           timer_limit = T_DETECT_QUIET_CYC;
     endcase
   end
