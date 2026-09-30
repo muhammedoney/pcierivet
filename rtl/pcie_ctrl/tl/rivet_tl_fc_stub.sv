@@ -1,13 +1,17 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Minimal TL credit stub: CA / free / consume inject for DLL FC (D3).
+// TL RX buffer credit allocation toward DLL FC.
+// CA is fixed at the buffer depth (InitFC advertisement). Free_* pulses
+// request UpdateFC toward the peer when TL retires a received TLP; they must
+// not inflate CA. Consume_* pulses are TX-side FC consumption toward DLL.
 
 module rivet_tl_fc_stub #(
-  parameter logic [7:0]  PH_CRED   = 8'h7F,
-  parameter logic [11:0] PD_CRED   = 12'h7FF,
-  parameter logic [7:0]  NPH_CRED  = 8'h7F,
-  parameter logic [11:0] NPD_CRED  = 12'h7FF,
+  // Finite RX buffer depths (header / data credits). CPL may stay infinite.
+  parameter logic [7:0]  PH_CRED   = 8'd8,
+  parameter logic [11:0] PD_CRED   = 12'd64,
+  parameter logic [7:0]  NPH_CRED  = 8'd8,
+  parameter logic [11:0] NPD_CRED  = 12'd64,
   parameter bit          CPL_INF   = 1'b1
 ) (
   input  logic clk_i,
@@ -54,8 +58,8 @@ module rivet_tl_fc_stub #(
       sb_q.ca.pd       <= PD_CRED;
       sb_q.ca.nph      <= NPH_CRED;
       sb_q.ca.npd      <= NPD_CRED;
-      sb_q.ca.cplh     <= CPL_INF ? 8'h00 : 8'h01;
-      sb_q.ca.cpld     <= CPL_INF ? 12'h000 : 12'h001;
+      sb_q.ca.cplh     <= CPL_INF ? 8'h00 : 8'h08;
+      sb_q.ca.cpld     <= CPL_INF ? 12'h000 : 12'h040;
       sb_q.ca.ph_inf   <= 1'b0;
       sb_q.ca.pd_inf   <= 1'b0;
       sb_q.ca.nph_inf  <= 1'b0;
@@ -63,19 +67,13 @@ module rivet_tl_fc_stub #(
       sb_q.ca.cplh_inf <= CPL_INF;
       sb_q.ca.cpld_inf <= CPL_INF;
     end else begin
+      // UpdateFC toward peer (DLL); CA stays at buffer depth.
       sb_q.ph_freed   <= free_ph_i;
       sb_q.pd_freed   <= free_pd_i;
       sb_q.nph_freed  <= free_nph_i;
       sb_q.npd_freed  <= free_npd_i;
       sb_q.cplh_freed <= free_cplh_i;
       sb_q.cpld_freed <= free_cpld_i;
-
-      if (free_ph_i && !sb_q.ca.ph_inf) sb_q.ca.ph <= sb_q.ca.ph + free_ph_amt_i;
-      if (free_pd_i && !sb_q.ca.pd_inf) sb_q.ca.pd <= sb_q.ca.pd + free_pd_amt_i;
-      if (free_nph_i && !sb_q.ca.nph_inf) sb_q.ca.nph <= sb_q.ca.nph + free_nph_amt_i;
-      if (free_npd_i && !sb_q.ca.npd_inf) sb_q.ca.npd <= sb_q.ca.npd + free_npd_amt_i;
-      if (free_cplh_i && !sb_q.ca.cplh_inf) sb_q.ca.cplh <= sb_q.ca.cplh + free_cplh_amt_i;
-      if (free_cpld_i && !sb_q.ca.cpld_inf) sb_q.ca.cpld <= sb_q.ca.cpld + free_cpld_amt_i;
 
       sb_q.consume_ph        <= consume_ph_i;
       sb_q.consume_pd        <= consume_pd_i;
@@ -94,6 +92,10 @@ module rivet_tl_fc_stub #(
 
   assign tl_to_dll_fc_o = sb_q;
 
+  // Amounts available for a future sized UpdateFC; DLL currently uses pulses only.
+  logic _unused_amt;
+  assign _unused_amt = |{free_ph_amt_i, free_pd_amt_i, free_nph_amt_i, free_npd_amt_i,
+                         free_cplh_amt_i, free_cpld_amt_i};
   logic _unused_dll;
   assign _unused_dll = |dll_to_tl_fc_i;
 
