@@ -58,7 +58,10 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 |------|---------|-------|
 | Recovery → L0 | `.\scripts\sim_questa.ps1 smoke_recovery_l0_gen2_x4 4` | RcvrLock/Cfg/Idle (no Speed) |
 | Recovery.Speed | `.\scripts\sim_questa.ps1 smoke_recovery_speed_gen2_x4 4` | Gen1→Gen2 via mutual TS bit 7 |
-| M3 link-width | `.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x2_dut_x4 4` | Peer ×2 vs DUT ×4 → L0 @ width=2 |
+| M3 link-width ×2 | `.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x2_dut_x4 4` | Peer ×2 vs DUT ×4 → L0 @ width=2 + NLW |
+| M3 link-width ×1 | `.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x1_dut_x4 4` | Peer ×1 vs DUT ×4 → L0 @ width=1 + NLW |
+| M3 lane reverse ×4 | `.\scripts\sim_questa.ps1 smoke_link_reversed_x4 4` | Peer Lane# 3..0 → L0 @ width=4 + NLW |
+| M3 lane reverse ×2 | `.\scripts\sim_questa.ps1 smoke_link_reversed_x2 2` | Peer Lane# 1..0 → L0 @ width=2 + NLW |
 | Hot Reset | `.\scripts\sim_questa.ps1 smoke_hot_reset_gen2_x4 4` | TS Hot Reset → Detect → L0 |
 | Disabled | `.\scripts\sim_questa.ps1 smoke_disabled_gen2_x4 4` | TS Disable Link → Detect → L0 |
 | Mem64 CQ↔CC | `.\scripts\sim_questa.ps1 smoke_tlp_cq_cc_mem64_gen2_x4 4` | Peer MemRd64 → CQ → CC CplD |

@@ -103,11 +103,12 @@ Under `rtl/pcie_ctrl/mac/` (names locked for follow-on slices):
 |------------------|----------------|
 | `rivet_ltssm` | State machine, timers, power/rate requests, link_up / cfg_ltssm_state |
 | `rivet_mac_os_tx` | Ordered-set / TS encoder → symbol stream to PIPE adapter |
-| `rivet_mac_os_rx` | Symbol stream → OS/TS detect, lane deskew hooks, error flags |
+| `rivet_mac_os_rx` | Symbol stream → OS/TS detect, Idle, DLLP/TLP unstripe, deskew hooks |
+| `rivet_mac_scrambler` / `_descrambler` | Per-lane Gen2 LFSR (K/TS bypass) |
+| `rivet_mac_lane_map` | Full reverse logical↔physical (optional Spec; product) |
 | `rivet_mac_pipe_adapter` | Pack/unpack `LANES` × `PIPE_DATA_WIDTH`; drive `rivet_pipe_if.mac` |
 | `rivet_dll_mac_if` (pkg or SV IF) | DLL ↔ MAC streams + **control sideband** (may live under `dll/`) |
-| (M2) `rivet_mac_scrambler` / `rivet_mac_descrambler` | Per-Lane LFSR, K/TS bypass ([§6.1](#61-scrambling-mac-owned-not-yet-implemented)) |
-| (M2) `rivet_mac_framer` / `rivet_mac_deframer` | STP/SDP/END/EDB + byte striping across Lanes |
+| (M2) `rivet_mac_framer` / `rivet_mac_deframer` | *(folded into os_tx/os_rx)* STP/SDP/END/EDB + striping |
 | (M2) `rivet_mac_skp` | *(folded into `rivet_mac_os_tx`)* L0 SKP interval |
 
 Keep Gen3+ block-framing and EQ **out** of Gen2 bodies; adapter may have dead ports.
@@ -221,16 +222,7 @@ look alike behave very differently today:
 |------|--------|
 | Partner is **wider** than us (×16 Root Port, `LANES=4` Endpoint) | **Works.** All four of our Lanes detect a Receiver and get numbered; narrowing 16 → 4 is the Downstream Port's job. Covered by the ×4 smoke. |
 | No Receiver on some Lanes at all | **Works.** Detect.Active's two-pass rule narrows `lane_en` to the Lanes that detected, and training continues on that subset. |
-| Partner **configures fewer Lanes than we have** (×4 Endpoint, Root Port offers ×2) | **Not yet.** The LTSSM climbs to Configuration.Linkwidth.Accept, times out after 24 ms and drops to Detect, forever. |
-
-The third case fails in two specific places, both in `rivet_ltssm`:
-
-1. `Configuration.Linkwidth.Start` clears `link_pad` for **every** Lane in
-   `lane_en` instead of narrowing `lane_en` to the Lanes that actually received a
-   non-PAD Link number. Lanes the partner left out must keep transmitting PAD.
-2. `Configuration.Linkwidth.Accept` waits for `ts1_lane_all_i`, so it requires a
-   non-PAD Lane number on *every* enabled Lane. The Lanes the partner left out
-   stay PAD, so the condition can never be satisfied.
+| Partner **configures fewer Lanes than we have** (×4 Endpoint, Root Port offers ×2 or ×1) | **Works.** Upstream narrows `lane_en` in Linkwidth.Start/Accept; unused Lanes go EI. `negotiated_width` and PCIe Cap Link Status NLW follow `lane_en`. |
 
 Reproduce with the smoke / UVM peer configured narrower than the DUT port:
 
@@ -240,11 +232,28 @@ Reproduce with the smoke / UVM peer configured narrower than the DUT port:
 # narrow — partner offers ×2 of DUT ×4 → L0 @ negotiated_width=2
 .\scripts\sim_ltssm_smoke.ps1 4 2
 .\scripts\sim_questa.ps1 smoke_linkwidth_peer_x2_dut_x4 4
+.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x1_dut_x4 4
 ```
 
 M3 (done): per-Lane shape flags from `os_rx`, Upstream Port `lane_en` narrowing
-in Linkwidth.Start / Accept, and peers that treat Idle / TS only on `peer_lanes`
+in Linkwidth.Start / Accept, peers that treat Idle / TS only on `peer_lanes`
 (unused DUT Lanes sit in EI after narrow). `negotiated_width` follows `lane_en`.
+Cfg Link Status NLW/CLS overlay from MAC trained width/speed.
+
+### 7.2 Lane reversal (optional Spec, product requirement)
+
+Full reverse of the enabled set only (`0..W-1` ↔ `W-1..0` on both TX and RX).
+Arbitrary permute is rejected (timeout → Detect). Upstream detects reverse Lane#
+from the Downstream peer, sets sticky `lane_reversed`, rewrites logical Lane# to
+sequential, and remaps MAC↔PIPE via `rivet_mac_lane_map`.
+
+```text
+.\scripts\sim_questa.ps1 smoke_link_reversed_x4 4
+.\scripts\sim_questa.ps1 smoke_link_reversed_x2 2
+```
+
+BFM ×1/×2 on PG239 PHY×4 + RP×N serial pads remains deferred; MAC/UVM is SoT
+for width and reversal.
 
 ---
 
@@ -304,11 +313,11 @@ Known simplifications, all revisited in M2–M4:
 | Scrambling | Not implemented at all — see [§6.1](#61-scrambling-mac-owned-not-yet-implemented); training is scramble-exempt, so this only shows up at Configuration.Idle against a real partner |
 | Idle detection | Counts consecutive non-K Symbol Times rather than descrambled `00h`, which is what lets the unscrambled smoke agree with itself |
 | Lane-to-lane deskew | `deskew_done` = every enabled Lane saw a TS in the same cycle; no per-lane skew correction |
-| Lane numbers | Sequential 0..n-1, no Lane reversal; Downstream Port assigns them when `MODE=RC/DSP` |
+| Lane numbers | Sequential 0..n-1 by default; **full lane reversal** (`0..W-1`↔`W-1..0`) supported on Upstream via `rivet_mac_lane_map` |
 | Dual-EP BFM | Fixed: board is EP+RC; Downstream offers Link# at Linkwidth.Start |
 | Recovery | Only `Recovery.RcvrLock` exists, and only so timeouts and RX errors cannot dead-end |
 | EIOS | 4 symbols (2.5 GT/s form); the 8-symbol 5.0 GT/s form lands with Recovery.Speed |
-| Multi-lane exits | Configuration substates use "all enabled Lanes" where the spec allows per-Lane "any", so a partner that configures fewer Lanes than our port width cannot train — see [§7.1](#71-negotiated-width-vs-port-width) |
+| Multi-lane exits | Narrow partner: Upstream shrinks `lane_en` (see [§7.1](#71-negotiated-width-vs-port-width)) |
 
 ### M2 — Physical Layer datapath, then DLL stubs at MAC boundary
 
@@ -326,6 +335,9 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 ### M3 — Lane grow
 
 - [x] Linkwidth / lanenum for ×2 then ×4 (`smoke_linkwidth_peer_x2_dut_x4`)
+- [x] Peer ×1 on DUT ×4 (`smoke_linkwidth_peer_x1_dut_x4`)
+- [x] Cfg Link Status NLW from trained `negotiated_width`
+- [x] Full lane reversal TX+RX (`smoke_link_reversed_x4`, `smoke_link_reversed_x2`)
 - [ ] Multi-lane packing tests
 
 ### M4 — Recovery / errors (still Gen2)

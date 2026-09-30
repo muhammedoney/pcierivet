@@ -19,6 +19,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            hot_reset_enable = 0;    // set TS training-control Hot Reset
   bit            disable_link_enable = 0; // set TS training-control Disable Link
   int unsigned   peer_lanes = 0;         // 0 = all DUT lanes; else narrower partner
+  bit            peer_lane_reverse = 0;  // assign Lane# W-1..0 on phys 0..W-1
   uvm_analysis_port #(rivet_dllp_item) dllp_ap;
 
   bit [31:0] tlp_memrd_addr = 32'h0000_0010;
@@ -62,8 +63,11 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(this, "", "disable_link_enable", disable_link_enable));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
     void'(uvm_config_db#(int unsigned)::get(this, "", "peer_lanes", peer_lanes));
+    void'(uvm_config_db#(bit)::get(this, "", "peer_lane_reverse", peer_lane_reverse));
     if (peer_lanes == 0 || peer_lanes > lanes)
       peer_lanes = lanes;
+    if (peer_lanes <= 1)
+      peer_lane_reverse = 1'b0;
     if (!enable) return;
     if (!uvm_config_db#(rivet_pipe_vif)::get(this, "", "vif", vif))
       `uvm_fatal(get_type_name(), "rivet_pipe_vif not set for LTSSM peer")
@@ -382,7 +386,11 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       if (peer_active) begin
         if (tlp_sending) begin
           for (l = 0; l < lanes; l++) begin
-            automatic logic [15:0] lfsr = peer_lfsr[l];
+            automatic int unsigned phys;
+            automatic logic [15:0] lfsr;
+            phys = (peer_lane_reverse && (l < peer_lanes))
+                 ? (peer_lanes - 1 - l) : l;
+            lfsr = peer_lfsr[phys];
             for (s = 0; s < 2; s++) begin
               automatic int unsigned stream_idx = tlp_sym + s * lanes + l;
               automatic int unsigned framed_len = tlp_nbytes + 2;
@@ -393,17 +401,21 @@ class rivet_pipe_ltssm_peer extends uvm_component;
                 tlp_sym9 = {1'b0, 8'h00};
               peer_tmp = tlp_sym9;
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
-              vif.rxdata[16*l + 8*s +: 8] <= peer_out;
-              vif.rxdatak[2*l + s]        <= peer_tmp[8];
+              vif.rxdata[16*phys + 8*s +: 8] <= peer_out;
+              vif.rxdatak[2*phys + s]        <= peer_tmp[8];
             end
-            peer_lfsr[l] = lfsr;
+            peer_lfsr[phys] = lfsr;
           end
           tlp_sym += lanes * 2;
           if (tlp_sym >= (tlp_nbytes + 2))
             tlp_sending = 1'b0;
         end else if (fc_sending) begin
           for (l = 0; l < lanes; l++) begin
-            automatic logic [15:0] lfsr = peer_lfsr[l];
+            automatic int unsigned phys;
+            automatic logic [15:0] lfsr;
+            phys = (peer_lane_reverse && (l < peer_lanes))
+                 ? (peer_lanes - 1 - l) : l;
+            lfsr = peer_lfsr[phys];
             for (s = 0; s < 2; s++) begin
               automatic int unsigned stream_idx = fc_sym + s * lanes + l;
               if (stream_idx < 8) begin
@@ -412,10 +424,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
               end else
                 peer_tmp = {1'b0, 8'h00};
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
-              vif.rxdata[16*l + 8*s +: 8] <= peer_out;
-              vif.rxdatak[2*l + s]        <= peer_tmp[8];
+              vif.rxdata[16*phys + 8*s +: 8] <= peer_out;
+              vif.rxdatak[2*phys + s]        <= peer_tmp[8];
             end
-            peer_lfsr[l] = lfsr;
+            peer_lfsr[phys] = lfsr;
           end
           fc_sym += lanes * 2;
           if (fc_sym >= 8) begin
@@ -432,10 +444,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         end else begin
           for (l = 0; l < lanes; l++) begin
             automatic logic [15:0] lfsr = peer_lfsr[l];
+            automatic logic [7:0]  lane_n;
+            lane_n = (peer_lane_reverse && (l < peer_lanes))
+                   ? 8'(peer_lanes - 1 - l) : 8'(l);
             for (s = 0; s < 2; s++) begin
               peer_tmp = send_os ? peer_sym(4'(peer_ptr + 5'(s)), send_ts2,
                                             send_link_pad || (l >= peer_lanes),
-                                            send_lane_pad || (l >= peer_lanes), 8'(l),
+                                            send_lane_pad || (l >= peer_lanes), lane_n,
                                             peer_rate_byte, peer_train_byte)
                                  : {1'b0, 8'h00};
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8],

@@ -142,6 +142,14 @@ module rivet_mac #(
   logic               accept_dll_tlp;
   logic [7:0]         remote_rate_id;
   logic [7:0]         remote_n_fts;
+  logic               lane_reversed;
+
+  logic [PIPE_DATA_WIDTH*LANES-1:0] map_tx_data;
+  logic [2*LANES-1:0]               map_tx_datak;
+  logic                             map_tx_valid;
+  logic [PIPE_DATA_WIDTH*LANES-1:0] map_rx_data;
+  logic [2*LANES-1:0]               map_rx_datak;
+  logic [LANES-1:0]                 map_rx_valid;
 
   rivet_ltssm #(
     .MODE               (MODE),
@@ -217,7 +225,8 @@ module rivet_mac #(
     .negotiated_speed_o   (negotiated_speed),
     .accept_dll_tlp_o     (accept_dll_tlp),
     .remote_rate_id_o     (remote_rate_id),
-    .remote_n_fts_o       (remote_n_fts)
+    .remote_n_fts_o       (remote_n_fts),
+    .lane_reversed_o      (lane_reversed)
   );
 
   rivet_mac_os_tx #(
@@ -264,15 +273,37 @@ module rivet_mac #(
     .valid_o   (scr_tx_valid)
   );
 
+  // Logical ↔ physical remap after reverse is adopted (TX after scramble, RX
+  // before descramble). Identity when lane_reversed=0.
+  rivet_mac_lane_map #(
+    .LANES           (LANES),
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+  ) u_lane_map (
+    .reverse_i  (lane_reversed),
+    .lane_en_i  (lane_en),
+    .tx_data_i  (scr_tx_data),
+    .tx_datak_i (scr_tx_datak),
+    .tx_valid_i (scr_tx_valid),
+    .tx_data_o  (map_tx_data),
+    .tx_datak_o (map_tx_datak),
+    .tx_valid_o (map_tx_valid),
+    .rx_data_i  (sym_rx_data_raw),
+    .rx_datak_i (sym_rx_datak_raw),
+    .rx_valid_i (sym_rx_valid_raw),
+    .rx_data_o  (map_rx_data),
+    .rx_datak_o (map_rx_datak),
+    .rx_valid_o (map_rx_valid)
+  );
+
   rivet_mac_descrambler #(
     .LANES           (LANES),
     .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
   ) u_descrambler (
     .pclk_i    (pclk_i),
     .rst_ni    (rst_ni),
-    .data_i    (sym_rx_data_raw),
-    .datak_i   (sym_rx_datak_raw),
-    .valid_i   (sym_rx_valid_raw),
+    .data_i    (map_rx_data),
+    .datak_i   (map_rx_datak),
+    .valid_i   (map_rx_valid),
     .lane_en_i (lane_en),
     .data_o    (sym_rx_data),
     .datak_o   (sym_rx_datak),
@@ -326,9 +357,9 @@ module rivet_mac #(
   ) u_pipe_adapter (
     .pclk_i                  (pclk_i),
     .rst_ni                  (rst_ni),
-    .sym_tx_data_i           (scr_tx_data),
-    .sym_tx_datak_i          (scr_tx_datak),
-    .sym_tx_valid_i          (scr_tx_valid),
+    .sym_tx_data_i           (map_tx_data),
+    .sym_tx_datak_i          (map_tx_datak),
+    .sym_tx_valid_i          (map_tx_valid),
     .txdetectrx_i            (txdetectrx),
     .txelecidle_i            (txelecidle),
     .rxpolarity_i            (rxpolarity),

@@ -16,6 +16,7 @@ flowchart TB
     TIMER["rivet_mac_timer"]
     OS_TX["rivet_mac_os_tx"]
     SCR["rivet_mac_scrambler"]
+    MAP["rivet_mac_lane_map"]
     DESC["rivet_mac_descrambler"]
     OS_RX["rivet_mac_os_rx"]
     ADAPT["rivet_mac_pipe_adapter"]
@@ -32,8 +33,8 @@ flowchart TB
   LTSSM -->|os_req, TS fields| OS_TX
   OS_TX -->|sent_cnt| LTSSM
   OS_RX -->|TS / Idle / deskew| LTSSM
-  OS_TX --> SCR --> ADAPT --> PIPE
-  PIPE --> ADAPT --> DESC --> OS_RX
+  OS_TX --> SCR --> MAP --> ADAPT --> PIPE
+  PIPE --> ADAPT --> MAP --> DESC --> OS_RX
   LTSSM <-->|cmd / status| ADAPT
 ```
 
@@ -45,6 +46,7 @@ rivet_mac
 │   └── rivet_mac_timer
 ├── rivet_mac_os_tx
 ├── rivet_mac_scrambler
+├── rivet_mac_lane_map
 ├── rivet_mac_descrambler
 ├── rivet_mac_os_rx
 └── rivet_mac_pipe_adapter
@@ -61,6 +63,7 @@ rivet_mac
 | `rivet_mac_os_rx` | Ordered-set / TS / Idle detect; SDP/STP → DLL RX; EDB → err |
 | `rivet_mac_scrambler` | Gen2 TX per-lane LFSR |
 | `rivet_mac_descrambler` | Gen2 RX per-lane LFSR |
+| `rivet_mac_lane_map` | Full reverse logical↔physical when `lane_reversed` |
 | `rivet_mac_pipe_adapter` | Symbol + LTSSM commands ↔ flat PIPE |
 
 DLL↔MAC types: [`../dll/rivet_dll_mac_if.sv`](../dll/rivet_dll_mac_if.sv).

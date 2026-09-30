@@ -54,6 +54,14 @@ class rivet_linkwidth_narrow_vseq extends uvm_sequence;
     if (status_vif.cfg_ltssm_state != 6'h10 || !status_vif.link_up)
       `uvm_fatal(get_type_name(), "Left L0 after narrow-width train")
 
+    // PCIe Cap Link Control/Status @0x80 → DW32: NLW in Link Status[9:4] = DW[25:20]
+    begin
+      rivet_cfg_mgmt_link_status_chk_seq cfg_nlw;
+      cfg_nlw = rivet_cfg_mgmt_link_status_chk_seq::type_id::create("cfg_nlw");
+      cfg_nlw.expect_nlw = expect_width;
+      cfg_nlw.start(p_sequencer.cfg_sqr);
+    end
+
     `uvm_info(get_type_name(),
               $sformatf("Link-width narrow OK: L0 @ width=%0d", expect_width),
               UVM_LOW)
