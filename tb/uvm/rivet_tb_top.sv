@@ -172,6 +172,7 @@ module rivet_tb_top;
 
   assign status_if.link_up         = link_up;
   assign status_if.cfg_ltssm_state = cfg_ltssm_state;
+  assign status_if.pipe_rate       = pipe_if.rate;
 
   initial begin
     uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent*", "vif", pipe_if);
