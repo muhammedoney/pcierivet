@@ -25,9 +25,10 @@ Soft Rivet RC is **not** used. Partner is the **PG213 RP BFM**:
   RP = xilinx_pcie4_uscale_rp (+ usrapp_*)     EP = rivet_pg213_ep_swap
         │                                            │
         │◄──────────── serial ×4 ───────────────────►│
-        │                                            │  rivet_pcie_ctrl ──PIPE── PG239
+        │                                            │  rivet_pcie_ctrl (GEN=2, SpeedChange=0)
+        │                                            │       ──PIPE── PG239
         │                                            │         ▲
-        │                                            │         └── CQ/CC + cfg_mgmt on user_clk (CDC); RQ/RC stub
+        │                                            │         └── CQ/CC/RQ/RC + cfg_mgmt (dual_app)
 ```
 
 Board module name is `board` and RP instance is `RP` (usrapp hierarchical refs).
@@ -82,7 +83,7 @@ EP dual-role app: `rtl/rivet_ep_dual_app.sv` (CQ/CC completer + RQ/RC bus-master
 
 ## Observed bring-up (Rivet DUT)
 
-L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO and Class C EP RQ MemWr. Class B prints `Class B WAIVE`; Class D prints PASS or WAIVE.
+L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (TS rate ID Gen1) so the Gen1-capped RP stays stable; negotiated Gen2 / Recovery.Speed remains a UVM gate (`smoke_recovery_speed_gen2_x4`). After `user_lnk_up` the board forces RP `cfg_ltssm_state` **0x0B → 0x10** once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO and Class C EP RQ MemWr. Class B prints `Class B WAIVE`; Class D prints PASS or WAIVE.
 
 ## Known gaps
 
@@ -91,7 +92,7 @@ L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `c
 | Class B multi-DW usrapp | Wire PG213 usrapp multi-DW stimulus; RTL window ready |
 | Class D RP host model | Optional hardening if MemRd path flakes |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
-| Recovery.Speed | Still Gen1-cap L0 for usrapp unblock pulse |
+| Negotiated Gen2 on serial | EP GEN=2 but `SPEED_CHANGE_EN=0` + RP max Gen1; enable Speed Change after PG239 rate-change bring-up |
 
 ## Layout
 

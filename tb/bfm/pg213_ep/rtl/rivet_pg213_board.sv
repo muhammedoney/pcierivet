@@ -104,7 +104,7 @@ module board;
 
   // Stock PG213 Root Port model — width matches Rivet EP (×4).
   xilinx_pcie4_uscale_rp #(
-    .PL_LINK_CAP_MAX_LINK_SPEED (1), // Gen1 (temporary bring-up)
+    .PL_LINK_CAP_MAX_LINK_SPEED (1), // Gen1 negotiated; EP ctrl is GEN=2 (Speed change = UVM)
     .PL_LINK_CAP_MAX_LINK_WIDTH (5'(LINK_WIDTH)),
     .PF0_DEV_CAP_MAX_PAYLOAD_SIZE (3'b011)
   ) RP (
@@ -255,16 +255,19 @@ module board;
     $finish;
   end
 
-  // PG213 usrapp Gen2 path waits Recovery (0x0B) then L0. Rivet stays L0
-  // without a speed-change Recovery, so pulse 0x0B once to unblock Type 0 Cfg.
+  // PG213 usrapp (LINK_CAP_MAX_LINK_SPEED>1 hardcoded) waits Recovery then L0
+  // before Type0 Cfg. Negotiated link is Gen1 (RP speed cap 1) so no natural
+  // Speed Recovery — synthesise 0x0B→0x10 without leaving RP stuck in Recovery.
   initial begin
     wait (RP.user_lnk_up === 1'b1);
     #10000;
     if (rp_ltssm == 6'h10) begin
-      $display("[%t] : unblock usrapp — pulse RP cfg_ltssm 0x0B (no Recovery)",
+      $display("[%t] : unblock usrapp — force RP cfg_ltssm 0x0B then 0x10",
                $realtime);
       force RP.pcie_4_0_rport.cfg_ltssm_state = 6'h0B;
-      #1000;
+      #2000;
+      force RP.pcie_4_0_rport.cfg_ltssm_state = 6'h10;
+      #2000;
       release RP.pcie_4_0_rport.cfg_ltssm_state;
     end
   end

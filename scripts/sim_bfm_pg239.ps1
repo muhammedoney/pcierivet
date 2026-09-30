@@ -238,6 +238,8 @@ function New-CompileDo {
       "rtl/pcie_ctrl/tl/rivet_tl_cc.sv",
       "rtl/pcie_ctrl/tl/rivet_tl_rq.sv",
       "rtl/pcie_ctrl/tl/rivet_tl_rc.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_msi.sv",
+      "rtl/pcie_ctrl/tl/rivet_tl_aer.sv",
       "rtl/pcie_ctrl/tl/rivet_tl_tx_mux.sv",
       "rtl/pcie_ctrl/tl/rivet_tl_pio_app.sv",
       "tb/bfm/pg213_ep/rtl/rivet_ep_dual_app.sv",

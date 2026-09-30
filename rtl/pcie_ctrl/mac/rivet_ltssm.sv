@@ -18,6 +18,8 @@
 module rivet_ltssm #(
   parameter int unsigned MODE  = 0,
   parameter int unsigned GEN   = 2,
+  // When 0: advertise Gen1 rate ID and never request Speed Change (PG213 BFM).
+  parameter bit          SPEED_CHANGE_EN = 1'b1,
   parameter int unsigned LANES = 1,
 
   parameter int unsigned T_DETECT_QUIET_CYC = rivet_pkg::RIVET_T_12MS_CYC,
@@ -198,7 +200,8 @@ module rivet_ltssm #(
 
   // Desire Gen1→Gen2 change when both advertise 5.0 GT/s and we are still Gen1.
   wire remote_gen2_ok = remote_rate_q[2];
-  wire want_speed_chg = (GEN >= 2) && (rate_q == RIVET_PIPE_RATE_GEN1) && remote_gen2_ok;
+  wire want_speed_chg = SPEED_CHANGE_EN && (GEN >= 2) &&
+                        (rate_q == RIVET_PIPE_RATE_GEN1) && remote_gen2_ok;
   wire in_rec_ts = (state_q == RIVET_LTSSM_RECOVERY_RCVRLOCK) ||
                    (state_q == RIVET_LTSSM_RECOVERY_RCVRCFG);
   wire mutual_speed_chg = want_speed_chg &&
@@ -726,7 +729,8 @@ module rivet_ltssm #(
   assign tx_link_pad_o   = link_pad_q;
   assign tx_lane_pad_o   = lane_pad_q;
   assign tx_n_fts_o      = N_FTS_ADV;
-  assign tx_rate_id_o    = ((GEN >= 2) ? RIVET_TS_RATE_GEN2 : RIVET_TS_RATE_GEN1)
+  assign tx_rate_id_o    = ((GEN >= 2 && SPEED_CHANGE_EN) ? RIVET_TS_RATE_GEN2
+                                                         : RIVET_TS_RATE_GEN1)
                            | ((want_speed_chg && in_rec_ts)
                               ? (8'h01 << RIVET_TS_RATE_SPEED_CHANGE_BIT) : 8'h00);
   // tx_train_ctrl_o driven in next-state comb (Hot Reset bit).

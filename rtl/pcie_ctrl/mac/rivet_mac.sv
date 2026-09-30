@@ -6,6 +6,7 @@
 module rivet_mac #(
   parameter int unsigned MODE            = 0,
   parameter int unsigned GEN             = 2,
+  parameter bit          SPEED_CHANGE_EN = 1'b1,
   parameter int unsigned LANES           = 1,
   parameter int unsigned PIPE_DATA_WIDTH = 16,
   // Simulation knobs: divide every LTSSM timeout and shrink the Polling.Active
@@ -145,6 +146,7 @@ module rivet_mac #(
   rivet_ltssm #(
     .MODE               (MODE),
     .GEN                (GEN),
+    .SPEED_CHANGE_EN    (SPEED_CHANGE_EN),
     .LANES              (LANES),
     .T_DETECT_QUIET_CYC (rivet_scale_cyc(RIVET_T_12MS_CYC, LTSSM_TIMER_SCALE)),
     .T_DETECT_RETRY_CYC (rivet_scale_cyc(RIVET_T_12MS_CYC, LTSSM_TIMER_SCALE)),
