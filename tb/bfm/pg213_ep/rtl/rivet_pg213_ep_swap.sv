@@ -1,12 +1,10 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Drop-in *intent* for xilinx_pcie4_uscale_ep: serial EP = rivet_pcie_ctrl + PG239.
-// Pin list matches the Vivado example EP so board.v can swap instances later.
-//
-// STATUS: structural WIP. PIO / cfg_mgmt / full PG213 companion ports are not
-// fully mirrored yet. Do not expect stock PIO tests to PASS until LTSSM+TL work.
-// See tb/bfm/pg213_ep/README.md.
+// Pin-compatible swap for xilinx_pcie4_uscale_ep: serial EP = rivet_pcie_ctrl + PG239.
+// Used by rivet_pg213_board (PG213 RP + usrapp Class A/C/D).
+// GEN=2 soft ctrl; Speed Change off so TS advertises Gen1 toward Gen1-capped RP
+// (negotiated Gen2 Speed = UVM smoke_recovery_speed_gen2_x4).
 
 `timescale 1ps/1ps
 
@@ -49,11 +47,12 @@ module rivet_pg213_ep_swap #(
   logic        link_up;
   logic [5:0]  cfg_ltssm_state;
 
-  // Temporary: advertise Gen1 only toward PG213 RP (TS rate ID + RP max speed).
+  // Gen2 soft ctrl; Speed Change disabled for PG213 RP Gen1-negotiated BFM.
   rivet_pg239_ep #(
-    .MODE  (0),
-    .GEN   (1),
-    .LANES (PL_LINK_CAP_MAX_LINK_WIDTH)
+    .MODE            (0),
+    .GEN             (2),
+    .SPEED_CHANGE_EN (1'b0),
+    .LANES           (PL_LINK_CAP_MAX_LINK_WIDTH)
   ) u_rivet_ep (
     .sys_clk_p       (sys_clk_p),
     .sys_clk_n       (sys_clk_n),

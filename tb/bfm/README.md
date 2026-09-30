@@ -15,7 +15,7 @@ Complementary to UVM / Verilator. Example `board.v` / IP trees sit under `third_
 2. **PG239 + Rivet ctrl** — EP + RC shells; dual `link_up` @ ×4 (**PASS** — Stage 2).
 3. **PG213 stock** — RP model ↔ Xilinx EP + PIO.
 4. **PG213 EP swap** — Class A+C PASS; Class B WAIVE; Class D PASS/WAIVE ([pg213_ep](pg213_ep/README.md)).
-5. **System** — Xilinx RP PG213 ↔ Rivet+PG239 (later).
+5. **System** — Xilinx RP PG213 + usrapp ↔ Rivet+PG239 (**PASS** Class A+C via `sim_bfm_pg213.ps1 -Dut rivet`; GEN=2 ctrl, Speed Change off for Gen1-negotiated serial).
 6. **FPGA lab** — VCU118 board bring-up (**backlogged** until hardware available).
 
 ### MVP checklist (sim)

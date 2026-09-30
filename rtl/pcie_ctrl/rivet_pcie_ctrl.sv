@@ -8,6 +8,7 @@
 module rivet_pcie_ctrl #(
   parameter int unsigned MODE            = 0,  // rivet_pkg::RIVET_MODE_EP
   parameter int unsigned GEN             = 2,
+  parameter bit          SPEED_CHANGE_EN = 1'b1,
   parameter int unsigned LANES           = 1,
   parameter int unsigned AXI_DATA_WIDTH  = 64,
   parameter int unsigned AXI_KEEP_WIDTH  = AXI_DATA_WIDTH / 32,
@@ -989,6 +990,7 @@ module rivet_pcie_ctrl #(
   rivet_mac #(
     .MODE              (MODE),
     .GEN               (GEN),
+    .SPEED_CHANGE_EN   (SPEED_CHANGE_EN),
     .LANES             (LANES),
     .PIPE_DATA_WIDTH   (PIPE_DATA_WIDTH),
     .LTSSM_TIMER_SCALE (LTSSM_TIMER_SCALE),

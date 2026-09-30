@@ -14,9 +14,9 @@ Later stages (not this README):
 | Stage | What |
 |-------|------|
 | **1** | PG239 + `phy_ctrl` pattern ↔ PHY model (**PASS**) |
-| **2 (current)** | EP + RC Rivet shells on PIPE (`-Dut rivet`) — Downstream Config offers Link# |
+| **2** | EP + RC Rivet shells on PIPE (`-Dut rivet`) — Downstream Config offers Link# |
 | **3** | PG213 EP example → swap EP for Rivet+PG239 — [pg213_ep](../pg213_ep/README.md) |
-| **4** | PG213 RP ↔ Rivet+PG239 (system-level) |
+| **4** | PG213 RP + usrapp ↔ Rivet+PG239 (**PASS** Class A+C; see pg213_ep) |
 
 **Stage 2 note:** EP+RC shells; Downstream Config offers Link#. Dual `link_up` @ Gen2 ×4 is a **PASS** gate (`Test Completed Successfully (Rivet+PG239 link_up)`). Compile filelist includes CDC + full TL (keep in sync with `sim_bfm_pg213.ps1`).
 
