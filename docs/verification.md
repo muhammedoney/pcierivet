@@ -58,6 +58,12 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 |------|---------|-------|
 | Recovery → L0 | `.\scripts\sim_questa.ps1 smoke_recovery_l0_gen2_x4 4` | RcvrLock/Cfg/Idle (no Speed) |
 | Recovery.Speed | `.\scripts\sim_questa.ps1 smoke_recovery_speed_gen2_x4 4` | Gen1→Gen2 via mutual TS bit 7 |
+| Recovery.Speed downshift | `.\scripts\sim_questa.ps1 smoke_recovery_downshift_gen2_x4 4` | Gen1→Gen2, then second Recovery (peer bit 7) → L0 @ Gen1 |
+| ASPM Tx_L0s | `.\scripts\sim_questa.ps1 smoke_aspm_l0s_gen2_x4 4` | Forced `aspm_l0s_req`: L0 → `0x15` (EI, P0s) → FTS → L0 |
+| ASPM L1 | `.\scripts\sim_questa.ps1 smoke_aspm_l1_gen2_x4 4` | Forced `aspm_l1_req`: L0 → `0x17` → `0x18` (P1) → Detect → L0 |
+| RxStatus error | `.\scripts\sim_questa.ps1 smoke_rxstatus_err_gen2_x4 4` | Peer RxStatus `3'b100` with RxValid high → Recovery → L0 |
+| RQ MemWr ×2 | `.\scripts\sim_questa.ps1 smoke_tlp_rq_memwr_gen2_x2 2` | `RIVET_TB_LANES=2` |
+| CQ↔CC ×2 | `.\scripts\sim_questa.ps1 smoke_tlp_cq_cc_gen2_x2 2` | `RIVET_TB_LANES=2` |
 | M3 link-width ×2 | `.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x2_dut_x4 4` | Peer ×2 vs DUT ×4 → L0 @ width=2 + NLW |
 | M3 link-width ×1 | `.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x1_dut_x4 4` | Peer ×1 vs DUT ×4 → L0 @ width=1 + NLW |
 | M3 lane reverse ×4 | `.\scripts\sim_questa.ps1 smoke_link_reversed_x4 4` | Peer Lane# 3..0 → L0 @ width=4 + NLW |
@@ -69,6 +75,8 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | MSI-X | `.\scripts\sim_questa.ps1 smoke_msix_gen2_x4 4` | External-table `cfg_interrupt_msix_*` |
 | AER | `.\scripts\sim_questa.ps1 smoke_aer_gen2_x4 4` | `cfg_err_*` → outs + Device Status sticky |
 | Companion | `.\scripts\sim_questa.ps1 smoke_companion_gen2_x4 4` | CQ NP + RQ tag/seq + `pcie_tfc_*` |
+
+ASPM requests are tied to 0 in `rivet_mac`; the ASPM smokes drive `rivet_link_status_if.aspm_l0s_req` / `aspm_l1_req`, and `rivet_tb_top` `force`s them onto `dut.u_mac.aspm_*_req`.
 
 Phase 2 Full Gen2 EP (sim) **closed** when the table above is green @ ×4.
 

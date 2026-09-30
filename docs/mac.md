@@ -60,13 +60,14 @@ Use these **exact** values in `rivet_pkg` / `rivet_ltssm` so status ports and UV
 | `6'h09` | Configuration.Complete | **Yes** |
 | `6'h0A` | Configuration.Idle | **Yes** |
 | `6'h0B` | Recovery.RcvrLock | **Yes** (after L0 errors / speed change) |
-| `6'h0C` | Recovery.Speed | **Yes** (Gen1→Gen2; mutual TS bit 7) |
+| `6'h0C` | Recovery.Speed | **Yes** (Gen1→Gen2 and Gen2→Gen1; mutual TS bit 7) |
 | `6'h0D` | Recovery.RcvrCfg | **Yes** |
 | `6'h0E` | Recovery.Idle | **Yes** |
 | `6'h10` | **L0** | **Yes — success gate** |
-| `6'h11`–`6'h16` | (reserved / other in PG213 tables) | Ignore until needed |
-| `6'h17` | L1.Entry | Later |
-| `6'h18` | L1.Idle | Later |
+| `6'h11`–`6'h14`, `6'h16` | (reserved / other in PG213 tables) | Ignore until needed |
+| `6'h15` | Tx_L0s | **Minimal** (see [§2.1](#21-minimal-aspm-and-speed-downshift)) |
+| `6'h17` | L1.Entry | **Minimal** |
+| `6'h18` | L1.Idle | **Minimal** |
 | `6'h20` | Disabled | **Yes** (TS Disable Link → Detect) |
 | `6'h21`–`6'h26` | Loopback.* | Later |
 | `6'h27` | Hot_Reset | **Yes** (TS Hot Reset → Detect) |
@@ -80,6 +81,28 @@ Primary EP training ladder for smoke:
 Detect.Quiet → Detect.Active → Polling.Active → Polling.Configuration
   → Configuration.Linkwidth.* → Lanenum.* → Complete → Idle → L0
 ```
+
+### 2.1 Minimal ASPM and speed downshift
+
+**Recovery.Speed downshift.** `rivet_ltssm` enters `Recovery.Speed` from `Recovery.RcvrCfg` when
+both sides set TS rate-ID bit 7 and either `want_speed_chg` (rate Gen1, partner Gen2-capable) or
+`want_downshift` (`SPEED_CHANGE_EN`, rate Gen2, partner still Gen2-capable). `Recovery.Speed`
+sets PIPE `Rate` to Gen1 when running at Gen2, else Gen2. The TS speed-change bit is sent for both
+directions; at most one speed change per Recovery visit (`speed_chg_done`, cleared in L0 / Detect)
+so a peer that always sets bit 7 cannot bounce the rate.
+
+**Minimal ASPM (directed).** Inputs `aspm_l0s_req_i` / `aspm_l1_req_i` are level requests, tied to 0
+in `rivet_mac`. No ASPM capability / Link Control register policy, no latency accounting.
+
+| From | Condition | Sequence |
+|------|-----------|----------|
+| L0 | `aspm_l1_req` (priority) | EIOS → `L1.Entry` (`0x17`) → `L1.Idle` (`0x18`, EI, P1) |
+| L0 | `aspm_l0s_req` | `Tx_L0s` (`0x15`): EIOS → EI, `powerdown=P0s` |
+| `Tx_L0s` | `!aspm_l0s_req` | N_FTS FTS (partner N_FTS, min 4) → L0 |
+| `L1.Idle` | `!aspm_l1_req` | `Detect.Quiet` (full retrain, not `Recovery`) |
+
+RX errors / `RxValid` loss are not monitored inside `Tx_L0s` / L1. The UVM peer keeps its trained
+state while the DUT is in P0s and restarts training on any other full-EI.
 
 Reference behavior (do **not** copy code): [ref-pcievhost.md](ref-pcievhost.md) (GPL-3 VIP). Structure names only: [ref-pci-express-gen7.md](ref-pci-express-gen7.md).
 
@@ -345,8 +368,10 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 - [x] Recovery.RcvrLock → RcvrCfg → Idle → L0 (UVM `smoke_recovery_l0_gen2_x4`)
 - [x] **Recovery.Speed** Gen1→Gen2 (EIOS + PIPE Rate + PhyStatus; UVM `smoke_recovery_speed_gen2_x4`)
 - [x] Hot Reset / Disabled (UVM `smoke_hot_reset_gen2_x4`, `smoke_disabled_gen2_x4`)
+- [x] RxStatus error → Recovery (UVM `smoke_rxstatus_err_gen2_x4`: peer injects `3'b100` with RxValid high)
 - [ ] RxValid loss / RxStatus overflow stress beyond directed smoke
-- [ ] Gen2→Gen1 downshift (optional)
+- [x] Gen2→Gen1 downshift (UVM `smoke_recovery_downshift_gen2_x4`)
+- [x] Minimal ASPM Tx_L0s / L1 (UVM `smoke_aspm_l0s_gen2_x4`, `smoke_aspm_l1_gen2_x4`; forced requests)
 
 ### Later phases
 

@@ -79,21 +79,21 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 | Class | Meaning | Status |
 |-------|---------|--------|
 | A | RP Cfg + BAR0 MemWr/Rd 1 DW | PASS |
-| B | Multi-DW BAR0 PIO | **WAIVE** — usrapp 1DW-only; MAC TLP buf=160 + multi-DW PIO ready; UVM CQ/CC @×4 is MVP gate |
+| B | Multi-DW BAR0 PIO | **PASS** via board CQ inject (usrapp 1DW-only; UVM CQ/CC still primary) |
 | C | EP BME MemWr on RQ | PASS (wire accept) |
 | D | EP BME MemRd + RP CplD (DATA_STORE) | PASS when host preload matches |
 | E | EP MemWr+MemRd app score vs RP DATA_STORE | PASS |
 
-Lane matrix (`-Lanes 1|2|4`): RP `PL_LINK_CAP_MAX_LINK_WIDTH` + serial pairs; EP+PG239 PHY stays ×4
-and negotiates down when possible. **Gen1 ×4 Class A+C+E is the BFM app gate.** Gen1 ×1/×2 on this
-serial pad currently times out in Config (RP stays Polling); use UVM
-`smoke_gen2_x1` / `smoke_linkwidth_peer_x2_dut_x4` for width. Gen1-only (`RP` speed cap 1, EP `SPEED_CHANGE_EN=0`).
+Lane matrix (`-Lanes 1|2|4`): RP `PL_LINK_CAP_MAX_LINK_WIDTH` + serial pairs; EP+PG239 PHY stays ×4.
+Unused EP RX lanes are held in Electrical Idle (no Receiver) so Detect narrows to
+`LINK_WIDTH`. After L0 the board checks `negotiated_width` and cfg Link Status **NLW**.
+**Gen1 ×4 Class A+B+C+E is the BFM app gate.** Gen1-only (`RP` speed cap 1, EP `SPEED_CHANGE_EN=0`).
 
-| Lanes | Gen1 link + Class A+C+E (Questa BFM) |
+| Lanes | Gen1 link + Class A+B+C+E (Questa BFM) |
 |-------|--------------------------------------|
-| ×4    | **PASS** |
-| ×2    | Config timeout (UVM width gate) |
-| ×1    | Config timeout (UVM width gate) |
+| ×4    | **PASS** (primary) — NLW + Class A+B+C+E |
+| ×2    | TIMEOUT (RP×N vs PHY×4; UVM width SoT) |
+| ×1    | TIMEOUT (RP×N vs PHY×4; UVM width SoT) |
 
 EP dual-role app: `rtl/rivet_ep_dual_app.sv` (CQ/CC completer + RQ/RC bus-master).
 
@@ -105,10 +105,10 @@ L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (
 
 | Gap | Notes |
 |-----|--------|
-| Class B multi-DW usrapp | Wire PG213 usrapp multi-DW stimulus; RTL window ready |
+| Class B multi-DW usrapp | Board CQ inject proves completer; usrapp remains 1DW |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 | Negotiated Gen2 on serial | EP GEN=2 but `SPEED_CHANGE_EN=0` + RP max Gen1; enable Speed Change after PG239 rate-change bring-up |
-| BFM Gen1 ×1/×2 train | RP×N + EP PHY×4 pad times out in Config; UVM covers width |
+| BFM Gen1 ×1/×2 train | EI pad tried; EP can reach L0 but RP×N + PHY×4 still fails `user_lnk_up` — UVM remains SoT for width |
 
 ## Layout
 

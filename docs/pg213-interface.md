@@ -86,7 +86,8 @@ These are dedicated handshakes/status ports, not substitutes for `cfg_mgmt`.
 - `cfg_pm_aspm_l1_entry_reject`
 - `cfg_pm_aspm_tx_l0s_entry_disable`
 
-Status: missing; defer until ASPM is implemented.
+Status: missing (PG213 cfg ports). Minimal directed ASPM L0s/L1 exists in
+`rivet_ltssm` (`aspm_*_req`, UVM force); these cfg controls remain deferred.
 
 ### Configuration management (Table 26)
 

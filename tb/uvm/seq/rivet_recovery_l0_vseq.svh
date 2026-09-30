@@ -9,6 +9,9 @@ class rivet_recovery_l0_vseq extends uvm_sequence;
   int unsigned watchdog_cycles = 200_000;
   int unsigned hold_l0_cycles  = 400;
   int unsigned recovery_watch  = 120_000;
+  // 0: trigger via RxValid drop (peer_recovery_go); 1: peer RxStatus error
+  // inject with RxValid held high (peer_rxstatus_err_go).
+  bit          rxstatus_err    = 0;
 
   rivet_link_status_vif status_vif;
 
@@ -46,8 +49,13 @@ class rivet_recovery_l0_vseq extends uvm_sequence;
 
     repeat (hold_l0_cycles) @(posedge status_vif.pclk);
 
-    uvm_config_db#(bit)::set(null, "*", "peer_recovery_fired", 1'b0);
-    uvm_config_db#(bit)::set(null, "*", "peer_recovery_go", 1'b1);
+    if (rxstatus_err) begin
+      uvm_config_db#(bit)::set(null, "*", "peer_rxstatus_err_fired", 1'b0);
+      uvm_config_db#(bit)::set(null, "*", "peer_rxstatus_err_go", 1'b1);
+    end else begin
+      uvm_config_db#(bit)::set(null, "*", "peer_recovery_fired", 1'b0);
+      uvm_config_db#(bit)::set(null, "*", "peer_recovery_go", 1'b1);
+    end
 
     saw_rlock = 1'b0;
     back_l0   = 1'b0;
@@ -68,9 +76,13 @@ class rivet_recovery_l0_vseq extends uvm_sequence;
         `uvm_fatal(get_type_name(), "Recovery timed out to Detect.Quiet")
     end
 
-    void'(uvm_config_db#(bit)::get(null, "*", "peer_recovery_fired", fired));
+    if (rxstatus_err)
+      void'(uvm_config_db#(bit)::get(null, "*", "peer_rxstatus_err_fired", fired));
+    else
+      void'(uvm_config_db#(bit)::get(null, "*", "peer_recovery_fired", fired));
     if (!fired)
-      `uvm_fatal(get_type_name(), "Peer did not pulse RxValid drop")
+      `uvm_fatal(get_type_name(), rxstatus_err ? "Peer did not inject RxStatus error"
+                                               : "Peer did not pulse RxValid drop")
     if (!saw_rlock)
       `uvm_fatal(get_type_name(), "Did not enter Recovery.RcvrLock")
     if (!back_l0)
