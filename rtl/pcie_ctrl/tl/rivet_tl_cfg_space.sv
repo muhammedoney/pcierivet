@@ -34,6 +34,15 @@ module rivet_tl_cfg_space (
   output logic        bar0_mem_en_o,
   output logic        bus_master_en_o,
 
+  // MSI capability snapshot
+  output logic        msi_enable_o,
+  output logic [31:0] msi_addr_o,
+  output logic [15:0] msi_data_o,
+
+  // AER sticky inject into Device Status
+  input  logic        aer_set_cor_i,
+  input  logic        aer_set_nonfatal_i,
+
   // Link Status inject (negotiated)
   input  logic        link_up_i,
   input  logic [3:0]  link_speed_i,
@@ -73,10 +82,11 @@ module rivet_tl_cfg_space (
               return 32'hFFFF_FFFF; // sized via bar_mask
       10'd15: return 32'h0000_00FF; // Interrupt Line
       10'd17: return 32'h0000_0003; // PMCSR power state (D0 only sticky)
-      10'd21: return 32'h00FF_FFFF; // MSI Message Control low fields + addr lo
+      10'd20: return 32'h0071_0000; // MSI MsgCtrl: Enable + MME (CapID/Next RO)
+      10'd21: return 32'hFFFF_FFFC; // MSI Message Address (dword aligned)
       10'd22: return 32'hFFFF_FFFF; // MSI addr hi
       10'd23: return 32'h0000_FFFF; // MSI data
-      10'd30: return 32'h0000_7FFF; // Device Control
+      10'd30: return 32'h0000_7FFF; // Device Control (Status W1C overlay)
       10'd32: return 32'h0000_FFFF; // Link Control (Status is RO overlay)
       default: return 32'h0;
     endcase
@@ -120,6 +130,10 @@ module rivet_tl_cfg_space (
       // Force D0
       masked[1:0] = 2'b00;
     end
+    if (dw == 10'd30) begin
+      // Device Status [19:16] W1C; preserve upper sticky RO overlay bits
+      masked[31:16] = cur[31:16] & ~(merged[31:16] & 16'h000F);
+    end
     return masked;
   endfunction
 
@@ -160,6 +174,9 @@ module rivet_tl_cfg_space (
   assign bar0_mask_o     = RIVET_CFG_BAR0_MASK;
   assign bar0_mem_en_o   = mem_q[1][1]; // Command.Memory Space Enable
   assign bus_master_en_o = mem_q[1][2]; // Command.Bus Master Enable
+  assign msi_enable_o    = mem_q[20][16]; // Message Control.MSI Enable
+  assign msi_addr_o      = mem_q[21];
+  assign msi_data_o      = mem_q[23][15:0];
 
   // Live Link Status overlay on DW32
   logic [31:0] link_status_overlay;
@@ -229,6 +246,12 @@ module rivet_tl_cfg_space (
     end else begin
       fab_ack_q   <= 1'b0;
       mgmt_done_q <= 1'b0;
+
+      // AER → Device Status sticky (Correctable / NonFatal Detected)
+      if (aer_set_cor_i)
+        mem_q[30][16] <= 1'b1;
+      if (aer_set_nonfatal_i)
+        mem_q[30][17] <= 1'b1;
 
       // Capture cfg_mgmt pulse; hold while fabric owns the file
       if (mgmt_pulse && !mgmt_pend_q) begin

@@ -25,6 +25,8 @@ rtl/pcie_ctrl/tl/rivet_tl_cq.sv
 rtl/pcie_ctrl/tl/rivet_tl_cc.sv
 rtl/pcie_ctrl/tl/rivet_tl_rq.sv
 rtl/pcie_ctrl/tl/rivet_tl_rc.sv
+rtl/pcie_ctrl/tl/rivet_tl_msi.sv
+rtl/pcie_ctrl/tl/rivet_tl_aer.sv
 rtl/pcie_ctrl/tl/rivet_tl_tx_mux.sv
 rtl/pcie_ctrl/tl/rivet_tl_pio_app.sv
 rtl/pcie_ctrl/mac/rivet_mac_timer.sv

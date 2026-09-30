@@ -59,8 +59,18 @@ module rivet_tb_top;
     rc_if (.aclk(user_clk), .aresetn(user_resetn));
   rivet_cfg_mgmt_if cfg_if (.aclk(user_clk), .aresetn(user_resetn));
   rivet_companion_if comp_if (.aclk(user_clk), .aresetn(user_resetn));
+  rivet_interrupt_if intr_if (.aclk(user_clk), .aresetn(user_resetn));
 
   // cq_np_req driven by companion_agent (defaults to 2'b01 in driver).
+
+  initial begin
+    intr_if.msi_int       = '0;
+    intr_if.msix_address  = '0;
+    intr_if.msix_data     = '0;
+    intr_if.msix_int      = 1'b0;
+    intr_if.err_cor_in    = 1'b0;
+    intr_if.err_uncor_in  = 1'b0;
+  end
 
   rivet_pcie_ctrl #(
     .MODE(0),
@@ -125,6 +135,21 @@ module rivet_tb_top;
     .cfg_mgmt_read_data(cfg_if.read_data),
     .cfg_mgmt_read_write_done(cfg_if.read_write_done),
     .cfg_mgmt_debug_access(cfg_if.debug_access),
+    .cfg_interrupt_msi_int(intr_if.msi_int),
+    .cfg_interrupt_msi_enable(intr_if.msi_enable),
+    .cfg_interrupt_msi_sent(intr_if.msi_sent),
+    .cfg_interrupt_msi_fail(intr_if.msi_fail),
+    .cfg_interrupt_msix_address(intr_if.msix_address),
+    .cfg_interrupt_msix_data(intr_if.msix_data),
+    .cfg_interrupt_msix_int(intr_if.msix_int),
+    .cfg_interrupt_msix_enable(intr_if.msix_enable),
+    .cfg_interrupt_msix_sent(intr_if.msix_sent),
+    .cfg_interrupt_msix_fail(intr_if.msix_fail),
+    .cfg_err_cor_in(intr_if.err_cor_in),
+    .cfg_err_uncor_in(intr_if.err_uncor_in),
+    .cfg_err_cor_out(intr_if.err_cor_out),
+    .cfg_err_nonfatal_out(intr_if.err_nonfatal_out),
+    .cfg_err_fatal_out(intr_if.err_fatal_out),
     .pipe_txdata(pipe_if.txdata),
     .pipe_txdatak(pipe_if.txdatak),
     .pipe_txdata_valid(pipe_if.txdata_valid),
@@ -194,6 +219,8 @@ module rivet_tb_top;
     uvm_config_db#(rivet_axi_st_vif)::set(null, "uvm_test_top.env.rc_agent*", "vif", rc_if);
     uvm_config_db#(rivet_cfg_mgmt_vif)::set(null, "uvm_test_top.env.cfg_agent*", "vif", cfg_if);
     uvm_config_db#(rivet_companion_vif)::set(null, "uvm_test_top.env.companion_agent*", "vif", comp_if);
+    uvm_config_db#(rivet_companion_vif)::set(null, "uvm_test_top", "comp_vif", comp_if);
+    uvm_config_db#(virtual rivet_interrupt_if)::set(null, "uvm_test_top", "intr_vif", intr_if);
     uvm_config_db#(int unsigned)::set(null, "*", "lanes", LANES);
     run_test();
   end

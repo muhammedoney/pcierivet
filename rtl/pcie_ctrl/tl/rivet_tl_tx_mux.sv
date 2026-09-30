@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Mux TL→DLL TX from fabric Cfg, CC, and RQ (priority Cfg > CC > RQ).
+// Mux TL→DLL TX: priority Cfg > MSI > CC > RQ.
 
 module rivet_tl_tx_mux (
   input  logic        clk_i,
@@ -12,6 +12,12 @@ module rivet_tl_tx_mux (
   input  logic        cfg_tlast_i,
   input  logic        cfg_tvalid_i,
   output logic        cfg_tready_o,
+
+  input  logic [63:0] msi_tdata_i,
+  input  logic [7:0]  msi_tkeep_i,
+  input  logic        msi_tlast_i,
+  input  logic        msi_tvalid_i,
+  output logic        msi_tready_o,
 
   input  logic [63:0] cc_tdata_i,
   input  logic [7:0]  cc_tkeep_i,
@@ -32,11 +38,12 @@ module rivet_tl_tx_mux (
   input  logic        m_tready_i
 );
 
-  typedef enum logic [1:0] {
-    ST_IDLE = 2'd0,
-    ST_CFG  = 2'd1,
-    ST_CC   = 2'd2,
-    ST_RQ   = 2'd3
+  typedef enum logic [2:0] {
+    ST_IDLE = 3'd0,
+    ST_CFG  = 3'd1,
+    ST_MSI  = 3'd2,
+    ST_CC   = 3'd3,
+    ST_RQ   = 3'd4
   } st_e;
 
   st_e st_q;
@@ -47,50 +54,40 @@ module rivet_tl_tx_mux (
     m_tlast_o    = 1'b0;
     m_tvalid_o   = 1'b0;
     cfg_tready_o = 1'b0;
+    msi_tready_o = 1'b0;
     cc_tready_o  = 1'b0;
     rq_tready_o  = 1'b0;
     unique case (st_q)
       ST_IDLE: begin
         if (cfg_tvalid_i) begin
-          m_tdata_o    = cfg_tdata_i;
-          m_tkeep_o    = cfg_tkeep_i;
-          m_tlast_o    = cfg_tlast_i;
-          m_tvalid_o   = 1'b1;
-          cfg_tready_o = m_tready_i;
+          m_tdata_o = cfg_tdata_i; m_tkeep_o = cfg_tkeep_i;
+          m_tlast_o = cfg_tlast_i; m_tvalid_o = 1'b1; cfg_tready_o = m_tready_i;
+        end else if (msi_tvalid_i) begin
+          m_tdata_o = msi_tdata_i; m_tkeep_o = msi_tkeep_i;
+          m_tlast_o = msi_tlast_i; m_tvalid_o = 1'b1; msi_tready_o = m_tready_i;
         end else if (cc_tvalid_i) begin
-          m_tdata_o   = cc_tdata_i;
-          m_tkeep_o   = cc_tkeep_i;
-          m_tlast_o   = cc_tlast_i;
-          m_tvalid_o  = 1'b1;
-          cc_tready_o = m_tready_i;
+          m_tdata_o = cc_tdata_i; m_tkeep_o = cc_tkeep_i;
+          m_tlast_o = cc_tlast_i; m_tvalid_o = 1'b1; cc_tready_o = m_tready_i;
         end else if (rq_tvalid_i) begin
-          m_tdata_o   = rq_tdata_i;
-          m_tkeep_o   = rq_tkeep_i;
-          m_tlast_o   = rq_tlast_i;
-          m_tvalid_o  = 1'b1;
-          rq_tready_o = m_tready_i;
+          m_tdata_o = rq_tdata_i; m_tkeep_o = rq_tkeep_i;
+          m_tlast_o = rq_tlast_i; m_tvalid_o = 1'b1; rq_tready_o = m_tready_i;
         end
       end
       ST_CFG: begin
-        m_tdata_o    = cfg_tdata_i;
-        m_tkeep_o    = cfg_tkeep_i;
-        m_tlast_o    = cfg_tlast_i;
-        m_tvalid_o   = cfg_tvalid_i;
-        cfg_tready_o = m_tready_i;
+        m_tdata_o = cfg_tdata_i; m_tkeep_o = cfg_tkeep_i;
+        m_tlast_o = cfg_tlast_i; m_tvalid_o = cfg_tvalid_i; cfg_tready_o = m_tready_i;
+      end
+      ST_MSI: begin
+        m_tdata_o = msi_tdata_i; m_tkeep_o = msi_tkeep_i;
+        m_tlast_o = msi_tlast_i; m_tvalid_o = msi_tvalid_i; msi_tready_o = m_tready_i;
       end
       ST_CC: begin
-        m_tdata_o   = cc_tdata_i;
-        m_tkeep_o   = cc_tkeep_i;
-        m_tlast_o   = cc_tlast_i;
-        m_tvalid_o  = cc_tvalid_i;
-        cc_tready_o = m_tready_i;
+        m_tdata_o = cc_tdata_i; m_tkeep_o = cc_tkeep_i;
+        m_tlast_o = cc_tlast_i; m_tvalid_o = cc_tvalid_i; cc_tready_o = m_tready_i;
       end
       ST_RQ: begin
-        m_tdata_o   = rq_tdata_i;
-        m_tkeep_o   = rq_tkeep_i;
-        m_tlast_o   = rq_tlast_i;
-        m_tvalid_o  = rq_tvalid_i;
-        rq_tready_o = m_tready_i;
+        m_tdata_o = rq_tdata_i; m_tkeep_o = rq_tkeep_i;
+        m_tlast_o = rq_tlast_i; m_tvalid_o = rq_tvalid_i; rq_tready_o = m_tready_i;
       end
       default: ;
     endcase
@@ -103,11 +100,15 @@ module rivet_tl_tx_mux (
       unique case (st_q)
         ST_IDLE: begin
           if (cfg_tvalid_i && !cfg_tlast_i) st_q <= ST_CFG;
-          else if (!cfg_tvalid_i && cc_tvalid_i && !cc_tlast_i) st_q <= ST_CC;
-          else if (!cfg_tvalid_i && !cc_tvalid_i && rq_tvalid_i && !rq_tlast_i)
+          else if (!cfg_tvalid_i && msi_tvalid_i && !msi_tlast_i) st_q <= ST_MSI;
+          else if (!cfg_tvalid_i && !msi_tvalid_i && cc_tvalid_i && !cc_tlast_i)
+            st_q <= ST_CC;
+          else if (!cfg_tvalid_i && !msi_tvalid_i && !cc_tvalid_i &&
+                   rq_tvalid_i && !rq_tlast_i)
             st_q <= ST_RQ;
         end
         ST_CFG: if (cfg_tlast_i) st_q <= ST_IDLE;
+        ST_MSI: if (msi_tlast_i) st_q <= ST_IDLE;
         ST_CC:  if (cc_tlast_i)  st_q <= ST_IDLE;
         ST_RQ:  if (rq_tlast_i)  st_q <= ST_IDLE;
         default: st_q <= ST_IDLE;
