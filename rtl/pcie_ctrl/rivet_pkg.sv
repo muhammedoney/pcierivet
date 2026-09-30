@@ -398,6 +398,9 @@ package rivet_pkg;
   // CQ request type in descriptor DW2[14:11]
   localparam logic [3:0] RIVET_CQ_REQ_MEMRD = 4'b0000;
   localparam logic [3:0] RIVET_CQ_REQ_MEMWR = 4'b0001;
+  localparam logic [3:0] RIVET_CQ_REQ_IOWR  = 4'b0011;
+  localparam logic [3:0] RIVET_CQ_REQ_IORD  = 4'b0010;
+  localparam logic [3:0] RIVET_CQ_REQ_MSG   = 4'b1010;
 
   // Dword-aligned CQ descriptor (4 DW) on 64-bit AXI-ST: two beats.
   typedef struct packed {
@@ -465,10 +468,18 @@ package rivet_pkg;
 
   // TLP Fmt/Type in header byte 0: {Fmt[2:0], Type[4:0]}.
   localparam logic [4:0] RIVET_TLP_TYPE_MEM = 5'b00000;
+  localparam logic [4:0] RIVET_TLP_TYPE_IO  = 5'b00010;
   localparam logic [4:0] RIVET_TLP_TYPE_CFG = 5'b00100;
+  localparam logic [4:0] RIVET_TLP_TYPE_MSG = 5'b10000;
   localparam logic [4:0] RIVET_TLP_TYPE_CPL = 5'b01010;
   localparam logic [7:0] RIVET_TLP_B0_MEMRD32 = 8'h00;
+  localparam logic [7:0] RIVET_TLP_B0_MEMRD64 = 8'h20;
   localparam logic [7:0] RIVET_TLP_B0_MEMWR32 = 8'h40;
+  localparam logic [7:0] RIVET_TLP_B0_MEMWR64 = 8'h60;
+  localparam logic [7:0] RIVET_TLP_B0_IORD    = 8'h02;
+  localparam logic [7:0] RIVET_TLP_B0_IOWR    = 8'h42;
+  localparam logic [7:0] RIVET_TLP_B0_MSG     = 8'h30; // Msg (no data), routed for B4
+  localparam logic [7:0] RIVET_TLP_B0_MSGD    = 8'h70;
   localparam logic [7:0] RIVET_TLP_B0_CFGRD0  = 8'h04;
   localparam logic [7:0] RIVET_TLP_B0_CFGWR0  = 8'h44;
   localparam logic [7:0] RIVET_TLP_B0_CPL     = 8'h0A;
@@ -493,6 +504,10 @@ package rivet_pkg;
       return RIVET_FC_CLS_CPL;
     if (rivet_tlp_type5(b0) == RIVET_TLP_TYPE_CFG)
       return RIVET_FC_CLS_NP;
+    if (rivet_tlp_type5(b0) == RIVET_TLP_TYPE_IO)
+      return RIVET_FC_CLS_NP;
+    if (rivet_tlp_type5(b0) == RIVET_TLP_TYPE_MSG)
+      return RIVET_FC_CLS_P;
     if (rivet_tlp_has_data(b0))
       return RIVET_FC_CLS_P;
     return RIVET_FC_CLS_NP;

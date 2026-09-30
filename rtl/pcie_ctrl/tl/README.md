@@ -1,13 +1,13 @@
 # TL (`rtl/pcie_ctrl/tl`)
 
-Transaction Layer: config space, fabric Cfg completer, AXI-ST CQ/CC (Mem32).
+Transaction Layer: config space, fabric Cfg completer, AXI-ST CQ/CC (Mem32/Mem64).
 
 | Module | Role |
 |--------|------|
 | `rivet_tl_cfg_space` | PF0 4 KiB Type 0 + PM/MSI/PCIe caps; write masks / BAR sizing; shared by fabric Cfg and `cfg_mgmt_*` |
 | `rivet_tl_cfg` | Fabric CfgRd0/CfgWr0 → Cpl/CplD (no PIO RAM) |
-| `rivet_tl_rx_route` | Demux DLL RX: Cfg vs Mem32 |
-| `rivet_tl_cq` | Mem32 BAR0 hit → PG213 64-bit CQ (4 DW desc) |
+| `rivet_tl_rx_route` | Demux DLL RX: Cfg vs Mem32/64 / IO / Msg vs Cpl |
+| `rivet_tl_cq` | BAR0 Mem32/Mem64 (+ IO/Msg) → PG213 64-bit CQ |
 | `rivet_tl_cc` | PG213 64-bit CC → wire Cpl/CplD |
 | `rivet_tl_tx_mux` | Cfg TX priority over CC TX toward DLL |
 | `rivet_tl_pio_app` | Tiny BAR0 Mem32 RAM on CQ/CC (BFM / smoke) |

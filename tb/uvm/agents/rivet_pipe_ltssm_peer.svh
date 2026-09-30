@@ -13,6 +13,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            enable = 0;
   bit            dllp_fc_enable = 0;
   bit            tlp_memrd_enable = 0;
+  bit            tlp_memrd64_enable = 0; // MemRd64 instead of MemRd32 when set
   bit            tlp_cpld_enable = 0;
   bit            speed_change_enable = 0; // set TS rate-ID bit 7 in Recovery
   bit            hot_reset_enable = 0;    // set TS training-control Hot Reset
@@ -54,6 +55,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(this, "", "ltssm_peer_enable", enable));
     void'(uvm_config_db#(bit)::get(this, "", "dllp_fc_enable", dllp_fc_enable));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_memrd_enable", tlp_memrd_enable));
+    void'(uvm_config_db#(bit)::get(this, "", "tlp_memrd64_enable", tlp_memrd64_enable));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_cpld_enable", tlp_cpld_enable));
     void'(uvm_config_db#(bit)::get(this, "", "speed_change_enable", speed_change_enable));
     void'(uvm_config_db#(bit)::get(this, "", "hot_reset_enable", hot_reset_enable));
@@ -347,8 +349,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           go_m = 1'b0;
           void'(uvm_config_db#(bit)::get(null, "*", "peer_memrd_go", go_m));
           if (go_m) begin
-            rivet_axi_tlp_util::pack_memrd32_tl_beats(
-                tlp_memrd_addr, tlp_memrd_tag, tlp_memrd_rid, 4'hF, tlp_b0, tlp_b1);
+            if (tlp_memrd64_enable)
+              rivet_axi_tlp_util::pack_memrd64_tl_beats(
+                  {32'h0, tlp_memrd_addr}, tlp_memrd_tag, tlp_memrd_rid, 4'hF,
+                  tlp_b0, tlp_b1);
+            else
+              rivet_axi_tlp_util::pack_memrd32_tl_beats(
+                  tlp_memrd_addr, tlp_memrd_tag, tlp_memrd_rid, 4'hF, tlp_b0, tlp_b1);
             rivet_axi_tlp_util::pack_dll_tlp_frame(
                 12'd0, tlp_b0, tlp_b1, 16, tlp_frame, tlp_nbytes);
             tlp_sym = 0; tlp_sending = 1'b1; tlp_memrd_done = 1'b1;

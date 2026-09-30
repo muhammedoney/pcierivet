@@ -87,11 +87,27 @@ class rivet_axi_tlp_util;
       input  logic [3:0]  first_be,
       output logic [63:0] beat0,
       output logic [63:0] beat1);
-    // {LBE=0,FBE, tag, req_id_hi, req_id_lo, len_hi, len_lo, rsvd, FmtType}
-    // smoke used: {8'h0F, 8'h23, 8'h00, 8'h01, 8'h00, 8'h01, 8'h00, MEMRD32}
     beat0 = {4'h0, first_be, tag, requester_id[15:8], requester_id[7:0],
              8'h00, 8'h01, 8'h00, rivet_pkg::RIVET_TLP_B0_MEMRD32};
     beat1 = {32'h0, addr[7:0], addr[15:8], addr[23:16], addr[31:24]};
+  endfunction
+
+  // Wire MemRd64: 4-DW header as two 64-bit beats (addr_hi then addr_lo).
+  static function void pack_memrd64_tl_beats(
+      input  logic [63:0] addr,
+      input  logic [7:0]  tag,
+      input  logic [15:0] requester_id,
+      input  logic [3:0]  first_be,
+      output logic [63:0] beat0,
+      output logic [63:0] beat1);
+    logic [31:0] alo, ahi;
+    alo = addr[31:0];
+    ahi = addr[63:32];
+    beat0 = {4'h0, first_be, tag, requester_id[15:8], requester_id[7:0],
+             8'h00, 8'h01, 8'h00, rivet_pkg::RIVET_TLP_B0_MEMRD64};
+    // beat1 = {DW3=addr_lo, DW2=addr_hi} with same byte order as Mem32 addr field
+    beat1 = {alo[7:0], alo[15:8], alo[23:16], alo[31:24],
+             ahi[7:0], ahi[15:8], ahi[23:16], ahi[31:24]};
   endfunction
 
   // Wire CplD 1DW as two TL beats (exact layout from rivet_tl_rq_rc_tb).
