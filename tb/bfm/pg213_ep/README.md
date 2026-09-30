@@ -24,9 +24,9 @@ Soft Rivet RC is **not** used. Partner is the **PG213 RP BFM**:
 ```text
   RP = xilinx_pcie4_uscale_rp (+ usrapp_*)     EP = rivet_pg213_ep_swap
         │                                            │
-        │◄──────────── serial ×4 ───────────────────►│
+        │◄──────────── serial ×N (N=1/2/4) ─────────►│
         │                                            │  rivet_pcie_ctrl (GEN=2, SpeedChange=0)
-        │                                            │       ──PIPE── PG239
+        │                                            │       ──PIPE── PG239 (PHY fixed ×4)
         │                                            │         ▲
         │                                            │         └── CQ/CC/RQ/RC + cfg_mgmt (dual_app)
 ```
@@ -55,6 +55,9 @@ $env:RIVET_QUESTA_SIMLIB = "...\compile_simlib\questa"
 
 ```powershell
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 1   # Gen1 x1
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 2   # Gen1 x2
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 4   # Gen1 x4 (default)
 # stepwise:
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet -Step compile
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet -Step elaborate
@@ -65,6 +68,7 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 
 | Token in `simulate.log` | Script result |
 |-------------------------|---------------|
+| `Class A+C+E` / `Class E PASS` | PASS (Gen1 ×N + MemWr/MemRd app) |
 | `Class A PASS` / `Class A+C` / `PIO 1DW` | PASS (BAR0 Mem32; Class C = EP RQ MemWr) |
 | `Class A FAIL` / `PIO 1DW incomplete` | FAIL |
 | `Cfg Vendor/Device incomplete` | FAIL (link trained, Cfg path not closed) |
@@ -77,22 +81,34 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 | A | RP Cfg + BAR0 MemWr/Rd 1 DW | PASS |
 | B | Multi-DW BAR0 PIO | **WAIVE** — usrapp 1DW-only; MAC TLP buf=160 + multi-DW PIO ready; UVM CQ/CC @×4 is MVP gate |
 | C | EP BME MemWr on RQ | PASS (wire accept) |
-| D | EP BME MemRd + RC | PASS (or WAIVE → UVM `smoke_tlp_rq_rc_gen2_x4`) |
+| D | EP BME MemRd + RP CplD (DATA_STORE) | PASS when host preload matches |
+| E | EP MemWr+MemRd app score vs RP DATA_STORE | PASS |
+
+Lane matrix (`-Lanes 1|2|4`): RP `PL_LINK_CAP_MAX_LINK_WIDTH` + serial pairs; EP+PG239 PHY stays ×4
+and negotiates down when possible. **Gen1 ×4 Class A+C+E is the BFM app gate.** Gen1 ×1/×2 on this
+serial pad currently times out in Config (RP stays Polling); use UVM
+`smoke_gen2_x1` / `smoke_linkwidth_peer_x2_dut_x4` for width. Gen1-only (`RP` speed cap 1, EP `SPEED_CHANGE_EN=0`).
+
+| Lanes | Gen1 link + Class A+C+E (Questa BFM) |
+|-------|--------------------------------------|
+| ×4    | **PASS** |
+| ×2    | Config timeout (UVM width gate) |
+| ×1    | Config timeout (UVM width gate) |
 
 EP dual-role app: `rtl/rivet_ep_dual_app.sv` (CQ/CC completer + RQ/RC bus-master).
 
 ## Observed bring-up (Rivet DUT)
 
-L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (TS rate ID Gen1) so the Gen1-capped RP stays stable; negotiated Gen2 / Recovery.Speed remains a UVM gate (`smoke_recovery_speed_gen2_x4`). After `user_lnk_up` the board forces RP `cfg_ltssm_state` **0x0B → 0x10** once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO and Class C EP RQ MemWr. Class B prints `Class B WAIVE`; Class D prints PASS or WAIVE.
+L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (TS rate ID Gen1) so the Gen1-capped RP stays stable; negotiated Gen2 / Recovery.Speed remains a UVM gate (`smoke_recovery_speed_gen2_x4`). After `user_lnk_up` the board forces RP `cfg_ltssm_state` **0x0B → 0x10** once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO, Class C EP RQ MemWr, and Class D/E MemRd scored against RP `DATA_STORE`. Class B prints `Class B WAIVE`.
 
 ## Known gaps
 
 | Gap | Notes |
 |-----|--------|
 | Class B multi-DW usrapp | Wire PG213 usrapp multi-DW stimulus; RTL window ready |
-| Class D RP host model | Optional hardening if MemRd path flakes |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 | Negotiated Gen2 on serial | EP GEN=2 but `SPEED_CHANGE_EN=0` + RP max Gen1; enable Speed Change after PG239 rate-change bring-up |
+| BFM Gen1 ×1/×2 train | RP×N + EP PHY×4 pad times out in Config; UVM covers width |
 
 ## Layout
 

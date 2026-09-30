@@ -8,12 +8,17 @@
 
 .PARAMETER Step
   compile | elaborate | simulate | all
+
+.PARAMETER Lanes
+  Rivet DUT only: RP advertised / negotiated link width 1|2|4 (EP PHY stays x4).
 #>
 param(
   [ValidateSet("all", "compile", "elaborate", "simulate")]
   [string]$Step = "all",
   [ValidateSet("stock", "rivet")]
   [string]$Dut = "stock",
+  [ValidateSet(1, 2, 4)]
+  [int]$Lanes = 4,
   [switch]$Gui,
   [switch]$ResetRun
 )
@@ -187,6 +192,7 @@ Write-Host "PG239 EX : $Ex239"
 Write-Host "Simlib   : $SimLib"
 Write-Host "Work     : $WorkDir"
 Write-Host "DUT      : rivet (PG213 RP + Rivet EP)"
+Write-Host "Lanes    : x$Lanes (RP advertised; EP PHY fixed x4; Gen1-negotiated)"
 
 function New-RivetCompileDo {
   $gtStatic = @(
@@ -344,7 +350,7 @@ function New-RivetCompileDo {
   [void]$sb.AppendLine("vlog -work xil_defaultlib \")
   [void]$sb.AppendLine(('"{0}/glbl.v"' -f $WorkUnix))
   [void]$sb.AppendLine("")
-  [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}" "+incdir+{1}/third_party/ref/common_cells/include" \' -f $Imp213, $RepoUnix))
+  [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}" "+incdir+{1}/third_party/ref/common_cells/include" "+define+RIVET_BFM_LANES={2}" \' -f $Imp213, $RepoUnix, $Lanes))
   for ($i = 0; $i -lt $rivetSv.Count; $i++) {
     $suffix = if ($i -lt $rivetSv.Count - 1) { " \" } else { "" }
     [void]$sb.AppendLine("$($rivetSv[$i])$suffix")
@@ -405,12 +411,19 @@ if ($Step -eq "all" -or $Step -eq "simulate") {
   $log = Join-Path $WorkDir "simulate.log"
   if ((Test-Path $log) -and -not $Gui) {
     $text = Get-Content $log -Raw
-    if ($text -match "Class A\+C|Class A PASS|PG213 RP \+ Rivet EP PIO 1DW|Class A\+C") {
+    if ($text -match "Class E FAIL") {
       Write-Host ""
-      if ($text -match "Class C PASS") {
-        Write-Host "PASS: PG213 RP + Rivet EP Class A+C"
+      Write-Host "FAIL: MemWr/MemRd app score - see $log"
+      exit 1
+    }
+    if ($text -match "Class A\+C\+E|Class A\+C|Class A PASS|PG213 RP \+ Rivet EP PIO 1DW") {
+      Write-Host ""
+      if ($text -match "Class E PASS") {
+        Write-Host "PASS: PG213 RP + Rivet EP Class A+C+E (Gen1 x$Lanes)"
+      } elseif ($text -match "Class C PASS") {
+        Write-Host "PASS: PG213 RP + Rivet EP Class A+C (Gen1 x$Lanes)"
       } else {
-        Write-Host "PASS: PG213 RP + Rivet EP PIO 1DW"
+        Write-Host "PASS: PG213 RP + Rivet EP PIO 1DW (Gen1 x$Lanes)"
       }
       exit 0
     }
