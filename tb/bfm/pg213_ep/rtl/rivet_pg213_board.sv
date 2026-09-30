@@ -175,6 +175,11 @@ module board;
     end
     $display("[%t] : Class A PASS — PG213 RP + Rivet EP PIO 1DW", $realtime);
 
+    // Class B: multi-DW BAR0 — PG213 usrapp is 1DW; RTL MAC buf=160 + multi-DW PIO ready.
+    // MVP gate is UVM Mem32 CQ path; file gap until usrapp multi-DW stimulus is wired.
+    $display("[%t] : Class B WAIVE — usrapp 1DW-only; UVM CQ/CC @x4 is MVP multi-DW gate",
+             $realtime);
+
     // Class C: EP bus-master MemWr (ensure BME; RQ path)
     saw_ep_rq_memwr = 1'b0;
     class_c_pass    = 1'b0;
@@ -232,12 +237,14 @@ module board;
     release EP.u_rivet_ep.bm_wr_data;
     release EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2];
 
-    // Without RP host memory completer, MemRd may not complete — report status only
+    // Without RP host memory completer, MemRd may not complete — waived for MVP;
+    // UVM smoke_tlp_rq_rc_gen2_x4 covers EP MemRd + RC CplD correlation.
     $display("[%t] : Class D probe bm_done=%0b (needs RP host CplD)", $realtime, saw_ep_rc_done);
     if (saw_ep_rc_done)
       $display("[%t] : Class D PASS — EP BME MemRd + RC", $realtime);
     else
-      $display("[%t] : Class D DEFER — RP host MemRd completer not wired yet", $realtime);
+      $display("[%t] : Class D WAIVE — RP host CplD not wired; UVM smoke_tlp_rq_rc_gen2_x4",
+               $realtime);
 
     if (saw_pio && stay_l0 && RP.user_lnk_up && class_c_pass)
       $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Class A+C)",

@@ -12,12 +12,20 @@ Complementary to UVM / Verilator. Example `board.v` / IP trees sit under `third_
 ## Roadmap
 
 1. **PG239 pattern** — stock phy_ctrl Gen1/Gen2 traffic (done).
-2. **PG239 + Rivet ctrl** — EP + RC shells; Downstream Config (Link# offer) |
-3. **PG213 stock** — RP model ↔ Xilinx EP + PIO (scaffold; run stock first).
-4. **PG213 EP swap** — same RP/PIO, EP = Rivet+PG239 (`rivet_pg213_ep_swap`).
+2. **PG239 + Rivet ctrl** — EP + RC shells; dual `link_up` @ ×4 (**PASS** — Stage 2).
+3. **PG213 stock** — RP model ↔ Xilinx EP + PIO.
+4. **PG213 EP swap** — Class A+C PASS; Class B WAIVE; Class D PASS/WAIVE ([pg213_ep](pg213_ep/README.md)).
 5. **System** — Xilinx RP PG213 ↔ Rivet+PG239 (later).
+6. **FPGA lab** — VCU118 board bring-up (**backlogged** until hardware available).
 
-Fix Rivet TL before expecting PIO PASS on tracks 4–5.
+### MVP checklist (sim)
+
+```powershell
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet   # Class A+C; look for Class B WAIVE / Class D PASS|WAIVE
+.\scripts\sim_bfm_pg239.ps1 -Dut rivet   # "Test Completed Successfully (Rivet+PG239 link_up)"
+```
+
+UVM ×4 gates in [docs/verification.md](../../docs/verification.md) remain authoritative for the MVP tag.
 
 ## Rules
 

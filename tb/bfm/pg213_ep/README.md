@@ -74,23 +74,24 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 | Class | Meaning | Status |
 |-------|---------|--------|
 | A | RP Cfg + BAR0 MemWr/Rd 1 DW | PASS |
-| B | Multi-DW BAR0 PIO | Deferred (DLL/MAC slot) |
-| C | EP BME MemWr on RQ | PASS (wire accept; RP host store later) |
-| D | EP BME MemRd + RC | Deferred (RP host completer) |
+| B | Multi-DW BAR0 PIO | **WAIVE** — usrapp 1DW-only; MAC TLP buf=160 + multi-DW PIO ready; UVM CQ/CC @×4 is MVP gate |
+| C | EP BME MemWr on RQ | PASS (wire accept) |
+| D | EP BME MemRd + RC | PASS (or WAIVE → UVM `smoke_tlp_rq_rc_gen2_x4`) |
 
 EP dual-role app: `rtl/rivet_ep_dual_app.sv` (CQ/CC completer + RQ/RC bus-master).
 
 ## Observed bring-up (Rivet DUT)
 
-L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO and Class C EP RQ MemWr.
+L0 + InitFC + `dl_up` already proven. After `user_lnk_up` the board pulses RP `cfg_ltssm_state=0x0B` once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO and Class C EP RQ MemWr. Class B prints `Class B WAIVE`; Class D prints PASS or WAIVE.
 
 ## Known gaps
 
 | Gap | Notes |
 |-----|--------|
-| Class B multi-DW PIO | Needs larger MAC/DLL payload window |
-| Class D RP host CplD | Wire RP-side memory model for EP MemRd |
+| Class B multi-DW usrapp | Wire PG213 usrapp multi-DW stimulus; RTL window ready |
+| Class D RP host model | Optional hardening if MemRd path flakes |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
+| Recovery.Speed | Still Gen1-cap L0 for usrapp unblock pulse |
 
 ## Layout
 
