@@ -232,21 +232,19 @@ The third case fails in two specific places, both in `rivet_ltssm`:
    non-PAD Lane number on *every* enabled Lane. The Lanes the partner left out
    stay PAD, so the condition can never be satisfied.
 
-Reproduce with the smoke peer, which can be told to configure fewer Lanes than
-the DUT has:
+Reproduce with the smoke / UVM peer configured narrower than the DUT port:
 
 ```text
-# passes  — partner configures all four Lanes
-verilator ... -DRIVET_SMOKE_LANES=4 -DRIVET_SMOKE_PEER_LANES=4
-# retrain loop — partner offers only two of our four Lanes
-verilator ... -DRIVET_SMOKE_LANES=4 -DRIVET_SMOKE_PEER_LANES=2
+# full width — partner configures all four Lanes
+.\scripts\sim_ltssm_smoke.ps1 4 4
+# narrow — partner offers ×2 of DUT ×4 → L0 @ negotiated_width=2
+.\scripts\sim_ltssm_smoke.ps1 4 2
+.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x2_dut_x4 4
 ```
 
-Closing it is the M3 slice and needs: per-Lane shape flags out of `os_rx`
-(the per-Lane counters already exist internally, only the reductions are
-exported), per-Lane `tx_link_pad` / `tx_lane_pad` in `os_tx`, and `lane_en`
-narrowing in the two Linkwidth substates. `negotiated_width` already follows
-`lane_en`, so status reporting needs no change.
+M3 (done): per-Lane shape flags from `os_rx`, Upstream Port `lane_en` narrowing
+in Linkwidth.Start / Accept, and peers that treat Idle / TS only on `peer_lanes`
+(unused DUT Lanes sit in EI after narrow). `negotiated_width` follows `lane_en`.
 
 ---
 

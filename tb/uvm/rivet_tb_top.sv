@@ -174,6 +174,15 @@ module rivet_tb_top;
   assign status_if.cfg_ltssm_state = cfg_ltssm_state;
   assign status_if.pipe_rate       = pipe_if.rate;
 
+  // Negotiated width ≈ Lanes not held in Electrical Idle by the MAC.
+  always_comb begin
+    status_if.negotiated_width = 3'd0;
+    for (int unsigned l = 0; l < LANES; l++) begin
+      if (!pipe_if.txelecidle[l])
+        status_if.negotiated_width = status_if.negotiated_width + 3'd1;
+    end
+  end
+
   initial begin
     uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.pipe_agent*", "vif", pipe_if);
     uvm_config_db#(rivet_pipe_vif)::set(null, "uvm_test_top.env.ltssm_peer*", "vif", pipe_if);

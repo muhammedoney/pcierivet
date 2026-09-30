@@ -15,6 +15,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            tlp_memrd_enable = 0;
   bit            tlp_cpld_enable = 0;
   bit            speed_change_enable = 0; // set TS rate-ID bit 7 in Recovery
+  int unsigned   peer_lanes = 0;         // 0 = all DUT lanes; else narrower partner
   uvm_analysis_port #(rivet_dllp_item) dllp_ap;
 
   bit [31:0] tlp_memrd_addr = 32'h0000_0010;
@@ -54,6 +55,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(this, "", "tlp_cpld_enable", tlp_cpld_enable));
     void'(uvm_config_db#(bit)::get(this, "", "speed_change_enable", speed_change_enable));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
+    void'(uvm_config_db#(int unsigned)::get(this, "", "peer_lanes", peer_lanes));
+    if (peer_lanes == 0 || peer_lanes > lanes)
+      peer_lanes = lanes;
     if (!enable) return;
     if (!uvm_config_db#(rivet_pipe_vif)::get(this, "", "vif", vif))
       `uvm_fatal(get_type_name(), "rivet_pipe_vif not set for LTSSM peer")
@@ -218,7 +222,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       dut_tx_ts1 = 1'b0;
       dut_tx_ts2 = 1'b0;
       dut_tx_k   = 1'b0;
-      for (l = 0; l < lanes; l++) begin
+      // Only wire-live peer lanes; DUT EI on unused lanes after width narrow.
+      for (l = 0; l < peer_lanes; l++) begin
+        if (vif.txelecidle[l]) continue;
         for (s = 0; s < 2; s++) begin
           if (vif.txdatak[2*l + s]) dut_tx_k = 1'b1;
           else begin
@@ -227,8 +233,12 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           end
         end
       end
-      dut_tx_data_only = !dut_tx_k && !dut_tx_ts1 && !dut_tx_ts2 &&
-                         (vif.txelecidle == '0);
+      dut_tx_data_only = !dut_tx_k && !dut_tx_ts1 && !dut_tx_ts2;
+      if (dut_tx_data_only) begin
+        for (l = 0; l < peer_lanes; l++) begin
+          if (vif.txelecidle[l]) dut_tx_data_only = 1'b0;
+        end
+      end
 
       send_ts2      = (phase_q == P_TS2_PAD) || (phase_q == P_TS2_CFG);
       send_link_pad = (phase_q == P_TS1_PAD) || (phase_q == P_TS2_PAD);
@@ -388,7 +398,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             automatic logic [15:0] lfsr = peer_lfsr[l];
             for (s = 0; s < 2; s++) begin
               peer_tmp = send_os ? peer_sym(4'(peer_ptr + 5'(s)), send_ts2,
-                                            send_link_pad, send_lane_pad, 8'(l),
+                                            send_link_pad || (l >= peer_lanes),
+                                            send_lane_pad || (l >= peer_lanes), 8'(l),
                                             peer_rate_byte)
                                  : {1'b0, 8'h00};
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8],
