@@ -70,9 +70,9 @@ Where each layer, interface, and vendor product sits in the stack:
 | Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
 | Target FPGA | **VCU118** / **VMK180** / **VPK180** (whichever kit is available; PHY path adapts) |
-| Verification | **UVM first** (Phase 1); Verilator CI; Vivado BFM side-path |
+| Verification | Phase 1 MVP + Phase 2 Full Gen2 EP (sim) closed; Verilator CI; Vivado BFM side-path |
 
-Phase 0 stubs + PG239-aligned PIPE ports. Phase 1: grow `tb/uvm`, then Gen2 LTSSM — not Gen3/4 protocol yet.
+Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen3 when link proof allows — not Gen3/4 protocol yet.
 
 ## Repository layout
 

@@ -18,6 +18,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            speed_change_enable = 0; // set TS rate-ID bit 7 in Recovery
   bit            hot_reset_enable = 0;    // set TS training-control Hot Reset
   bit            disable_link_enable = 0; // set TS training-control Disable Link
+  logic [2:0]    rxstatus_err_code = 3'b100; // RxStatus injected by peer_rxstatus_err_go
   int unsigned   peer_lanes = 0;         // 0 = all DUT lanes; else narrower partner
   bit            peer_lane_reverse = 0;  // assign Lane# W-1..0 on phys 0..W-1
   uvm_analysis_port #(rivet_dllp_item) dllp_ap;
@@ -61,6 +62,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(this, "", "speed_change_enable", speed_change_enable));
     void'(uvm_config_db#(bit)::get(this, "", "hot_reset_enable", hot_reset_enable));
     void'(uvm_config_db#(bit)::get(this, "", "disable_link_enable", disable_link_enable));
+    void'(uvm_config_db#(logic [2:0])::get(this, "", "rxstatus_err_code", rxstatus_err_code));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
     void'(uvm_config_db#(int unsigned)::get(this, "", "peer_lanes", peer_lanes));
     void'(uvm_config_db#(bit)::get(this, "", "peer_lane_reverse", peer_lane_reverse));
@@ -193,6 +195,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     logic [7:0]  peer_train_byte;
     bit          hot_reset_go;
     bit          disable_go;
+    bit          rxstatus_err_go;
+    int unsigned rxstatus_err_left;
     bit          tc_inject_active;
     int unsigned tlp_sym;
     int unsigned tlp_nbytes;
@@ -220,6 +224,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     last_rate = 3'd0; rate_ack_left = 0; peer_rate_byte = PEER_RATE;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
+    rxstatus_err_go = 1'b0; rxstatus_err_left = 0;
     for (l = 0; l < lanes; l++) peer_lfsr[l] = 16'hFFFF;
 
     vif.rxdata        <= '0;
@@ -325,6 +330,20 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           recovery_pulse = 1'b0;
         end
         vif.rxelecidle <= '0;
+
+        // RxStatus error inject in L0: brief error code on lane 0 with RxValid
+        // held high; the DUT must enter Recovery (no RxValid drop).
+        rxstatus_err_go = 1'b0;
+        void'(uvm_config_db#(bit)::get(null, "*", "peer_rxstatus_err_go", rxstatus_err_go));
+        if (rxstatus_err_go && (phase_q == P_IDLE) && (rxstatus_err_left == 0)) begin
+          rxstatus_err_left = 2;
+          uvm_config_db#(bit)::set(null, "*", "peer_rxstatus_err_go", 1'b0);
+          uvm_config_db#(bit)::set(null, "*", "peer_rxstatus_err_fired", 1'b1);
+        end
+        if (rxstatus_err_left != 0) begin
+          vif.rxstatus[2:0] <= rxstatus_err_code;
+          rxstatus_err_left = rxstatus_err_left - 1;
+        end
       end
 
 
@@ -471,7 +490,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         end
       end
 
-      if (vif.txelecidle == '1) begin
+      // DUT TX in EI restarts training, except Tx_L0s (P0s): the link stays
+      // trained and the peer keeps sending Idle.
+      if ((vif.txelecidle == '1) && (vif.powerdown != 2'b01)) begin
         phase_q    = P_TS1_PAD;
         phase_sets = '0;
         peer_ptr   = '0;

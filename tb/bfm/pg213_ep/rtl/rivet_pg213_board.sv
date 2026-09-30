@@ -40,16 +40,18 @@ module board;
   logic [LINK_WIDTH-1:0] rp_pci_exp_txn, rp_pci_exp_txp;
   logic [LINK_WIDTH-1:0] rp_pci_exp_rxn_w, rp_pci_exp_rxp_w;
 
-  // Live lanes: cross-connect to RP. Unused EP lanes self-loop so Detect sees
-  // all PHY lanes; CFG_LINKWIDTH then narrows to RP-offered width (UVM peer style).
+  // Live lanes: cross-connect to RP. Unused EP RX lanes stay Electrical Idle
+  // (no Receiver) so Detect.Active narrows lane_en to LINK_WIDTH — matches
+  // UVM peer_lanes narrowing without a self-trained loopback on dead lanes.
   assign rp_pci_exp_rxp_w = ep_pci_exp_txp[LINK_WIDTH-1:0];
   assign rp_pci_exp_rxn_w = ep_pci_exp_txn[LINK_WIDTH-1:0];
   assign ep_pci_exp_rxp[LINK_WIDTH-1:0] = rp_pci_exp_txp;
   assign ep_pci_exp_rxn[LINK_WIDTH-1:0] = rp_pci_exp_txn;
   generate
-    if (LINK_WIDTH < PHY_WIDTH) begin : g_loop
-      assign ep_pci_exp_rxp[PHY_WIDTH-1:LINK_WIDTH] = ep_pci_exp_txp[PHY_WIDTH-1:LINK_WIDTH];
-      assign ep_pci_exp_rxn[PHY_WIDTH-1:LINK_WIDTH] = ep_pci_exp_txn[PHY_WIDTH-1:LINK_WIDTH];
+    if (LINK_WIDTH < PHY_WIDTH) begin : g_ei
+      // Differential common-mode idle: both lines low → PHY reports EI / no detect.
+      assign ep_pci_exp_rxp[PHY_WIDTH-1:LINK_WIDTH] = '0;
+      assign ep_pci_exp_rxn[PHY_WIDTH-1:LINK_WIDTH] = '0;
     end
   endgenerate
 
@@ -92,6 +94,12 @@ module board;
   // Questa: force RHS must not be automatic — stash in module vars.
   logic        bm_kick_do_wr, bm_kick_do_rd;
   logic [31:0] bm_kick_addr, bm_kick_wdata;
+  // Class B CQ inject (Questa: force RHS must not be automatic)
+  logic [63:0] cb_cq_tdata;
+  logic [87:0] cb_cq_tuser;
+  logic [1:0]  cb_cq_tkeep;
+  logic        cb_cq_tlast, cb_cq_tvalid;
+  logic [31:0] cb_d0, cb_d1, cb_d2, cb_d3;
 
   task automatic bm_kick(input logic do_wr, input logic do_rd,
                          input logic [31:0] addr, input logic [31:0] wdata);
@@ -212,11 +220,28 @@ module board;
       $display("[%t] : FC@EP       fc_init=%0b dl_up=%0b", $realtime, ep_fc, ep_dl);
     end
 
-    // Negotiated width (EP LTSSM lane_en popcount)
+    // Negotiated width (EP LTSSM lane_en popcount) + cfg Link Status NLW
     neg_width = EP.u_rivet_ep.u_ctrl.u_mac.negotiated_width;
     width_ok  = (neg_width == 3'(LINK_WIDTH));
     $display("[%t] : negotiated_width=%0d expect=%0d %s",
              $realtime, neg_width, LINK_WIDTH, width_ok ? "OK" : "MISMATCH");
+    begin
+      automatic logic [31:0] link_dw;
+      automatic logic [5:0]  nlw;
+      link_dw = EP.u_rivet_ep.u_ctrl.u_cfg_space.link_status_overlay;
+      nlw     = link_dw[25:20];
+      if (nlw != 6'(LINK_WIDTH)) begin
+        $display("[%t] : NLW FAIL — Link Status NLW=%0d expect=%0d (DW=0x%08h)",
+                 $realtime, nlw, LINK_WIDTH, link_dw);
+        $finish;
+      end
+      $display("[%t] : NLW PASS — Link Status NLW=%0d CLS=%0d",
+               $realtime, nlw, link_dw[19:16]);
+    end
+    if (!width_ok) begin
+      $display("[%t] : width MISMATCH — abort before Cfg/PIO", $realtime);
+      $finish;
+    end
 
     fork
       begin
@@ -254,9 +279,66 @@ module board;
     end
     $display("[%t] : Class A PASS — PG213 RP + Rivet EP PIO 1DW", $realtime);
 
-    // Class B: multi-DW BAR0 — PG213 usrapp is 1DW; RTL MAC buf=160 + multi-DW PIO ready.
-    $display("[%t] : Class B WAIVE — usrapp 1DW-only; UVM CQ/CC @x4 is MVP multi-DW gate",
-             $realtime);
+    // Class B: multi-DW BAR0 MemWr into completer via CQ inject (usrapp is 1DW-only).
+    begin
+      automatic logic b_ok;
+      b_ok = 1'b0;
+      cb_d0 = 32'h1111_0001;
+      cb_d1 = 32'h2222_0002;
+      cb_d2 = 32'h3333_0003;
+      cb_d3 = 32'h4444_0004;
+      cb_cq_tuser = '0;
+      cb_cq_tuser[3:0] = 4'hF;
+      cb_cq_tkeep = 2'b11;
+      @(posedge EP.u_rivet_ep.user_clk);
+      cb_cq_tdata  = {32'h0, 32'h0000_0040};
+      cb_cq_tlast  = 1'b0;
+      cb_cq_tvalid = 1'b1;
+      force EP.u_rivet_ep.cq_tuser  = cb_cq_tuser;
+      force EP.u_rivet_ep.cq_tkeep  = cb_cq_tkeep;
+      force EP.u_rivet_ep.cq_tvalid = cb_cq_tvalid;
+      force EP.u_rivet_ep.cq_tlast  = cb_cq_tlast;
+      force EP.u_rivet_ep.cq_tdata  = cb_cq_tdata;
+      @(posedge EP.u_rivet_ep.user_clk);
+      cb_cq_tdata = '0;
+      cb_cq_tdata[9:0]   = 10'd4;
+      cb_cq_tdata[14:11] = 4'b0001;
+      cb_cq_tdata[55:48] = 8'hB0;
+      force EP.u_rivet_ep.cq_tdata = cb_cq_tdata;
+      @(posedge EP.u_rivet_ep.user_clk);
+      cb_cq_tdata = {cb_d1, cb_d0};
+      force EP.u_rivet_ep.cq_tdata = cb_cq_tdata;
+      @(posedge EP.u_rivet_ep.user_clk);
+      cb_cq_tdata = {cb_d3, cb_d2};
+      cb_cq_tlast = 1'b1;
+      force EP.u_rivet_ep.cq_tdata = cb_cq_tdata;
+      force EP.u_rivet_ep.cq_tlast = cb_cq_tlast;
+      @(posedge EP.u_rivet_ep.user_clk);
+      cb_cq_tvalid = 1'b0;
+      cb_cq_tlast  = 1'b0;
+      force EP.u_rivet_ep.cq_tvalid = cb_cq_tvalid;
+      force EP.u_rivet_ep.cq_tlast  = cb_cq_tlast;
+      release EP.u_rivet_ep.cq_tdata;
+      release EP.u_rivet_ep.cq_tkeep;
+      release EP.u_rivet_ep.cq_tlast;
+      release EP.u_rivet_ep.cq_tvalid;
+      release EP.u_rivet_ep.cq_tuser;
+      repeat (4) @(posedge EP.u_rivet_ep.user_clk);
+      if ((EP.u_rivet_ep.u_app.u_pio.pio_q[16] === cb_d0) &&
+          (EP.u_rivet_ep.u_app.u_pio.pio_q[17] === cb_d1) &&
+          (EP.u_rivet_ep.u_app.u_pio.pio_q[18] === cb_d2) &&
+          (EP.u_rivet_ep.u_app.u_pio.pio_q[19] === cb_d3))
+        b_ok = 1'b1;
+      if (b_ok)
+        $display("[%t] : Class B PASS — multi-DW BAR0 CQ inject (4 DW)", $realtime);
+      else
+        $display("[%t] : Class B FAIL — pio_q[16:19]=%08h %08h %08h %08h",
+                 $realtime,
+                 EP.u_rivet_ep.u_app.u_pio.pio_q[16],
+                 EP.u_rivet_ep.u_app.u_pio.pio_q[17],
+                 EP.u_rivet_ep.u_app.u_pio.pio_q[18],
+                 EP.u_rivet_ep.u_app.u_pio.pio_q[19]);
+    end
 
     // Class C: EP bus-master MemWr (ensure BME; RQ path). Host addr < 4096 (RP DATA_STORE).
     saw_ep_rq_memwr = 1'b0;

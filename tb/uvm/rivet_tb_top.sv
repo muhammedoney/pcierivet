@@ -199,6 +199,23 @@ module rivet_tb_top;
   assign status_if.cfg_ltssm_state = cfg_ltssm_state;
   assign status_if.pipe_rate       = pipe_if.rate;
 
+  // Minimal ASPM: vseqs drive status_if.aspm_*_req; force them onto the MAC
+  // request nets (tied to 0 in rivet_mac) and release when deasserted.
+  initial begin
+    status_if.aspm_l0s_req = 1'b0;
+    status_if.aspm_l1_req  = 1'b0;
+  end
+
+  always @(status_if.aspm_l0s_req) begin
+    if (status_if.aspm_l0s_req === 1'b1) force dut.u_mac.aspm_l0s_req = 1'b1;
+    else                                 release dut.u_mac.aspm_l0s_req;
+  end
+
+  always @(status_if.aspm_l1_req) begin
+    if (status_if.aspm_l1_req === 1'b1) force dut.u_mac.aspm_l1_req = 1'b1;
+    else                                release dut.u_mac.aspm_l1_req;
+  end
+
   // Negotiated width ≈ Lanes not held in Electrical Idle by the MAC.
   always_comb begin
     status_if.negotiated_width = 3'd0;

@@ -37,6 +37,7 @@ package rivet_pkg;
     RIVET_LTSSM_RECOVERY_RCVRCFG          = 6'h0D,
     RIVET_LTSSM_RECOVERY_IDLE             = 6'h0E,
     RIVET_LTSSM_L0                        = 6'h10,
+    RIVET_LTSSM_TX_L0S                    = 6'h15,
     RIVET_LTSSM_L1_ENTRY                  = 6'h17,
     RIVET_LTSSM_L1_IDLE                   = 6'h18,
     RIVET_LTSSM_DISABLED                  = 6'h20,
