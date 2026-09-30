@@ -61,6 +61,7 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | M3 link-width | `.\scripts\sim_questa.ps1 smoke_linkwidth_peer_x2_dut_x4 4` | Peer ×2 vs DUT ×4 → L0 @ width=2 |
 | Hot Reset | `.\scripts\sim_questa.ps1 smoke_hot_reset_gen2_x4 4` | TS Hot Reset → Detect → L0 |
 | Disabled | `.\scripts\sim_questa.ps1 smoke_disabled_gen2_x4 4` | TS Disable Link → Detect → L0 |
+| Mem64 CQ↔CC | `.\scripts\sim_questa.ps1 smoke_tlp_cq_cc_mem64_gen2_x4 4` | Peer MemRd64 → CQ → CC CplD |
 
 ---
 

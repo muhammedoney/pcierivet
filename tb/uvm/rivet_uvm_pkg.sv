@@ -84,6 +84,7 @@ package rivet_uvm_pkg;
   `include "tests/smoke_tlp_rq_memwr_gen2_x1.svh"
   `include "tests/smoke_tlp_rq_memwr_gen2_x4.svh"
   `include "tests/smoke_tlp_cq_cc_gen2_x4.svh"
+  `include "tests/smoke_tlp_cq_cc_mem64_gen2_x4.svh"
   `include "tests/smoke_tlp_rq_rc_gen2_x4.svh"
   `include "tests/smoke_recovery_l0_gen2_x4.svh"
   `include "tests/smoke_recovery_speed_gen2_x4.svh"

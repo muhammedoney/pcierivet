@@ -29,7 +29,7 @@ Ordered ×4 gates ([verification.md](verification.md)):
 | **B1 MAC M3** | Partner narrower than port / link-width negotiate | Done — `smoke_linkwidth_peer_x2_dut_x4` |
 | **B2 MAC M4** | Recovery.RcvrLock/Cfg/Idle + **Recovery.Speed** Gen1→Gen2 | `smoke_recovery_l0_gen2_x4`, `smoke_recovery_speed_gen2_x4` |
 | **B3 Power / reset** | Hot Reset, Disabled; L0s/L1 if needed | Done — Hot Reset + Disabled @ ×4 (L0s/L1 later) |
-| **B4 TL richer** | Mem64, IO, Msg; real RX buffer vs `rivet_tl_fc_stub` | UVM + BFM Class B stress |
+| **B4 TL richer** | Mem64, IO, Msg; real RX buffer vs `rivet_tl_fc_stub` | Mem64 CQ gate done; IO/Msg route; RX buffer next |
 | **B5 Interrupts** | MSI then MSI-X | UVM interrupt agent + BFM |
 | **B6 AER / errors** | `cfg_err_*` / advisory / non-fatal | Directed PIPE/DLL inject |
 | **B7 Companion depth** | CQ NP credits, RQ tag/seq, `pcie_tfc_*` | Functional companion checks |
