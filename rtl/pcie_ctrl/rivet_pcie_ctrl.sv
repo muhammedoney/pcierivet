@@ -90,6 +90,25 @@ module rivet_pcie_ctrl #(
   output logic                       cfg_mgmt_read_write_done,
   input  logic                       cfg_mgmt_debug_access,
 
+  // Interrupts (PG213 MSI / MSI-X subset)
+  input  logic [31:0]                cfg_interrupt_msi_int,
+  output logic                       cfg_interrupt_msi_enable,
+  output logic                       cfg_interrupt_msi_sent,
+  output logic                       cfg_interrupt_msi_fail,
+  input  logic [63:0]                cfg_interrupt_msix_address,
+  input  logic [31:0]                cfg_interrupt_msix_data,
+  input  logic                       cfg_interrupt_msix_int,
+  output logic                       cfg_interrupt_msix_enable,
+  output logic                       cfg_interrupt_msix_sent,
+  output logic                       cfg_interrupt_msix_fail,
+
+  // AER / advisory (PG213 subset)
+  input  logic                       cfg_err_cor_in,
+  input  logic                       cfg_err_uncor_in,
+  output logic                       cfg_err_cor_out,
+  output logic                       cfg_err_nonfatal_out,
+  output logic                       cfg_err_fatal_out,
+
   // PIPE (controller / MAC view) — PG239-aligned; see rivet_pipe_if
   output logic [PIPE_DATA_WIDTH*LANES-1:0] pipe_txdata,
   output logic [2*LANES-1:0]               pipe_txdatak,
@@ -153,17 +172,6 @@ module rivet_pcie_ctrl #(
 `endif
 
   // -------------------------------------------------------------------------
-  // RQ/RC port stubs replaced below after CDC wiring
-  // -------------------------------------------------------------------------
-  assign pcie_rq_seq_num0     = '0;
-  assign pcie_rq_seq_num_vld0 = 1'b0;
-  assign pcie_rq_tag0         = '0;
-  assign pcie_rq_tag_vld0     = 1'b0;
-  assign pcie_rq_tag1         = '0;
-  assign pcie_rq_tag_vld1     = 1'b0;
-  assign pcie_rq_tag_av       = '0;
-
-  // -------------------------------------------------------------------------
   // CDC resets (async assert both domains; sync deassert per clk)
   // -------------------------------------------------------------------------
   logic rst_n_por;
@@ -208,9 +216,9 @@ module rivet_pcie_ctrl #(
   logic        cr_rx_acc_cfg, cr_rx_acc_cq, cr_rx_acc_rc;
   logic [7:0]  cr_rx_h0_cfg, cr_rx_h0_cq, cr_rx_h0_rc;
   logic [9:0]  cr_rx_len_cfg, cr_rx_len_cq, cr_rx_len_rc;
-  logic        cr_tx_acc_cfg, cr_tx_acc_cc, cr_tx_acc_rq;
-  logic [7:0]  cr_tx_h0_cfg, cr_tx_h0_cc, cr_tx_h0_rq;
-  logic [9:0]  cr_tx_len_cfg, cr_tx_len_cc, cr_tx_len_rq;
+  logic        cr_tx_acc_cfg, cr_tx_acc_cc, cr_tx_acc_rq, cr_tx_acc_msi;
+  logic [7:0]  cr_tx_h0_cfg, cr_tx_h0_cc, cr_tx_h0_rq, cr_tx_h0_msi;
+  logic [9:0]  cr_tx_len_cfg, cr_tx_len_cc, cr_tx_len_rq, cr_tx_len_msi;
   logic        cr_free_ph, cr_free_pd, cr_free_nph, cr_free_npd, cr_free_cplh, cr_free_cpld;
   logic [7:0]  cr_free_ph_a, cr_free_nph_a, cr_free_cplh_a;
   logic [11:0] cr_free_pd_a, cr_free_npd_a, cr_free_cpld_a;
@@ -224,11 +232,27 @@ module rivet_pcie_ctrl #(
   logic        tl_rx_tvalid, tl_tx_tvalid;
   logic        tl_rx_tready, tl_tx_tready;
 
-  logic [63:0] cfg_rx_d, cq_rx_d, rc_rx_d, cfg_tx_d, cc_tx_d, rq_tx_d;
-  logic [7:0]  cfg_rx_k, cq_rx_k, rc_rx_k, cfg_tx_k, cc_tx_k, rq_tx_k;
-  logic        cfg_rx_l, cq_rx_l, rc_rx_l, cfg_tx_l, cc_tx_l, rq_tx_l;
-  logic        cfg_rx_v, cq_rx_v, rc_rx_v, cfg_tx_v, cc_tx_v, rq_tx_v;
-  logic        cfg_rx_r, cq_rx_r, rc_rx_r, cfg_tx_r, cc_tx_r, rq_tx_r;
+  logic [63:0] cfg_rx_d, cq_rx_d, rc_rx_d, cfg_tx_d, cc_tx_d, rq_tx_d, msi_tx_d;
+  logic [7:0]  cfg_rx_k, cq_rx_k, rc_rx_k, cfg_tx_k, cc_tx_k, rq_tx_k, msi_tx_k;
+  logic        cfg_rx_l, cq_rx_l, rc_rx_l, cfg_tx_l, cc_tx_l, rq_tx_l, msi_tx_l;
+  logic        cfg_rx_v, cq_rx_v, rc_rx_v, cfg_tx_v, cc_tx_v, rq_tx_v, msi_tx_v;
+  logic        cfg_rx_r, cq_rx_r, rc_rx_r, cfg_tx_r, cc_tx_r, rq_tx_r, msi_tx_r;
+
+  logic        msi_enable_p, msix_enable_p;
+  logic [31:0] msi_addr_p;
+  logic [15:0] msi_data_p;
+  logic [31:0] msi_int_p;
+  logic [63:0] msix_addr_p;
+  logic [31:0] msix_data_p;
+  logic        msix_int_p;
+  logic        msi_sent_p, msi_fail_p, msix_sent_p, msix_fail_p;
+  logic        err_cor_p, err_uncor_p;
+  logic        aer_set_cor, aer_set_nf;
+  logic [5:0]  rq_seq_p;
+  logic        rq_seq_vld_p, rq_tag_vld_p;
+  logic [9:0]  rq_tag_p;
+  logic [3:0]  rq_tag_av_p;
+  logic        rq_tag_free_p;
 
   logic        fab_req, fab_write, fab_ack, fab_busy;
   logic [9:0]  fab_addr;
@@ -243,11 +267,13 @@ module rivet_pcie_ctrl #(
                      (cr_rx_acc_cq ? cr_rx_h0_cq : cr_rx_h0_rc);
   assign cr_rx_len = cr_rx_acc_cfg ? cr_rx_len_cfg :
                      (cr_rx_acc_cq ? cr_rx_len_cq : cr_rx_len_rc);
-  assign cr_tx_acc = cr_tx_acc_cfg | cr_tx_acc_cc | cr_tx_acc_rq;
+  assign cr_tx_acc = cr_tx_acc_cfg | cr_tx_acc_cc | cr_tx_acc_rq | cr_tx_acc_msi;
   assign cr_tx_h0  = cr_tx_acc_cfg ? cr_tx_h0_cfg :
-                     (cr_tx_acc_cc ? cr_tx_h0_cc : cr_tx_h0_rq);
+                     (cr_tx_acc_msi ? cr_tx_h0_msi :
+                     (cr_tx_acc_cc ? cr_tx_h0_cc : cr_tx_h0_rq));
   assign cr_tx_len = cr_tx_acc_cfg ? cr_tx_len_cfg :
-                     (cr_tx_acc_cc ? cr_tx_len_cc : cr_tx_len_rq);
+                     (cr_tx_acc_msi ? cr_tx_len_msi :
+                     (cr_tx_acc_cc ? cr_tx_len_cc : cr_tx_len_rq));
 
   logic [9:0]  mgmt_p_addr;
   logic [7:0]  mgmt_p_fn;
@@ -305,6 +331,11 @@ module rivet_pcie_ctrl #(
     .bar0_mask_o                  (bar0_mask),
     .bar0_mem_en_o                (bar0_mem_en),
     .bus_master_en_o              (bus_master_en),
+    .msi_enable_o                 (msi_enable_p),
+    .msi_addr_o                   (msi_addr_p),
+    .msi_data_o                   (msi_data_p),
+    .aer_set_cor_i                (aer_set_cor),
+    .aer_set_nonfatal_i           (aer_set_nf),
     .link_up_i                    (link_up),
     .link_speed_i                 (4'h1),
     .link_width_i                 (6'(LANES))
@@ -550,7 +581,13 @@ module rivet_pcie_ctrl #(
     .tx_tready_i       (rq_tx_r),
     .tx_accept_o       (cr_tx_acc_rq),
     .tx_hdr0_o         (cr_tx_h0_rq),
-    .tx_len_dw_o       (cr_tx_len_rq)
+    .tx_len_dw_o       (cr_tx_len_rq),
+    .rq_seq_num_o      (rq_seq_p),
+    .rq_seq_num_vld_o  (rq_seq_vld_p),
+    .rq_tag_o          (rq_tag_p),
+    .rq_tag_vld_o      (rq_tag_vld_p),
+    .rq_tag_av_o       (rq_tag_av_p),
+    .tag_free_i        (rq_tag_free_p)
   );
 
   logic [AXI_DATA_WIDTH-1:0] rc_p_tdata, rc_u_tdata;
@@ -575,7 +612,8 @@ module rivet_pcie_ctrl #(
     .m_axis_rc_tuser  (rc_p_tuser),
     .rx_accept_o      (cr_rx_acc_rc),
     .rx_hdr0_o        (cr_rx_h0_rc),
-    .rx_len_dw_o      (cr_rx_len_rc)
+    .rx_len_dw_o      (cr_rx_len_rc),
+    .tag_free_o       (rq_tag_free_p)
   );
 
   rivet_cdc_axis #(
@@ -608,6 +646,135 @@ module rivet_pcie_ctrl #(
   assign m_axis_rc_tvalid = rc_u_tvalid;
   assign m_axis_rc_tuser  = rc_u_tuser;
 
+  // Sync interrupt / AER inputs user_clk → pclk
+  rivet_cdc_sync_bus #(.WIDTH(32)) u_sync_msi_int (
+    .dst_clk_i(pclk), .dst_rst_ni(pclk_rst_sync_n),
+    .src_i(cfg_interrupt_msi_int), .dst_o(msi_int_p)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(64)) u_sync_msix_addr (
+    .dst_clk_i(pclk), .dst_rst_ni(pclk_rst_sync_n),
+    .src_i(cfg_interrupt_msix_address), .dst_o(msix_addr_p)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(32)) u_sync_msix_data (
+    .dst_clk_i(pclk), .dst_rst_ni(pclk_rst_sync_n),
+    .src_i(cfg_interrupt_msix_data), .dst_o(msix_data_p)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_msix_int (
+    .dst_clk_i(pclk), .dst_rst_ni(pclk_rst_sync_n),
+    .src_i(cfg_interrupt_msix_int), .dst_o(msix_int_p)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_err_cor (
+    .dst_clk_i(pclk), .dst_rst_ni(pclk_rst_sync_n),
+    .src_i(cfg_err_cor_in), .dst_o(err_cor_p)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_err_uncor (
+    .dst_clk_i(pclk), .dst_rst_ni(pclk_rst_sync_n),
+    .src_i(cfg_err_uncor_in), .dst_o(err_uncor_p)
+  );
+
+  assign msix_enable_p = 1'b1; // external-table path; no MSI-X cap table yet
+
+  rivet_tl_msi u_tl_msi (
+    .clk_i           (pclk),
+    .rst_ni          (pclk_rst_sync_n),
+    .bus_master_en_i (bus_master_en),
+    .link_up_i       (link_up),
+    .msi_enable_i    (msi_enable_p),
+    .msi_addr_i      (msi_addr_p),
+    .msi_data_i      (msi_data_p),
+    .msi_int_i       (msi_int_p),
+    .msi_enable_o    (),
+    .msi_sent_o      (msi_sent_p),
+    .msi_fail_o      (msi_fail_p),
+    .msix_enable_i   (msix_enable_p),
+    .msix_addr_i     (msix_addr_p),
+    .msix_data_i     (msix_data_p),
+    .msix_int_i      (msix_int_p),
+    .msix_sent_o     (msix_sent_p),
+    .msix_fail_o     (msix_fail_p),
+    .tx_tdata_o      (msi_tx_d),
+    .tx_tkeep_o      (msi_tx_k),
+    .tx_tlast_o      (msi_tx_l),
+    .tx_tvalid_o     (msi_tx_v),
+    .tx_tready_i     (msi_tx_r),
+    .tx_accept_o     (cr_tx_acc_msi),
+    .tx_hdr0_o       (cr_tx_h0_msi),
+    .tx_len_dw_o     (cr_tx_len_msi)
+  );
+
+  logic err_cor_out_p, err_nf_out_p, err_fatal_out_p;
+
+  rivet_tl_aer u_tl_aer (
+    .clk_i              (pclk),
+    .rst_ni             (pclk_rst_sync_n),
+    .err_cor_in_i       (err_cor_p),
+    .err_uncor_in_i     (err_uncor_p),
+    .err_cor_out_o      (err_cor_out_p),
+    .err_nonfatal_out_o (err_nf_out_p),
+    .err_fatal_out_o    (err_fatal_out_p),
+    .set_cor_o          (aer_set_cor),
+    .set_nonfatal_o     (aer_set_nf)
+  );
+
+  // MSI / AER status → user_clk
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_msi_en (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(msi_enable_p), .dst_o(cfg_interrupt_msi_enable)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_msi_sent (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(msi_sent_p), .dst_o(cfg_interrupt_msi_sent)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_msi_fail (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(msi_fail_p), .dst_o(cfg_interrupt_msi_fail)
+  );
+  assign cfg_interrupt_msix_enable = 1'b1;
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_msix_sent (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(msix_sent_p), .dst_o(cfg_interrupt_msix_sent)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_msix_fail (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(msix_fail_p), .dst_o(cfg_interrupt_msix_fail)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_err_cor_o (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(err_cor_out_p), .dst_o(cfg_err_cor_out)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_err_nf_o (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(err_nf_out_p), .dst_o(cfg_err_nonfatal_out)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_err_fatal_o (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(err_fatal_out_p), .dst_o(cfg_err_fatal_out)
+  );
+
+  // Companion RQ tag/seq → user
+  rivet_cdc_sync_bus #(.WIDTH(6)) u_sync_rq_seq (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(rq_seq_p), .dst_o(pcie_rq_seq_num0)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_rq_seq_v (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(rq_seq_vld_p), .dst_o(pcie_rq_seq_num_vld0)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(10)) u_sync_rq_tag (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(rq_tag_p), .dst_o(pcie_rq_tag0)
+  );
+  rivet_cdc_sync_bus #(.WIDTH(1)) u_sync_rq_tag_v (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(rq_tag_vld_p), .dst_o(pcie_rq_tag_vld0)
+  );
+  assign pcie_rq_tag1     = '0;
+  assign pcie_rq_tag_vld1 = 1'b0;
+  rivet_cdc_sync_bus #(.WIDTH(4)) u_sync_rq_tag_av (
+    .dst_clk_i(user_clk), .dst_rst_ni(user_rst_sync_n),
+    .src_i(rq_tag_av_p), .dst_o(pcie_rq_tag_av)
+  );
+
   rivet_tl_tx_mux u_tx_mux (
     .clk_i        (pclk),
     .rst_ni       (preset_n),
@@ -616,6 +783,11 @@ module rivet_pcie_ctrl #(
     .cfg_tlast_i  (cfg_tx_l),
     .cfg_tvalid_i (cfg_tx_v),
     .cfg_tready_o (cfg_tx_r),
+    .msi_tdata_i  (msi_tx_d),
+    .msi_tkeep_i  (msi_tx_k),
+    .msi_tlast_i  (msi_tx_l),
+    .msi_tvalid_i (msi_tx_v),
+    .msi_tready_o (msi_tx_r),
     .cc_tdata_i   (cc_tx_d),
     .cc_tkeep_i   (cc_tx_k),
     .cc_tlast_i   (cc_tx_l),

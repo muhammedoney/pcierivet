@@ -24,7 +24,16 @@ module rivet_tl_rq (
 
   output logic        tx_accept_o,
   output logic [7:0]  tx_hdr0_o,
-  output logic [9:0]  tx_len_dw_o
+  output logic [9:0]  tx_len_dw_o,
+
+  // Companion: tag / sequence feedback (NP MemRd)
+  output logic [5:0]  rq_seq_num_o,
+  output logic        rq_seq_num_vld_o,
+  output logic [9:0]  rq_tag_o,
+  output logic        rq_tag_vld_o,
+  output logic [3:0]  rq_tag_av_o,
+  // Pulse from RC when a completion frees a tag slot
+  input  logic        tag_free_i
 );
 
   import rivet_pkg::*;
@@ -45,6 +54,8 @@ module rivet_tl_rq (
   logic [7:0]   tag_q;
   logic [3:0]   fbe_q, lbe_q;
   logic [31:0]  data_q;
+  logic [5:0]   seq_q;
+  logic [3:0]   tag_av_q;
 
   assign s_axis_rq_tready = bus_master_en_i &&
                             ((st_q == ST_D0) || (st_q == ST_D1) || (st_q == ST_DAT));
@@ -57,6 +68,12 @@ module rivet_tl_rq (
   assign tx_len_dw_o = is_wr_q ? ((len_q == 10'd0) ? 10'd1 : len_q) : 10'd0;
   assign tx_accept_o = tx_tvalid_o && tx_tready_i && tx_tlast_o;
 
+  assign rq_seq_num_o     = seq_q;
+  assign rq_tag_o         = {2'b00, tag_q};
+  assign rq_tag_av_o      = tag_av_q;
+  assign rq_seq_num_vld_o = tx_accept_o;
+  assign rq_tag_vld_o     = tx_accept_o && !is_wr_q;
+
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       st_q   <= ST_D0;
@@ -68,7 +85,17 @@ module rivet_tl_rq (
       fbe_q  <= '0;
       lbe_q  <= '0;
       data_q <= '0;
+      seq_q  <= '0;
+      tag_av_q <= 4'd8;
     end else begin
+      if (tx_accept_o) begin
+        seq_q <= seq_q + 6'd1;
+        if (!is_wr_q && tag_av_q != 4'd0)
+          tag_av_q <= tag_av_q - 4'd1;
+      end else if (tag_free_i && tag_av_q < 4'd8) begin
+        tag_av_q <= tag_av_q + 4'd1;
+      end
+
       unique case (st_q)
         ST_D0: begin
           if (s_axis_rq_tvalid && s_axis_rq_tready) begin

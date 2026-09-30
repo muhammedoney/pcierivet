@@ -24,6 +24,7 @@ class rivet_scoreboard extends uvm_scoreboard;
   bit cfg_mgmt_mode;
   bit tlp_mode;
   bit dllp_fc_mode;
+  bit companion_mode;
   bit tlp_require_cc;
   bit tlp_require_rc;
   int unsigned dllp_dut_fc, dllp_peer_fc, dllp_dut_init1, dllp_dut_init2;
@@ -52,6 +53,7 @@ class rivet_scoreboard extends uvm_scoreboard;
     void'(uvm_config_db#(bit)::get(this, "", "cfg_mgmt_mode", cfg_mgmt_mode));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_mode", tlp_mode));
     void'(uvm_config_db#(bit)::get(this, "", "dllp_fc_mode", dllp_fc_mode));
+    void'(uvm_config_db#(bit)::get(this, "", "companion_mode", companion_mode));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_require_cc", tlp_require_cc));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_require_rc", tlp_require_rc));
     pipe_imp = new("pipe_imp", this);
@@ -244,14 +246,14 @@ class rivet_scoreboard extends uvm_scoreboard;
   function void write_comp(rivet_companion_item t);
     comp_sample_count++;
     if (comp_sample_count < 5) return;
-    if (ltssm_l0_mode || cfg_mgmt_mode || tlp_mode || dllp_fc_mode) begin
+    if (ltssm_l0_mode || cfg_mgmt_mode || tlp_mode || dllp_fc_mode || companion_mode) begin
       comp_checked = 1;
       return;
     end
-    if (t.rq_seq_num_vld0 || t.rq_tag_vld0 || t.rq_tag_vld1 ||
-        t.rq_tag_av !== '0 || t.tfc_nph_av !== '0 || t.tfc_npd_av !== '0) begin
+    // Idle smoke: only pulse valids must stay quiet; tag_av/tfc may be non-zero.
+    if (t.rq_seq_num_vld0 || t.rq_tag_vld0 || t.rq_tag_vld1) begin
       comp_unexpected++;
-      `uvm_error(get_type_name(), "Companion RQ/tfc non-zero on idle smoke DUT")
+      `uvm_error(get_type_name(), "Companion RQ vld pulsed on idle smoke DUT")
     end else
       comp_idle_ok++;
     comp_checked = 1;
@@ -299,6 +301,11 @@ class rivet_scoreboard extends uvm_scoreboard;
         $sformatf("dllp_fc OK peer=%0d dut_fc=%0d init1=%0d init2=%0d upd=%0d",
                   dllp_peer_fc, dllp_dut_fc, dllp_dut_init1, dllp_dut_init2,
                   dllp_dut_update), UVM_LOW)
+      return;
+    end
+
+    if (companion_mode && !tlp_mode) begin
+      `uvm_info(get_type_name(), "Companion mode — checks owned by vseq", UVM_LOW)
       return;
     end
 

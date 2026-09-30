@@ -22,7 +22,9 @@ module rivet_tl_rc (
 
   output logic        rx_accept_o,
   output logic [7:0]  rx_hdr0_o,
-  output logic [9:0]  rx_len_dw_o
+  output logic [9:0]  rx_len_dw_o,
+  // Pulse when a completion descriptor is accepted on AXI-ST (frees RQ tag)
+  output logic        tag_free_o
 );
 
   import rivet_pkg::*;
@@ -80,6 +82,7 @@ module rivet_tl_rc (
   assign rx_len_dw_o = (hdr0_q == RIVET_TLP_B0_CPLD) ?
                        ((len_q == 10'd0) ? 10'd1 : len_q) : 10'd0;
   assign rx_accept_o = (st_q == ST_DESC0) && m_axis_rc_tvalid && m_axis_rc_tready;
+  assign tag_free_o  = rx_accept_o;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin

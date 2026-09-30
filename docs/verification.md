@@ -62,8 +62,12 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | Hot Reset | `.\scripts\sim_questa.ps1 smoke_hot_reset_gen2_x4 4` | TS Hot Reset → Detect → L0 |
 | Disabled | `.\scripts\sim_questa.ps1 smoke_disabled_gen2_x4 4` | TS Disable Link → Detect → L0 |
 | Mem64 CQ↔CC | `.\scripts\sim_questa.ps1 smoke_tlp_cq_cc_mem64_gen2_x4 4` | Peer MemRd64 → CQ → CC CplD |
+| MSI | `.\scripts\sim_questa.ps1 smoke_msi_gen2_x4 4` | cfg MSI + `cfg_interrupt_msi_*` → MemWr |
+| MSI-X | `.\scripts\sim_questa.ps1 smoke_msix_gen2_x4 4` | External-table `cfg_interrupt_msix_*` |
+| AER | `.\scripts\sim_questa.ps1 smoke_aer_gen2_x4 4` | `cfg_err_*` → outs + Device Status sticky |
+| Companion | `.\scripts\sim_questa.ps1 smoke_companion_gen2_x4 4` | CQ NP + RQ tag/seq + `pcie_tfc_*` |
 
----
+Phase 2 Full Gen2 EP (sim) **closed** when the table above is green @ ×4.
 
 ## Phase 1 UVM build-out (historical)
 

@@ -16,6 +16,7 @@ package rivet_uvm_pkg;
   ) rivet_axi_st_vif;
   typedef virtual rivet_cfg_mgmt_if rivet_cfg_mgmt_vif;
   typedef virtual rivet_companion_if rivet_companion_vif;
+  typedef virtual rivet_interrupt_if rivet_interrupt_vif;
 
   `uvm_analysis_imp_decl(_pipe)
   `uvm_analysis_imp_decl(_axi)
@@ -70,6 +71,12 @@ package rivet_uvm_pkg;
   `include "seq/rivet_hot_reset_vseq.svh"
   `include "seq/rivet_disabled_vseq.svh"
   `include "seq/rivet_cfg_mgmt_after_l0_vseq.svh"
+  `include "seq/rivet_cfg_mgmt_msi_prog_seq.svh"
+  `include "seq/rivet_cfg_mgmt_dev_status_chk_seq.svh"
+  `include "seq/rivet_msi_vseq.svh"
+  `include "seq/rivet_msix_vseq.svh"
+  `include "seq/rivet_aer_vseq.svh"
+  `include "seq/rivet_companion_vseq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
   `include "env/rivet_env.svh"
@@ -91,5 +98,9 @@ package rivet_uvm_pkg;
   `include "tests/smoke_linkwidth_peer_x2_dut_x4.svh"
   `include "tests/smoke_hot_reset_gen2_x4.svh"
   `include "tests/smoke_disabled_gen2_x4.svh"
+  `include "tests/smoke_msi_gen2_x4.svh"
+  `include "tests/smoke_msix_gen2_x4.svh"
+  `include "tests/smoke_aer_gen2_x4.svh"
+  `include "tests/smoke_companion_gen2_x4.svh"
 endpackage : rivet_uvm_pkg
 

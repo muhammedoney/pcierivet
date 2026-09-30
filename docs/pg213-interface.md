@@ -223,8 +223,8 @@ Rivet decision:
   `cfg_interrupt_msix_vec_pending_status`
 - VF enable/mask buses are deferred with SR-IOV.
 
-Status: all interrupt groups are missing. Phase 2 should implement MSI first;
-INTx and MSI-X remain explicit tracked groups, not accidental omissions.
+Status: MSI + MSI-X (external table) + AER `cfg_err_*` implemented for Gen2 EP
+smoke (`smoke_msi/msix/aer_gen2_x4`). INTx remains deferred.
 
 ## Extended configuration interface
 
@@ -274,10 +274,10 @@ the controller remains independently testable at user clock + PIPE.
 - [x] Config-space Type 0 + cap chain + fabric Cfg / `cfg_mgmt` (RQ/RC still stub).
 - [ ] FLR and power-state handshakes.
 - [ ] Message receive/transmit.
-- [ ] MSI, then INTx/MSI-X according to enabled feature set.
-- [ ] Flow-control observability.
+- [x] MSI, then MSI-X (external table); INTx deferred.
+- [x] Companion CQ NP / RQ tag-seq / `pcie_tfc_*` depth (`smoke_companion_gen2_x4`).
+- [ ] Flow-control observability beyond tfc scale (cfg_fc_* fuller).
 - [ ] PG213 compatibility adapter if pin-level drop-in compatibility is desired.
-
 ### Explicitly deferred, not forgotten
 
 - 512-bit AXI and straddling.
