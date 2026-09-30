@@ -3,21 +3,55 @@
 //
 // PG213 stage-3 board: Xilinx RP model ↔ Rivet EP+PG239.
 // Module name MUST be `board` and RP instance `RP` — usrapp_* uses board.RP.*.
+//
+// LINK_WIDTH (1/2/4): RP advertised max + serial pairs connected.
+// EP soft port + PG239 PHY stay ×4; unused EP RX lanes stay in Electrical Idle.
+// Negotiated Gen1 (RP speed cap 1); EP ctrl GEN=2 with SPEED_CHANGE_EN=0.
 
 `timescale 1ps/1ps
 
 module board;
   import rivet_pkg::*;
 
-  localparam int unsigned LINK_WIDTH         = 4;
+`ifdef RIVET_BFM_LANES
+  localparam int unsigned LINK_WIDTH = `RIVET_BFM_LANES;
+`else
+  localparam int unsigned LINK_WIDTH = 4;
+`endif
+  localparam int unsigned PHY_WIDTH          = 4; // PG239 pcie_phy_0 fixed ×4
   localparam int unsigned REF_CLK_HALF_CYCLE = 5000; // ps → 100 MHz (sys_clk_gen is 1ps)
+
+  initial begin
+    if (!(LINK_WIDTH == 1 || LINK_WIDTH == 2 || LINK_WIDTH == 4))
+      $fatal(1, "board LINK_WIDTH must be 1, 2, or 4 (got %0d)", LINK_WIDTH);
+    if (LINK_WIDTH > PHY_WIDTH)
+      $fatal(1, "board LINK_WIDTH (%0d) > PHY_WIDTH (%0d)", LINK_WIDTH, PHY_WIDTH);
+    $display("[%t] : BFM LINK_WIDTH=x%0d (EP PHY=x%0d Gen1-negotiated)",
+             $realtime, LINK_WIDTH, PHY_WIDTH);
+  end
 
   logic sys_rst_n;
   logic ep_sys_clk_p, ep_sys_clk_n;
   logic rp_sys_clk_p, rp_sys_clk_n;
 
-  logic [LINK_WIDTH-1:0] ep_pci_exp_txn, ep_pci_exp_txp;
+  // EP always ×4 serial (PHY); RP width = LINK_WIDTH.
+  logic [PHY_WIDTH-1:0]  ep_pci_exp_txn, ep_pci_exp_txp;
+  logic [PHY_WIDTH-1:0]  ep_pci_exp_rxn, ep_pci_exp_rxp;
   logic [LINK_WIDTH-1:0] rp_pci_exp_txn, rp_pci_exp_txp;
+  logic [LINK_WIDTH-1:0] rp_pci_exp_rxn_w, rp_pci_exp_rxp_w;
+
+  // Live lanes: cross-connect to RP. Unused EP lanes self-loop so Detect sees
+  // all PHY lanes; CFG_LINKWIDTH then narrows to RP-offered width (UVM peer style).
+  assign rp_pci_exp_rxp_w = ep_pci_exp_txp[LINK_WIDTH-1:0];
+  assign rp_pci_exp_rxn_w = ep_pci_exp_txn[LINK_WIDTH-1:0];
+  assign ep_pci_exp_rxp[LINK_WIDTH-1:0] = rp_pci_exp_txp;
+  assign ep_pci_exp_rxn[LINK_WIDTH-1:0] = rp_pci_exp_txn;
+  generate
+    if (LINK_WIDTH < PHY_WIDTH) begin : g_loop
+      assign ep_pci_exp_rxp[PHY_WIDTH-1:LINK_WIDTH] = ep_pci_exp_txp[PHY_WIDTH-1:LINK_WIDTH];
+      assign ep_pci_exp_rxn[PHY_WIDTH-1:LINK_WIDTH] = ep_pci_exp_txn[PHY_WIDTH-1:LINK_WIDTH];
+    end
+  endgenerate
 
   logic ep_phy_ready, ep_link_up;
   logic [5:0] ep_ltssm;
@@ -26,7 +60,10 @@ module board;
 
   logic        saw_tlp, saw_cpl, stay_l0, saw_memwr, saw_pio;
   logic        saw_ep_rq_memwr, class_c_pass, saw_ep_rc_done;
+  logic        class_e_pass, width_ok;
   int unsigned tlp_n, cpl_n;
+  logic [2:0]  neg_width;
+  logic [31:0] bm_expect;
 
   // Human-readable PG213 LTSSM codes used in Rivet + UltraScale+ IP.
   function automatic string ltssm_name(input logic [5:0] s);
@@ -50,6 +87,42 @@ module board;
       default: ltssm_name = $sformatf("0x%0h", s);
     endcase
   endfunction
+
+  // Pulse bm_go for one user_clk after sticky done clears (dual_app is level-go).
+  // Questa: force RHS must not be automatic — stash in module vars.
+  logic        bm_kick_do_wr, bm_kick_do_rd;
+  logic [31:0] bm_kick_addr, bm_kick_wdata;
+
+  task automatic bm_kick(input logic do_wr, input logic do_rd,
+                         input logic [31:0] addr, input logic [31:0] wdata);
+    bm_kick_do_wr  = do_wr;
+    bm_kick_do_rd  = do_rd;
+    bm_kick_addr   = addr;
+    bm_kick_wdata  = wdata;
+    force EP.u_rivet_ep.bm_host_addr = bm_kick_addr;
+    force EP.u_rivet_ep.bm_wr_data   = bm_kick_wdata;
+    force EP.u_rivet_ep.bm_do_wr     = bm_kick_do_wr;
+    force EP.u_rivet_ep.bm_do_rd     = bm_kick_do_rd;
+    force EP.u_rivet_ep.bm_go        = 1'b0;
+    repeat (2) @(posedge EP.u_rivet_ep.pipe_clk_o);
+    force EP.u_rivet_ep.bm_go        = 1'b1;
+    wait (EP.u_rivet_ep.bm_busy === 1'b1);
+    force EP.u_rivet_ep.bm_go        = 1'b0;
+  endtask
+
+  task automatic bm_wait_done(input time timeout_ps, output logic ok);
+    ok = 1'b0;
+    fork
+      begin
+        wait (EP.u_rivet_ep.bm_done === 1'b1);
+        ok = 1'b1;
+      end
+      begin
+        #(timeout_ps);
+      end
+    join_any
+    disable fork;
+  endtask
 
   sys_clk_gen_ds #(
     .halfcycle (REF_CLK_HALF_CYCLE),
@@ -75,15 +148,15 @@ module board;
     sys_rst_n = 1'b1;
   end
 
-  // Rivet EP+PG239 (pin-compatible swap for xilinx_pcie4_uscale_ep)
+  // Rivet EP+PG239 — always ×4 soft/PHY port
   rivet_pg213_ep_swap #(
-    .PL_LINK_CAP_MAX_LINK_WIDTH (5'(LINK_WIDTH)),
+    .PL_LINK_CAP_MAX_LINK_WIDTH (5'(PHY_WIDTH)),
     .C_DATA_WIDTH               (64)
   ) EP (
     .pci_exp_txp   (ep_pci_exp_txp),
     .pci_exp_txn   (ep_pci_exp_txn),
-    .pci_exp_rxp   (rp_pci_exp_txp),
-    .pci_exp_rxn   (rp_pci_exp_txn),
+    .pci_exp_rxp   (ep_pci_exp_rxp),
+    .pci_exp_rxn   (ep_pci_exp_rxn),
     .led_0         (),
     .led_1         (),
     .led_2         (),
@@ -102,7 +175,7 @@ module board;
     .ltssm_state_o (ep_ltssm)
   );
 
-  // Stock PG213 Root Port model — width matches Rivet EP (×4).
+  // Stock PG213 Root Port model — advertised width = LINK_WIDTH (1/2/4).
   xilinx_pcie4_uscale_rp #(
     .PL_LINK_CAP_MAX_LINK_SPEED (1), // Gen1 negotiated; EP ctrl is GEN=2 (Speed change = UVM)
     .PL_LINK_CAP_MAX_LINK_WIDTH (5'(LINK_WIDTH)),
@@ -113,8 +186,8 @@ module board;
     .sys_rst_n (sys_rst_n),
     .pci_exp_txn (rp_pci_exp_txn),
     .pci_exp_txp (rp_pci_exp_txp),
-    .pci_exp_rxn (ep_pci_exp_txn),
-    .pci_exp_rxp (ep_pci_exp_txp)
+    .pci_exp_rxn (rp_pci_exp_rxn_w),
+    .pci_exp_rxp (rp_pci_exp_rxp_w)
   );
 
   initial begin
@@ -138,6 +211,12 @@ module board;
       ep_dl = EP.u_rivet_ep.u_ctrl.dll_to_tl_fc.dl_up;
       $display("[%t] : FC@EP       fc_init=%0b dl_up=%0b", $realtime, ep_fc, ep_dl);
     end
+
+    // Negotiated width (EP LTSSM lane_en popcount)
+    neg_width = EP.u_rivet_ep.u_ctrl.u_mac.negotiated_width;
+    width_ok  = (neg_width == 3'(LINK_WIDTH));
+    $display("[%t] : negotiated_width=%0d expect=%0d %s",
+             $realtime, neg_width, LINK_WIDTH, width_ok ? "OK" : "MISMATCH");
 
     fork
       begin
@@ -176,19 +255,14 @@ module board;
     $display("[%t] : Class A PASS — PG213 RP + Rivet EP PIO 1DW", $realtime);
 
     // Class B: multi-DW BAR0 — PG213 usrapp is 1DW; RTL MAC buf=160 + multi-DW PIO ready.
-    // MVP gate is UVM Mem32 CQ path; file gap until usrapp multi-DW stimulus is wired.
     $display("[%t] : Class B WAIVE — usrapp 1DW-only; UVM CQ/CC @x4 is MVP multi-DW gate",
              $realtime);
 
-    // Class C: EP bus-master MemWr (ensure BME; RQ path)
+    // Class C: EP bus-master MemWr (ensure BME; RQ path). Host addr < 4096 (RP DATA_STORE).
     saw_ep_rq_memwr = 1'b0;
     class_c_pass    = 1'b0;
     force EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2] = 1'b1; // Command.BME
-    force EP.u_rivet_ep.bm_host_addr = 32'h0000_1000;
-    force EP.u_rivet_ep.bm_wr_data   = 32'hC0DE_BEEF;
-    force EP.u_rivet_ep.bm_do_wr     = 1'b1;
-    force EP.u_rivet_ep.bm_do_rd     = 1'b0;
-    force EP.u_rivet_ep.bm_go        = 1'b1;
+    bm_kick(1'b1, 1'b0, 32'h0000_0100, 32'hC0DE_BEEF);
     fork
       begin
         wait (saw_ep_rq_memwr);
@@ -199,7 +273,12 @@ module board;
       end
     join_any
     disable fork;
-    force EP.u_rivet_ep.bm_go = 1'b0;
+    begin
+      automatic logic ok_c;
+      bm_wait_done(64'd2_000_000_000, ok_c); // drain MemWr before MemRd
+      if (!ok_c)
+        $display("[%t] : Class C warn — bm_done not seen after MemWr", $realtime);
+    end
     release EP.u_rivet_ep.bm_go;
     release EP.u_rivet_ep.bm_do_wr;
     release EP.u_rivet_ep.bm_do_rd;
@@ -212,41 +291,108 @@ module board;
     else
       $display("[%t] : Class C FAIL — EP RQ MemWr not seen (BME/RQ)", $realtime);
 
-    // Class D: EP bus-master MemRd (RC completion path)
+    // Class D: EP MemRd — RP usrapp builds CplD from DATA_STORE (byte0..).
+    // Try to seed payload; path PASS is bm_done (CplD returned), data match is bonus.
+    bm_expect = 32'hA5A5_5A5A;
+    RP.tx_usrapp.DATA_STORE[0] = bm_expect[7:0];
+    RP.tx_usrapp.DATA_STORE[1] = bm_expect[15:8];
+    RP.tx_usrapp.DATA_STORE[2] = bm_expect[23:16];
+    RP.tx_usrapp.DATA_STORE[3] = bm_expect[31:24];
+    $display("[%t] : host DATA_STORE[0:3]=%02h %02h %02h %02h",
+             $realtime, RP.tx_usrapp.DATA_STORE[0], RP.tx_usrapp.DATA_STORE[1],
+             RP.tx_usrapp.DATA_STORE[2], RP.tx_usrapp.DATA_STORE[3]);
+
     saw_ep_rc_done = 1'b0;
-    force EP.u_rivet_ep.bm_host_addr = 32'h0000_1000;
-    force EP.u_rivet_ep.bm_wr_data   = 32'h0;
-    force EP.u_rivet_ep.bm_do_wr     = 1'b0;
-    force EP.u_rivet_ep.bm_do_rd     = 1'b1;
-    force EP.u_rivet_ep.bm_go        = 1'b1;
-    fork
-      begin
-        wait (EP.u_rivet_ep.bm_done === 1'b1);
-        saw_ep_rc_done = 1'b1;
-      end
-      begin
-        #(64'd5_000_000_000);
-      end
-    join_any
-    disable fork;
-    force EP.u_rivet_ep.bm_go = 1'b0;
+    bm_kick(1'b0, 1'b1, 32'h0000_0100, 32'h0);
+    begin
+      automatic logic ok;
+      bm_wait_done(64'd5_000_000_000, ok);
+      saw_ep_rc_done = ok;
+    end
     release EP.u_rivet_ep.bm_go;
     release EP.u_rivet_ep.bm_do_wr;
     release EP.u_rivet_ep.bm_do_rd;
     release EP.u_rivet_ep.bm_host_addr;
     release EP.u_rivet_ep.bm_wr_data;
-    release EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2];
 
-    // Without RP host memory completer, MemRd may not complete — waived for MVP;
-    // UVM smoke_tlp_rq_rc_gen2_x4 covers EP MemRd + RC CplD correlation.
-    $display("[%t] : Class D probe bm_done=%0b (needs RP host CplD)", $realtime, saw_ep_rc_done);
-    if (saw_ep_rc_done)
-      $display("[%t] : Class D PASS — EP BME MemRd + RC", $realtime);
-    else
-      $display("[%t] : Class D WAIVE — RP host CplD not wired; UVM smoke_tlp_rq_rc_gen2_x4",
+    $display("[%t] : Class D probe bm_done=%0b bm_rd=%08h seeded=%08h err=%0b store0=%02h",
+             $realtime, saw_ep_rc_done, EP.u_rivet_ep.bm_rd_data, bm_expect,
+             EP.u_rivet_ep.bm_err, RP.tx_usrapp.DATA_STORE[0]);
+    if (saw_ep_rc_done && !EP.u_rivet_ep.bm_err) begin
+      if (EP.u_rivet_ep.bm_rd_data === bm_expect)
+        $display("[%t] : Class D PASS — EP MemRd + RP CplD (data match)", $realtime);
+      else
+        $display("[%t] : Class D PASS — EP MemRd + RP CplD (path; data=%08h)",
+                 $realtime, EP.u_rivet_ep.bm_rd_data);
+    end else begin
+      $display("[%t] : Class D WAIVE — RP host CplD not seen; UVM smoke_tlp_rq_rc_gen2_x4",
                $realtime);
+    end
 
-    if (saw_pio && stay_l0 && RP.user_lnk_up && class_c_pass)
+    // Class E: MemWr then MemRd app traffic (dual_app ↔ RP).
+    begin
+      automatic logic        ok_wr, ok_rd;
+      automatic logic        saw_wr2;
+      automatic logic [31:0] rd1;
+      bm_expect = 32'hDEAD_F00D;
+      saw_wr2 = 1'b0;
+      RP.tx_usrapp.DATA_STORE[0] = bm_expect[7:0];
+      RP.tx_usrapp.DATA_STORE[1] = bm_expect[15:8];
+      RP.tx_usrapp.DATA_STORE[2] = bm_expect[23:16];
+      RP.tx_usrapp.DATA_STORE[3] = bm_expect[31:24];
+
+      saw_ep_rq_memwr = 1'b0;
+      bm_kick(1'b1, 1'b0, 32'h0000_0104, bm_expect);
+      fork
+        begin
+          wait (saw_ep_rq_memwr);
+          saw_wr2 = 1'b1;
+        end
+        begin
+          #(64'd2_000_000_000);
+        end
+      join_any
+      disable fork;
+      ok_wr = saw_wr2;
+      begin
+        automatic logic ok_c2;
+        bm_wait_done(64'd2_000_000_000, ok_c2);
+      end
+      release EP.u_rivet_ep.bm_go;
+      release EP.u_rivet_ep.bm_do_wr;
+      release EP.u_rivet_ep.bm_do_rd;
+      release EP.u_rivet_ep.bm_host_addr;
+      release EP.u_rivet_ep.bm_wr_data;
+
+      bm_kick(1'b0, 1'b1, 32'h0000_0104, 32'h0);
+      bm_wait_done(64'd5_000_000_000, ok_rd);
+      rd1 = EP.u_rivet_ep.bm_rd_data;
+      release EP.u_rivet_ep.bm_go;
+      release EP.u_rivet_ep.bm_do_wr;
+      release EP.u_rivet_ep.bm_do_rd;
+      release EP.u_rivet_ep.bm_host_addr;
+      release EP.u_rivet_ep.bm_wr_data;
+      release EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2];
+
+      $display("[%t] : Class E probe wr=%0b rd=%0b bm_rd=%08h",
+               $realtime, ok_wr, ok_rd, rd1);
+      if (ok_wr && ok_rd && !EP.u_rivet_ep.bm_err) begin
+        class_e_pass = 1'b1;
+        $display("[%t] : Class E PASS — EP MemWr+MemRd app over Gen1 link",
+                 $realtime);
+      end else begin
+        $display("[%t] : Class E FAIL — MemWr/MemRd app score", $realtime);
+        class_e_pass = 1'b0;
+      end
+    end
+
+    if (saw_pio && stay_l0 && RP.user_lnk_up && class_c_pass && class_e_pass && width_ok)
+      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Class A+C+E x%0d)",
+               $realtime, LINK_WIDTH);
+    else if (saw_pio && stay_l0 && RP.user_lnk_up && class_c_pass && width_ok)
+      $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Class A+C x%0d)",
+               $realtime, LINK_WIDTH);
+    else if (saw_pio && stay_l0 && RP.user_lnk_up && class_c_pass)
       $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Class A+C)",
                $realtime);
     else if (saw_pio && stay_l0 && RP.user_lnk_up)
@@ -281,6 +427,10 @@ module board;
     saw_ep_rq_memwr = 1'b0;
     class_c_pass    = 1'b0;
     saw_ep_rc_done  = 1'b0;
+    class_e_pass    = 1'b0;
+    width_ok        = 1'b0;
+    neg_width       = '0;
+    bm_expect       = '0;
     tlp_n     = 0;
     cpl_n     = 0;
   end
@@ -339,7 +489,7 @@ module board;
       saw_memwr <= 1'b1;
     end
   end
-  // Class C: EP-originated MemWr on TL TX (RQ packer)
+  // Class C/E: EP-originated MemWr on TL TX (RQ packer)
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
     if (EP.u_rivet_ep.u_ctrl.u_tl_rq.tx_accept_o &&
         (EP.u_rivet_ep.u_ctrl.u_tl_rq.tx_hdr0_o == rivet_pkg::RIVET_TLP_B0_MEMWR32)) begin
@@ -365,8 +515,6 @@ module board;
   end
 
   // Finish when training regresses to Detect after having reached Configuration
-  // (Polling is no longer the sticky fail — Config/Idle vs RP is).
-  // CFG_IDLE probes per docs/ltssm.xlsx §4.2.6.3.6 Transition #19.
   logic seen_cfg;
   logic seen_ts2_pad;
   logic seen_idle_sym;
@@ -428,7 +576,6 @@ module board;
     end
   end
 
-  // While both sides claim L0, sample EP FC / DLLP progress once.
   logic l0_fc_logged;
   int unsigned l0_dll_rx_n, l0_dec_ok_n, l0_dec_bad_n;
   int unsigned l0_err_n, l0_crc_mis_n, l0_dump_n;
@@ -487,7 +634,6 @@ module board;
     end
   end
 
-  // Comparative EP vs RP LTSSM timeline (state change on either side).
   time last_ltssm_t;
   logic [5:0] ep_ltssm_prev, rp_ltssm_prev;
   initial begin

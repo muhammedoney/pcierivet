@@ -39,7 +39,9 @@ module rivet_ep_dual_app #(
   output logic        m_axis_rc_tready,
   input  logic [74:0] m_axis_rc_tuser,
 
-  // Bus-master stimulus (host Mem32 window)
+  // Bus-master stimulus (host Mem32 window).
+  // Level-sensitive go: hold bm_go_i until bm_busy_o, then deassert.
+  // Set both do_wr and do_rd for write-then-read in one request.
   input  logic        bm_go_i,
   input  logic        bm_do_wr_i,
   input  logic        bm_do_rd_i,

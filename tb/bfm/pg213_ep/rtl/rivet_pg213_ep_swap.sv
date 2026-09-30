@@ -9,6 +9,8 @@
 `timescale 1ps/1ps
 
 module rivet_pg213_ep_swap #(
+  // Soft-port max width (PIPE/ctrl). PG239 pcie_phy_0 is fixed ×4 — keep 4 here.
+  // Narrower negotiated width comes from the RP partner (board LINK_WIDTH).
   parameter [4:0] PL_LINK_CAP_MAX_LINK_WIDTH = 4,
   parameter       C_DATA_WIDTH               = 64
 ) (
