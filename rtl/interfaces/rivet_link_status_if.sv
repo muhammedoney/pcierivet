@@ -10,4 +10,5 @@ interface rivet_link_status_if (
   logic       link_up;
   logic [5:0] cfg_ltssm_state;
   logic [2:0] pipe_rate;
+  logic [2:0] negotiated_width;
 endinterface : rivet_link_status_if

@@ -55,6 +55,8 @@ module rivet_ltssm #(
   input  logic             idle_all_i,
   input  logic             idle_any_i,
   input  logic             idle_sym_any_i, // one descrambled Idle Symbol (not 8-consec)
+  input  logic [LANES-1:0] ts1_link_lanes_i,
+  input  logic [LANES-1:0] ts1_lane_lanes_i,
   input  logic [7:0]       rx_link_num_i,
   input  logic [8*LANES-1:0] rx_lane_num_i,
   input  logic [7:0]       rx_rate_id_i,
@@ -339,12 +341,19 @@ module rivet_ltssm #(
           else if (timer_expired)
             state_d = RIVET_LTSSM_DETECT_QUIET;
         end else begin
-          // Upstream Port: adopt the Link number offered by the Downstream Port,
-          // then transmit it with the Lane number still PAD.
+          // Upstream Port: adopt Link# from Downstream and narrow lane_en to
+          // Lanes that actually received a non-PAD Link number (partner may be
+          // narrower than our port — docs/mac.md §7.1).
           if (ts1_link_any_i) begin
-            link_num_d = rx_link_num_i;
-            link_pad_d = 1'b0;
-            state_d    = RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT;
+            automatic logic [LANES-1:0] offered = lane_en_q & ts1_link_lanes_i;
+            if (offered != '0) begin
+              lane_en_d  = offered;
+              link_num_d = rx_link_num_i;
+              link_pad_d = 1'b0;
+              state_d    = RIVET_LTSSM_CFG_LINKWIDTH_ACCEPT;
+            end else if (timer_expired) begin
+              state_d = RIVET_LTSSM_DETECT_QUIET;
+            end
           end else if (timer_expired) begin
             state_d = RIVET_LTSSM_DETECT_QUIET;
           end
@@ -365,6 +374,12 @@ module rivet_ltssm #(
           else if (timer_expired)
             state_d = RIVET_LTSSM_DETECT_QUIET;
         end else begin
+          // Upstream: optionally tighten further to Lanes with numbered Lane#.
+          if (ts1_lane_any_i) begin
+            automatic logic [LANES-1:0] numbered = lane_en_q & ts1_lane_lanes_i;
+            if (numbered != '0)
+              lane_en_d = numbered;
+          end
           if (ts1_lane_all_i) begin
             lane_num_d = rx_lane_num_i; // no Lane reversal in this milestone
             lane_pad_d = 1'b0;
@@ -682,8 +697,9 @@ module rivet_ltssm #(
     end
   end
 
-  // Reserved for the multi-lane milestone, where per-lane "all vs any" matters.
+  // Reserved for later multi-lane refinements.
   logic _unused_ok;
-  assign _unused_ok = ts2_pad_all_i ^ ts1_link_all_i ^ ts1_lane_any_i;
+  assign _unused_ok = ts2_pad_all_i ^ ts1_link_all_i ^ ts1_lane_any_i ^
+                      (|ts1_lane_lanes_i);
 
 endmodule : rivet_ltssm

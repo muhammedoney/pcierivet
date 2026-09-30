@@ -259,7 +259,8 @@ module rivet_ltssm_smoke_tb;
     dut_tx_ts1 = 1'b0;
     dut_tx_ts2 = 1'b0;
     dut_tx_k   = 1'b0;
-    for (int unsigned l = 0; l < LANES; l++) begin
+    for (int unsigned l = 0; l < PEER_LANES; l++) begin
+      if (pipe_txelecidle[l]) continue;
       for (int unsigned s = 0; s < 2; s++) begin
         if (pipe_txdatak[2*l + s]) begin
           dut_tx_k = 1'b1;
@@ -271,8 +272,12 @@ module rivet_ltssm_smoke_tb;
     end
   end
 
-  assign dut_tx_data_only = !dut_tx_k && !dut_tx_ts1 && !dut_tx_ts2 &&
-                            (pipe_txelecidle == '0);
+  always_comb begin
+    dut_tx_data_only = !dut_tx_k && !dut_tx_ts1 && !dut_tx_ts2;
+    for (int unsigned l = 0; l < PEER_LANES; l++) begin
+      if (pipe_txelecidle[l]) dut_tx_data_only = 1'b0;
+    end
+  end
 
   // ---------------------------------------------------------------------------
   // Receiver detection: PhyStatus pulse with RxStatus = 011

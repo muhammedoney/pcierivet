@@ -45,6 +45,11 @@ module rivet_mac_os_rx #(
   // "16 Idle Symbols sent after receiving one" — one Symbol, not eight).
   output logic idle_sym_any_o,
 
+  // Per-lane TS shape (threshold met). Used to narrow lane_en when the partner
+  // configures fewer Lanes than our port width (docs/mac.md §7.1).
+  output logic [LANES-1:0] ts1_link_lanes_o,
+  output logic [LANES-1:0] ts1_lane_lanes_o,
+
   // Captured TS fields (sticky until capture_clr_i)
   output logic [7:0]         rx_link_num_o,
   output logic [8*LANES-1:0] rx_lane_num_o,
@@ -351,6 +356,15 @@ module rivet_mac_os_rx #(
       ts1_lane_all_o = 1'b0;
       ts2_cfg_all_o  = 1'b0;
       idle_all_o     = 1'b0;
+    end
+  end
+
+  always_comb begin
+    ts1_link_lanes_o = '0;
+    ts1_lane_lanes_o = '0;
+    for (int unsigned l = 0; l < LANES; l++) begin
+      ts1_link_lanes_o[l] = (c_ts1_link_q[l] >= TH_NUM);
+      ts1_lane_lanes_o[l] = (c_ts1_lane_q[l] >= TH_NUM);
     end
   end
 
