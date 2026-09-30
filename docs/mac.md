@@ -67,9 +67,9 @@ Use these **exact** values in `rivet_pkg` / `rivet_ltssm` so status ports and UV
 | `6'h11`–`6'h16` | (reserved / other in PG213 tables) | Ignore until needed |
 | `6'h17` | L1.Entry | Later |
 | `6'h18` | L1.Idle | Later |
-| `6'h20` | Disabled | Later |
+| `6'h20` | Disabled | **Yes** (TS Disable Link → Detect) |
 | `6'h21`–`6'h26` | Loopback.* | Later |
-| `6'h27` | Hot_Reset | Later |
+| `6'h27` | Hot_Reset | **Yes** (TS Hot Reset → Detect) |
 | `6'h28`–`6'h2B` | Recovery.Equalization.* | **Gen3+ only** |
 
 Canonical type: `typedef enum logic [5:0] { ... } rivet_ltssm_state_e;`
@@ -325,14 +325,14 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 
 ### M3 — Lane grow
 
-- [ ] Linkwidth / lanenum for ×2 then ×4  
+- [x] Linkwidth / lanenum for ×2 then ×4 (`smoke_linkwidth_peer_x2_dut_x4`)
 - [ ] Multi-lane packing tests
 
 ### M4 — Recovery / errors (still Gen2)
 
 - [x] Recovery.RcvrLock → RcvrCfg → Idle → L0 (UVM `smoke_recovery_l0_gen2_x4`)
 - [x] **Recovery.Speed** Gen1→Gen2 (EIOS + PIPE Rate + PhyStatus; UVM `smoke_recovery_speed_gen2_x4`)
-- [ ] Hot reset / Disabled as needed
+- [x] Hot Reset / Disabled (UVM `smoke_hot_reset_gen2_x4`, `smoke_disabled_gen2_x4`)
 - [ ] RxValid loss / RxStatus overflow stress beyond directed smoke
 - [ ] Gen2→Gen1 downshift (optional)
 
