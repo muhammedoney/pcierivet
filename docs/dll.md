@@ -367,7 +367,7 @@ only. Directed tests may shrink slots (e.g. 4) for fast fill/starve cases.
 - [x] `rivet_dll_crc16` + Verilator TB (`scripts/sim_dll_crc16.ps1`)
 - [x] DLLP beats stay **64-bit** (6 wire bytes + pad); wire `LANES*PIPE` is MAC-only
 - [x] `rivet_dllp_tx` / `rivet_dllp_rx` (FC + Ack/Nak) + round-trip TB
-- [x] TL↔DLL FC sideband structs + `rivet_tl_fc_stub` (CA params; CPL infinite)
+- [x] TL↔DLL FC sideband structs + `rivet_tl_fc_stub` (finite PH/PD/NPH/NPD CA; CPL infinite; UpdateFC free pulses)
 - [x] `rivet_dll` top wired in `rivet_pcie_ctrl` (TX idle until D1)
 - [x] Gate: Verilator lint + `scripts/sim_dllp_roundtrip.ps1` + LTSSM smoke
 
