@@ -29,6 +29,8 @@ module rivet_ltssm #(
   parameter int unsigned T_CFG_IDLE_CYC     = rivet_pkg::RIVET_T_2MS_CYC,
   parameter int unsigned T_RCVRLOCK_CYC     = rivet_pkg::RIVET_T_24MS_CYC,
   parameter int unsigned T_SPEED_CYC        = rivet_pkg::RIVET_T_24MS_CYC,
+  parameter int unsigned T_HOT_RESET_CYC    = rivet_pkg::RIVET_T_2MS_CYC,
+  parameter int unsigned T_DISABLED_CYC     = rivet_pkg::RIVET_T_2MS_CYC,
   parameter int unsigned N_TS1_POLLING      = rivet_pkg::RIVET_N_TS1_POLLING,
   parameter logic [7:0]  N_FTS_ADV          = 8'hFF
 ) (
@@ -60,6 +62,7 @@ module rivet_ltssm #(
   input  logic [7:0]       rx_link_num_i,
   input  logic [8*LANES-1:0] rx_lane_num_i,
   input  logic [7:0]       rx_rate_id_i,
+  input  logic [7:0]       rx_train_ctrl_i,
   input  logic [7:0]       rx_n_fts_i,
   input  logic [LANES-1:0] polarity_inverted_i,
   input  logic             deskew_done_i,
@@ -200,6 +203,10 @@ module rivet_ltssm #(
                    (state_q == RIVET_LTSSM_RECOVERY_RCVRCFG);
   wire mutual_speed_chg = want_speed_chg &&
                           rx_rate_id_i[RIVET_TS_RATE_SPEED_CHANGE_BIT];
+  wire saw_any_ts = ts1_pad_any_i || ts2_pad_any_i || ts1_link_any_i ||
+                    ts1_lane_any_i || ts2_cfg_any_i;
+  wire rx_hot_reset = saw_any_ts && rx_train_ctrl_i[RIVET_TS_TC_HOT_RESET];
+  wire rx_disable   = saw_any_ts && rx_train_ctrl_i[RIVET_TS_TC_DISABLE];
 
   // ---------------------------------------------------------------------------
   // Next state and outputs
@@ -234,6 +241,7 @@ module rivet_ltssm #(
     as_cdr_hold_req_o  = 1'b0;
     as_mac_in_L0_o     = 1'b0;
     accept_dll_tlp_o   = 1'b0;
+    tx_train_ctrl_o    = 8'h00;
 
     unique case (state_q)
       // ---------------------------------------------------------------- Detect
@@ -487,7 +495,11 @@ module rivet_ltssm #(
         if (ts1_link_any_i || ts1_lane_any_i || ts2_cfg_any_i ||
             ts1_pad_any_i || ts2_pad_any_i)
           rx_seen_d = 1'b1;
-        if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
+        if (rx_hot_reset)
+          state_d = RIVET_LTSSM_HOT_RESET;
+        else if (rx_disable)
+          state_d = RIVET_LTSSM_DISABLED;
+        else if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
           state_d = RIVET_LTSSM_RECOVERY_RCVRCFG;
         else if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -499,7 +511,11 @@ module rivet_ltssm #(
         lane_pad_d = 1'b0;
         if (ts2_cfg_any_i || ts2_pad_any_i)
           rx_seen_d = 1'b1;
-        if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX))) begin
+        if (rx_hot_reset)
+          state_d = RIVET_LTSSM_HOT_RESET;
+        else if (rx_disable)
+          state_d = RIVET_LTSSM_DISABLED;
+        else if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX))) begin
           if (mutual_speed_chg)
             state_d = RIVET_LTSSM_RECOVERY_SPEED;
           else
@@ -537,6 +553,32 @@ module rivet_ltssm #(
             (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
           state_d = RIVET_LTSSM_L0;
         else if (timer_expired)
+          state_d = RIVET_LTSSM_DETECT_QUIET;
+      end
+
+      // Hot Reset: echo Hot Reset TS1, then Detect to retrain (Upstream Port).
+      RIVET_LTSSM_HOT_RESET: begin
+        os_req_o        = RIVET_MAC_OS_TS1;
+        tx_train_ctrl_o = 8'h01 << RIVET_TS_TC_HOT_RESET;
+        link_pad_d      = 1'b0;
+        lane_pad_d      = 1'b0;
+        link_up_d       = 1'b0;
+        if (timer_expired)
+          state_d = RIVET_LTSSM_DETECT_QUIET;
+      end
+
+      // Disabled: EIOS then Electrical Idle / P1 until timeout → Detect.
+      RIVET_LTSSM_DISABLED: begin
+        link_up_d = 1'b0;
+        if (!speed_ei_q) begin
+          os_req_o = RIVET_MAC_OS_EIOS;
+          if (os_sent_cnt_i >= 12'd2)
+            speed_ei_d = 1'b1;
+        end else begin
+          os_req_o    = RIVET_MAC_OS_NONE;
+          powerdown_o = RIVET_PIPE_P1;
+        end
+        if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
       end
 
@@ -579,6 +621,8 @@ module rivet_ltssm #(
       RIVET_LTSSM_RECOVERY_RCVRCFG,
       RIVET_LTSSM_RECOVERY_IDLE:         timer_limit = T_RCVRLOCK_CYC;
       RIVET_LTSSM_RECOVERY_SPEED:        timer_limit = T_SPEED_CYC;
+      RIVET_LTSSM_HOT_RESET:             timer_limit = T_HOT_RESET_CYC;
+      RIVET_LTSSM_DISABLED:              timer_limit = T_DISABLED_CYC;
       default:                           timer_limit = T_DETECT_QUIET_CYC;
     endcase
   end
@@ -685,7 +729,7 @@ module rivet_ltssm #(
   assign tx_rate_id_o    = ((GEN >= 2) ? RIVET_TS_RATE_GEN2 : RIVET_TS_RATE_GEN1)
                            | ((want_speed_chg && in_rec_ts)
                               ? (8'h01 << RIVET_TS_RATE_SPEED_CHANGE_BIT) : 8'h00);
-  assign tx_train_ctrl_o = 8'h00;
+  // tx_train_ctrl_o driven in next-state comb (Hot Reset bit).
 
   assign remote_rate_id_o = remote_rate_q;
   assign remote_n_fts_o   = remote_nfts_q;

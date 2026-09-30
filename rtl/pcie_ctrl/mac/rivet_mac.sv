@@ -154,6 +154,8 @@ module rivet_mac #(
     .T_CFG_COMPLETE_CYC (rivet_scale_cyc(RIVET_T_2MS_CYC,  LTSSM_TIMER_SCALE)),
     .T_CFG_IDLE_CYC     (rivet_scale_cyc(RIVET_T_2MS_CYC,  LTSSM_TIMER_SCALE)),
     .T_RCVRLOCK_CYC     (rivet_scale_cyc(RIVET_T_24MS_CYC, LTSSM_TIMER_SCALE)),
+    .T_HOT_RESET_CYC    (rivet_scale_cyc(RIVET_T_2MS_CYC,  LTSSM_TIMER_SCALE)),
+    .T_DISABLED_CYC     (rivet_scale_cyc(RIVET_T_2MS_CYC,  LTSSM_TIMER_SCALE)),
     .N_TS1_POLLING      (N_TS1_POLLING)
   ) u_ltssm (
     .pclk_i               (pclk_i),
@@ -180,6 +182,7 @@ module rivet_mac #(
     .rx_link_num_i        (rx_link_num),
     .rx_lane_num_i        (rx_lane_num),
     .rx_rate_id_i         (rx_rate_id),
+    .rx_train_ctrl_i      (rx_train_ctrl),
     .rx_n_fts_i           (rx_n_fts),
     .polarity_inverted_i  (polarity_inverted),
     .deskew_done_i        (deskew_done),
