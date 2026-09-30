@@ -65,6 +65,7 @@ package rivet_uvm_pkg;
   `include "seq/rivet_tlp_cq_cc_vseq.svh"
   `include "seq/rivet_tlp_rq_rc_vseq.svh"
   `include "seq/rivet_recovery_l0_vseq.svh"
+  `include "seq/rivet_recovery_speed_vseq.svh"
   `include "seq/rivet_cfg_mgmt_after_l0_vseq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
@@ -82,5 +83,6 @@ package rivet_uvm_pkg;
   `include "tests/smoke_tlp_cq_cc_gen2_x4.svh"
   `include "tests/smoke_tlp_rq_rc_gen2_x4.svh"
   `include "tests/smoke_recovery_l0_gen2_x4.svh"
+  `include "tests/smoke_recovery_speed_gen2_x4.svh"
 endpackage : rivet_uvm_pkg
 

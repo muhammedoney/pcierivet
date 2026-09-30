@@ -8,9 +8,9 @@
 // MODE=RC/DSP: Downstream Port Config (offer Link# then assign Lane#).
 //
 // The link always trains at 2.5 GT/s regardless of GEN; 5.0 GT/s is reached
-// only by entering Recovery.Speed from L0 (Base 2.1 §4.2.6.2.4), which is not
-// implemented yet. Gen2 capability is still advertised in the TS Data Rate
-// Identifier, which is what Configuration.Complete records on the peer side.
+// only by entering Recovery.Speed from Recovery.RcvrCfg when both sides set
+// the Data Rate Identifier speed-change bit (Base 2.1 §4.2.6.2.4).
+// Gen2 capability is advertised in TS Symbol 4 throughout training.
 //
 // Timeouts are parameters so simulation can shrink 12/24/48/2 ms to a few
 // hundred cycles without touching the RTL.
@@ -28,6 +28,7 @@ module rivet_ltssm #(
   parameter int unsigned T_CFG_COMPLETE_CYC = rivet_pkg::RIVET_T_2MS_CYC,
   parameter int unsigned T_CFG_IDLE_CYC     = rivet_pkg::RIVET_T_2MS_CYC,
   parameter int unsigned T_RCVRLOCK_CYC     = rivet_pkg::RIVET_T_24MS_CYC,
+  parameter int unsigned T_SPEED_CYC        = rivet_pkg::RIVET_T_24MS_CYC,
   parameter int unsigned N_TS1_POLLING      = rivet_pkg::RIVET_N_TS1_POLLING,
   parameter logic [7:0]  N_FTS_ADV          = 8'hFF
 ) (
@@ -161,6 +162,9 @@ module rivet_ltssm #(
   logic             idle_rx_ok_q,  idle_rx_ok_d; // latched 8-consec Idle (CFG_IDLE)
   logic [7:0]       remote_rate_q, remote_rate_d;
   logic [7:0]       remote_nfts_q, remote_nfts_d;
+  logic [2:0]       rate_q,        rate_d;
+  logic             speed_ei_q,    speed_ei_d;   // Electrical Idle after EIOS
+  logic [LANES-1:0] phy_ack_q,     phy_ack_d;    // PhyStatus seen per lane
 
   logic timer_expired;
   logic timer_load;
@@ -187,6 +191,14 @@ module rivet_ltssm #(
 
   assign rxvalid_lost = ((rxvalid_i & lane_en_q) != lane_en_q);
 
+  // Desire Gen1→Gen2 change when both advertise 5.0 GT/s and we are still Gen1.
+  wire remote_gen2_ok = remote_rate_q[2];
+  wire want_speed_chg = (GEN >= 2) && (rate_q == RIVET_PIPE_RATE_GEN1) && remote_gen2_ok;
+  wire in_rec_ts = (state_q == RIVET_LTSSM_RECOVERY_RCVRLOCK) ||
+                   (state_q == RIVET_LTSSM_RECOVERY_RCVRCFG);
+  wire mutual_speed_chg = want_speed_chg &&
+                          rx_rate_id_i[RIVET_TS_RATE_SPEED_CHANGE_BIT];
+
   // ---------------------------------------------------------------------------
   // Next state and outputs
   // ---------------------------------------------------------------------------
@@ -209,6 +221,9 @@ module rivet_ltssm #(
     idle_rx_ok_d    = idle_rx_ok_q;
     remote_rate_d   = remote_rate_q;
     remote_nfts_d   = remote_nfts_q;
+    rate_d          = rate_q;
+    speed_ei_d      = speed_ei_q;
+    phy_ack_d       = phy_ack_q;
 
     os_req_o           = RIVET_MAC_OS_NONE;
     txdetectrx_o       = 1'b0;
@@ -235,6 +250,9 @@ module rivet_ltssm #(
         rxpolarity_d       = '0;
         idle_to_rlock_d    = 1'b0;
         idle_rx_ok_d       = 1'b0;
+        rate_d             = RIVET_PIPE_RATE_GEN1;
+        speed_ei_d         = 1'b0;
+        phy_ack_d          = '0;
 
         // 12 ms, or as soon as Electrical Idle is broken on any Lane.
         if (timer_expired || (rxelecidle_i != {LANES{1'b1}}))
@@ -443,13 +461,14 @@ module rivet_ltssm #(
           state_d = RIVET_LTSSM_RECOVERY_RCVRLOCK;
       end
 
-      // Recovery ladder (Gen2 EP, no Speed change yet — rate stays 2.5 GT/s).
-      // RcvrLock → RcvrCfg → Idle → L0. Recovery.Speed is Phase B remaining.
+      // Recovery ladder: RcvrLock → RcvrCfg → (optional Speed) → Idle → L0.
+      // Speed change requires both sides to set TS rate-ID bit 7 while still Gen1.
       RIVET_LTSSM_RECOVERY_RCVRLOCK: begin
         os_req_o    = RIVET_MAC_OS_TS1;
         link_pad_d  = 1'b0;
         lane_pad_d  = 1'b0;
-        // Keep negotiated Link# / Lane# from Configuration.
+        speed_ei_d  = 1'b0;
+        phy_ack_d   = '0;
         if (ts1_link_any_i || ts1_lane_any_i || ts2_cfg_any_i ||
             ts1_pad_any_i || ts2_pad_any_i)
           rx_seen_d = 1'b1;
@@ -465,9 +484,31 @@ module rivet_ltssm #(
         lane_pad_d = 1'b0;
         if (ts2_cfg_any_i || ts2_pad_any_i)
           rx_seen_d = 1'b1;
-        if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
-          state_d = RIVET_LTSSM_RECOVERY_IDLE;
-        else if (timer_expired)
+        if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX))) begin
+          if (mutual_speed_chg)
+            state_d = RIVET_LTSSM_RECOVERY_SPEED;
+          else
+            state_d = RIVET_LTSSM_RECOVERY_IDLE;
+        end else if (timer_expired)
+          state_d = RIVET_LTSSM_DETECT_QUIET;
+      end
+
+      RIVET_LTSSM_RECOVERY_SPEED: begin
+        // Send EIOS, then Electrical Idle + PIPE rate change; PhyStatus → RcvrLock.
+        if (!speed_ei_q) begin
+          os_req_o = RIVET_MAC_OS_EIOS;
+          if (os_sent_cnt_i >= 12'd2) begin
+            speed_ei_d = 1'b1;
+            rate_d     = RIVET_PIPE_RATE_GEN2;
+            phy_ack_d  = '0;
+          end
+        end else begin
+          os_req_o  = RIVET_MAC_OS_NONE;
+          phy_ack_d = phy_ack_q | (phystatus_i & lane_en_q);
+          if ((phy_ack_d & lane_en_q) == lane_en_q)
+            state_d = RIVET_LTSSM_RECOVERY_RCVRLOCK;
+        end
+        if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
       end
 
@@ -499,7 +540,10 @@ module rivet_ltssm #(
   assign os_cnt_clr_o  = state_change ||
                          (((state_q == RIVET_LTSSM_POLLING_CONFIGURATION) ||
                            (state_q == RIVET_LTSSM_CFG_COMPLETE) ||
-                           (state_q == RIVET_LTSSM_CFG_IDLE)) && !rx_seen_q);
+                           (state_q == RIVET_LTSSM_CFG_IDLE) ||
+                           (state_q == RIVET_LTSSM_RECOVERY_RCVRLOCK) ||
+                           (state_q == RIVET_LTSSM_RECOVERY_RCVRCFG) ||
+                           (state_q == RIVET_LTSSM_RECOVERY_IDLE)) && !rx_seen_q);
 
   // ---------------------------------------------------------------------------
   // Timeout counter (one shared instance; states are mutually exclusive)
@@ -519,6 +563,7 @@ module rivet_ltssm #(
       RIVET_LTSSM_RECOVERY_RCVRLOCK,
       RIVET_LTSSM_RECOVERY_RCVRCFG,
       RIVET_LTSSM_RECOVERY_IDLE:         timer_limit = T_RCVRLOCK_CYC;
+      RIVET_LTSSM_RECOVERY_SPEED:        timer_limit = T_SPEED_CYC;
       default:                           timer_limit = T_DETECT_QUIET_CYC;
     endcase
   end
@@ -568,6 +613,9 @@ module rivet_ltssm #(
       idle_rx_ok_q    <= 1'b0;
       remote_rate_q   <= '0;
       remote_nfts_q   <= '0;
+      rate_q          <= RIVET_PIPE_RATE_GEN1;
+      speed_ei_q      <= 1'b0;
+      phy_ack_q       <= '0;
     end else begin
       state_q         <= state_d;
       lane_en_q       <= lane_en_d;
@@ -587,6 +635,9 @@ module rivet_ltssm #(
       idle_rx_ok_q    <= idle_rx_ok_d;
       remote_rate_q   <= remote_rate_d;
       remote_nfts_q   <= remote_nfts_d;
+      rate_q          <= rate_d;
+      speed_ei_q      <= speed_ei_d;
+      phy_ack_q       <= phy_ack_d;
     end
   end
 
@@ -602,20 +653,23 @@ module rivet_ltssm #(
   assign lane_en_o      = lane_en_q;
   assign os_req_valid_o = (os_req_o != RIVET_MAC_OS_NONE);
 
-  // Transmitter is in Electrical Idle through Detect and on unused Lanes.
-  assign txelecidle_o = in_detect ? {LANES{1'b1}} : ~lane_en_q;
+  // Transmitter is in Electrical Idle through Detect, unused Lanes, and
+  // Recovery.Speed after EIOS (PIPE rate-change window).
+  assign txelecidle_o = in_detect ? {LANES{1'b1}}
+                      : (speed_ei_q ? {LANES{1'b1}} : ~lane_en_q);
   assign rxpolarity_o = rxpolarity_q;
 
-  // Training runs at 2.5 GT/s; Recovery.Speed will make this stateful.
-  assign rate_o             = RIVET_PIPE_RATE_GEN1;
-  assign negotiated_speed_o = 2'b00; // 2.5 GT/s
+  assign rate_o             = rate_q;
+  assign negotiated_speed_o = (rate_q == RIVET_PIPE_RATE_GEN2) ? 2'b01 : 2'b00;
 
   assign tx_link_num_o   = link_num_q;
   assign tx_lane_num_o   = lane_pad_q ? default_lane_num : lane_num_q;
   assign tx_link_pad_o   = link_pad_q;
   assign tx_lane_pad_o   = lane_pad_q;
   assign tx_n_fts_o      = N_FTS_ADV;
-  assign tx_rate_id_o    = (GEN >= 2) ? RIVET_TS_RATE_GEN2 : RIVET_TS_RATE_GEN1;
+  assign tx_rate_id_o    = ((GEN >= 2) ? RIVET_TS_RATE_GEN2 : RIVET_TS_RATE_GEN1)
+                           | ((want_speed_chg && in_rec_ts)
+                              ? (8'h01 << RIVET_TS_RATE_SPEED_CHANGE_BIT) : 8'h00);
   assign tx_train_ctrl_o = 8'h00;
 
   assign remote_rate_id_o = remote_rate_q;

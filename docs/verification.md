@@ -56,9 +56,9 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 
 | Gate | Command | Notes |
 |------|---------|-------|
-| Recovery → L0 | `.\scripts\sim_questa.ps1 smoke_recovery_l0_gen2_x4 4` | RcvrLock/Cfg/Idle; **no** Recovery.Speed yet |
+| Recovery → L0 | `.\scripts\sim_questa.ps1 smoke_recovery_l0_gen2_x4 4` | RcvrLock/Cfg/Idle (no Speed) |
+| Recovery.Speed | `.\scripts\sim_questa.ps1 smoke_recovery_speed_gen2_x4 4` | Gen1→Gen2 via mutual TS bit 7 |
 | M3 link-width | TBD | Peer narrower than port |
-| Recovery.Speed | TBD | Gen1↔Gen2 rate change |
 
 ---
 

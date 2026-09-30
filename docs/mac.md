@@ -59,10 +59,10 @@ Use these **exact** values in `rivet_pkg` / `rivet_ltssm` so status ports and UV
 | `6'h08` | Configuration.Lanenum.Wait | **Yes** |
 | `6'h09` | Configuration.Complete | **Yes** |
 | `6'h0A` | Configuration.Idle | **Yes** |
-| `6'h0B` | Recovery.RcvrLock | Minimal stub after L0 |
-| `6'h0C` | Recovery.Speed | Later (Gen1↔Gen2 change) |
-| `6'h0D` | Recovery.RcvrCfg | Minimal stub |
-| `6'h0E` | Recovery.Idle | Minimal stub |
+| `6'h0B` | Recovery.RcvrLock | **Yes** (after L0 errors / speed change) |
+| `6'h0C` | Recovery.Speed | **Yes** (Gen1→Gen2; mutual TS bit 7) |
+| `6'h0D` | Recovery.RcvrCfg | **Yes** |
+| `6'h0E` | Recovery.Idle | **Yes** |
 | `6'h10` | **L0** | **Yes — success gate** |
 | `6'h11`–`6'h16` | (reserved / other in PG213 tables) | Ignore until needed |
 | `6'h17` | L1.Entry | Later |
@@ -333,9 +333,10 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 ### M4 — Recovery / errors (still Gen2)
 
 - [x] Recovery.RcvrLock → RcvrCfg → Idle → L0 (UVM `smoke_recovery_l0_gen2_x4`)
-- [ ] **Recovery.Speed** Gen1↔Gen2 (PhyStatus / PCLK / 8-symbol EIOS)
+- [x] **Recovery.Speed** Gen1→Gen2 (EIOS + PIPE Rate + PhyStatus; UVM `smoke_recovery_speed_gen2_x4`)
 - [ ] Hot reset / Disabled as needed
 - [ ] RxValid loss / RxStatus overflow stress beyond directed smoke
+- [ ] Gen2→Gen1 downshift (optional)
 
 ### Later phases
 

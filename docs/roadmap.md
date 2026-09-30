@@ -27,7 +27,7 @@ Ordered ×4 gates ([verification.md](verification.md)):
 | Slice | Content | Gate |
 |-------|---------|------|
 | **B1 MAC M3** | Partner narrower than port / link-width negotiate | UVM peer ×2 vs DUT ×4 |
-| **B2 MAC M4** | Recovery.RcvrLock/Cfg/Idle (**started**); **Recovery.Speed** Gen1↔Gen2 | `smoke_recovery_l0_gen2_x4`; Speed TBD |
+| **B2 MAC M4** | Recovery.RcvrLock/Cfg/Idle + **Recovery.Speed** Gen1→Gen2 | `smoke_recovery_l0_gen2_x4`, `smoke_recovery_speed_gen2_x4` |
 | **B3 Power / reset** | Hot Reset, Disabled; L0s/L1 if needed | Directed LTSSM |
 | **B4 TL richer** | Mem64, IO, Msg; real RX buffer vs `rivet_tl_fc_stub` | UVM + BFM Class B stress |
 | **B5 Interrupts** | MSI then MSI-X | UVM interrupt agent + BFM |
