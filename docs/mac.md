@@ -275,8 +275,8 @@ sequential, and remaps MAC↔PIPE via `rivet_mac_lane_map`.
 .\scripts\sim_questa.ps1 smoke_link_reversed_x2 2
 ```
 
-BFM ×1/×2 on PG239 PHY×4 + RP×N serial pads remains deferred; MAC/UVM is SoT
-for width and reversal.
+BFM Gen1 ×2 serial (PHY×4 shell, two live pairs) passes NLW + Class A+B+C+E.
+×1 serial and reversed-lane serial are still open; UVM is SoT for those.
 
 ---
 

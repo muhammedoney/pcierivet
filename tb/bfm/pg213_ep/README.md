@@ -84,22 +84,23 @@ Work dir: `tb/bfm/pg213_ep/work/`.
 | D | EP BME MemRd + RP CplD (DATA_STORE) | PASS when host preload matches |
 | E | EP MemWr+MemRd app score vs RP DATA_STORE | PASS |
 
-Lane matrix (`-Lanes 1|2|4`): RP `PL_LINK_CAP_MAX_LINK_WIDTH` + serial pairs; EP+PG239 PHY stays ×4.
-Unused EP RX lanes are held in Electrical Idle (no Receiver) so Detect narrows to
-`LINK_WIDTH`. After L0 the board checks `negotiated_width` and cfg Link Status **NLW**.
-**Gen1 ×4 Class A+B+C+E is the BFM app gate.** Gen1-only (`RP` speed cap 1, EP `SPEED_CHANGE_EN=0`).
+Lane matrix (`-Lanes 1|2|4`): both the PG213 RP shell and the EP PG239 PHY stay ×4.
+`LINK_WIDTH` is how many serial pairs are cross-connected. Pairs above that are
+driven idle on both RX sides so Detect narrows. Packet bytes are striped across
+the enabled lanes only. After L0 the board checks `negotiated_width` and cfg
+Link Status **NLW**. Gen1-only (`RP` speed cap 1, EP `SPEED_CHANGE_EN=0`).
 
 | Lanes | Gen1 link + Class A+B+C+E (Questa BFM) |
 |-------|--------------------------------------|
-| ×4    | **PASS** (primary) — NLW + Class A+B+C+E |
-| ×2    | TIMEOUT (RP×N vs PHY×4; UVM width SoT) |
-| ×1    | TIMEOUT (RP×N vs PHY×4; UVM width SoT) |
+| ×4    | **PASS** — NLW + Class A+B+C+E |
+| ×2    | **PASS** — NLW=2 + Class A+B+C+E |
+| ×1    | TIMEOUT (UVM width SoT) |
 
 EP dual-role app: `rtl/rivet_ep_dual_app.sv` (CQ/CC completer + RQ/RC bus-master).
 
 ## Observed bring-up (Rivet DUT)
 
-L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (TS rate ID Gen1) so the Gen1-capped RP stays stable; negotiated Gen2 / Recovery.Speed remains a UVM gate (`smoke_recovery_speed_gen2_x4`). After `user_lnk_up` the board forces RP `cfg_ltssm_state` **0x0B → 0x10** once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO, Class C EP RQ MemWr, and Class D/E MemRd scored against RP `DATA_STORE`. Class B prints `Class B WAIVE`.
+L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (TS rate ID Gen1) so the Gen1-capped RP stays stable; negotiated Gen2 / Recovery.Speed remains a UVM gate (`smoke_recovery_speed_gen2_x4`). After `user_lnk_up` the board forces RP `cfg_ltssm_state` **0x0B → 0x10** once so the PG213 usrapp Gen2 `wait(Recovery)` does not hang. Type 0 Cfg and BAR scan close; then Class A PIO, Class B multi-DW CQ inject, Class C EP RQ MemWr, and Class D/E MemRd scored against RP `DATA_STORE`.
 
 ## Known gaps
 
@@ -108,7 +109,8 @@ L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (
 | Class B multi-DW usrapp | Board CQ inject proves completer; usrapp remains 1DW |
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 | Negotiated Gen2 on serial | EP GEN=2 but `SPEED_CHANGE_EN=0` + RP max Gen1; enable Speed Change after PG239 rate-change bring-up |
-| BFM Gen1 ×1/×2 train | EI pad tried; EP can reach L0 but RP×N + PHY×4 still fails `user_lnk_up` — UVM remains SoT for width |
+| BFM Gen1 ×1 | ×2 serial passes; ×1 still times out — UVM remains SoT for ×1 |
+| Lane-reversal serial | Not wired; UVM `smoke_link_reversed_*` is SoT |
 
 ## Layout
 
