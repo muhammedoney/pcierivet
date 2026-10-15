@@ -58,6 +58,8 @@ $env:RIVET_QUESTA_SIMLIB = "...\compile_simlib\questa"
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 1   # Gen1 x1
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 2   # Gen1 x2
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 4   # Gen1 x4 (default)
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 4 -Reverse   # pairs 0-3 and 1-2
+.\scripts\sim_bfm_pg213.ps1 -Dut rivet -Lanes 2 -Reverse   # pairs 0-1 swapped
 # stepwise:
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet -Step compile
 .\scripts\sim_bfm_pg213.ps1 -Dut rivet -Step elaborate
@@ -90,10 +92,14 @@ driven idle on both RX sides so Detect narrows. Packet bytes are striped across
 the enabled lanes only. After L0 the board checks `negotiated_width` and cfg
 Link Status **NLW**. Gen1-only (`RP` speed cap 1, EP `SPEED_CHANGE_EN=0`).
 
+`-Reverse` swaps the live pairs (×4: 0↔3 and 1↔2; ×2: 0↔1). The board requires `lane_reversed` before Cfg.
+
 | Lanes | Gen1 link + Class A+B+C+E (Questa BFM) |
 |-------|--------------------------------------|
 | ×4    | **PASS** — NLW + Class A+B+C+E |
+| ×4 reversed | **PASS** — `lane_reversed` + NLW=4 + Class A+B+C+E |
 | ×2    | **PASS** — NLW=2 + Class A+B+C+E |
+| ×2 reversed | **PASS** — `lane_reversed` + NLW=2 + Class A+B+C+E |
 | ×1    | TIMEOUT (UVM width SoT) |
 
 EP dual-role app: `rtl/rivet_ep_dual_app.sv` (CQ/CC completer + RQ/RC bus-master).
@@ -110,7 +116,7 @@ L0 + InitFC + `dl_up` already proven. EP is **GEN=2** with `SPEED_CHANGE_EN=0` (
 | AXI width | RP usrapp expects wide AXI-ST; do not force 64-bit on RP |
 | Negotiated Gen2 on serial | EP GEN=2 but `SPEED_CHANGE_EN=0` + RP max Gen1; enable Speed Change after PG239 rate-change bring-up |
 | BFM Gen1 ×1 | ×2 serial passes; ×1 still times out — UVM remains SoT for ×1 |
-| Lane-reversal serial | Not wired; UVM `smoke_link_reversed_*` is SoT |
+| ×1 lane reverse | N/A (single pair). ×1 forward serial still times out |
 
 ## Layout
 

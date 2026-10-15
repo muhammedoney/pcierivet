@@ -8,6 +8,7 @@
 // Both the PG213 RP shell and the EP PG239 PHY stay ×4. Pairs above
 // LINK_WIDTH are driven to Electrical Idle on both RX sides so Detect
 // narrows to LINK_WIDTH (×4 is the full cross-connect; ×2/×1 are a subset).
+// RIVET_BFM_LANE_REVERSE swaps the live pairs (×4: 0↔3,1↔2; ×2: 0↔1).
 // Negotiated Gen1 (RP speed cap 1); EP ctrl GEN=2 with SPEED_CHANGE_EN=0.
 
 `timescale 1ps/1ps
@@ -20,6 +21,11 @@ module board;
 `else
   localparam int unsigned LINK_WIDTH = 4;
 `endif
+`ifdef RIVET_BFM_LANE_REVERSE
+  localparam bit LANE_REVERSE = 1'b1;
+`else
+  localparam bit LANE_REVERSE = 1'b0;
+`endif
   localparam int unsigned PHY_WIDTH          = 4; // PG239 pcie_phy_0 fixed ×4
   localparam int unsigned REF_CLK_HALF_CYCLE = 5000; // ps → 100 MHz (sys_clk_gen is 1ps)
 
@@ -28,8 +34,10 @@ module board;
       $fatal(1, "board LINK_WIDTH must be 1, 2, or 4 (got %0d)", LINK_WIDTH);
     if (LINK_WIDTH > PHY_WIDTH)
       $fatal(1, "board LINK_WIDTH (%0d) > PHY_WIDTH (%0d)", LINK_WIDTH, PHY_WIDTH);
-    $display("[%t] : BFM LINK_WIDTH=x%0d (EP PHY=x%0d Gen1-negotiated)",
-             $realtime, LINK_WIDTH, PHY_WIDTH);
+    if (LANE_REVERSE && (LINK_WIDTH < 2))
+      $fatal(1, "lane reverse needs LINK_WIDTH 2 or 4");
+    $display("[%t] : BFM LINK_WIDTH=x%0d reverse=%0b (EP PHY=x%0d Gen1-negotiated)",
+             $realtime, LINK_WIDTH, LANE_REVERSE, PHY_WIDTH);
   end
 
   logic sys_rst_n;
@@ -42,13 +50,23 @@ module board;
   logic [PHY_WIDTH-1:0] rp_pci_exp_txn, rp_pci_exp_txp;
   logic [PHY_WIDTH-1:0] rp_pci_exp_rxn, rp_pci_exp_rxp;
 
-  // Live pairs cross-connect. Unused pairs are driven idle on both RX sides
-  // (not left open, and not looped) so neither port detects a Receiver there.
-  assign rp_pci_exp_rxp[LINK_WIDTH-1:0] = ep_pci_exp_txp[LINK_WIDTH-1:0];
-  assign rp_pci_exp_rxn[LINK_WIDTH-1:0] = ep_pci_exp_txn[LINK_WIDTH-1:0];
-  assign ep_pci_exp_rxp[LINK_WIDTH-1:0] = rp_pci_exp_txp[LINK_WIDTH-1:0];
-  assign ep_pci_exp_rxn[LINK_WIDTH-1:0] = rp_pci_exp_txn[LINK_WIDTH-1:0];
+  // Live pairs cross-connect. Reverse flips that set (0..W-1 ↔ W-1..0).
+  // Unused pairs are driven idle on both RX sides so neither port detects
+  // a Receiver there.
   generate
+    for (genvar i = 0; i < LINK_WIDTH; i++) begin : g_live
+      if (LANE_REVERSE) begin : g_rev
+        assign rp_pci_exp_rxp[i] = ep_pci_exp_txp[LINK_WIDTH-1-i];
+        assign rp_pci_exp_rxn[i] = ep_pci_exp_txn[LINK_WIDTH-1-i];
+        assign ep_pci_exp_rxp[LINK_WIDTH-1-i] = rp_pci_exp_txp[i];
+        assign ep_pci_exp_rxn[LINK_WIDTH-1-i] = rp_pci_exp_txn[i];
+      end else begin : g_fwd
+        assign rp_pci_exp_rxp[i] = ep_pci_exp_txp[i];
+        assign rp_pci_exp_rxn[i] = ep_pci_exp_txn[i];
+        assign ep_pci_exp_rxp[i] = rp_pci_exp_txp[i];
+        assign ep_pci_exp_rxn[i] = rp_pci_exp_txn[i];
+      end
+    end
     if (LINK_WIDTH < PHY_WIDTH) begin : g_ei
       assign rp_pci_exp_rxp[PHY_WIDTH-1:LINK_WIDTH] = '0;
       assign rp_pci_exp_rxn[PHY_WIDTH-1:LINK_WIDTH] = '0;
@@ -244,6 +262,15 @@ module board;
     if (!width_ok) begin
       $display("[%t] : width MISMATCH — abort before Cfg/PIO", $realtime);
       $finish;
+    end
+    if (LANE_REVERSE) begin
+      if (EP.u_rivet_ep.u_ctrl.u_mac.lane_reversed !== 1'b1) begin
+        $display("[%t] : REVERSE FAIL — lane_reversed=%0b expect 1",
+                 $realtime, EP.u_rivet_ep.u_ctrl.u_mac.lane_reversed);
+        $finish;
+      end
+      $display("[%t] : REVERSE PASS — lane_reversed=1 width=%0d",
+               $realtime, LINK_WIDTH);
     end
 
     fork
