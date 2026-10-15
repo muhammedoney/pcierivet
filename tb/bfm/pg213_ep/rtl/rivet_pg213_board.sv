@@ -4,8 +4,10 @@
 // PG213 stage-3 board: Xilinx RP model ↔ Rivet EP+PG239.
 // Module name MUST be `board` and RP instance `RP` — usrapp_* uses board.RP.*.
 //
-// LINK_WIDTH (1/2/4): RP advertised max + serial pairs connected.
-// EP soft port + PG239 PHY stay ×4; unused EP RX lanes stay in Electrical Idle.
+// LINK_WIDTH (1/2/4): how many serial pairs are cross-connected.
+// Both the PG213 RP shell and the EP PG239 PHY stay ×4. Pairs above
+// LINK_WIDTH are driven to Electrical Idle on both RX sides so Detect
+// narrows to LINK_WIDTH (×4 is the full cross-connect; ×2/×1 are a subset).
 // Negotiated Gen1 (RP speed cap 1); EP ctrl GEN=2 with SPEED_CHANGE_EN=0.
 
 `timescale 1ps/1ps
@@ -34,22 +36,22 @@ module board;
   logic ep_sys_clk_p, ep_sys_clk_n;
   logic rp_sys_clk_p, rp_sys_clk_n;
 
-  // EP always ×4 serial (PHY); RP width = LINK_WIDTH.
-  logic [PHY_WIDTH-1:0]  ep_pci_exp_txn, ep_pci_exp_txp;
-  logic [PHY_WIDTH-1:0]  ep_pci_exp_rxn, ep_pci_exp_rxp;
-  logic [LINK_WIDTH-1:0] rp_pci_exp_txn, rp_pci_exp_txp;
-  logic [LINK_WIDTH-1:0] rp_pci_exp_rxn_w, rp_pci_exp_rxp_w;
+  // Both sides always ×4 serial. LINK_WIDTH selects the live pairs.
+  logic [PHY_WIDTH-1:0] ep_pci_exp_txn, ep_pci_exp_txp;
+  logic [PHY_WIDTH-1:0] ep_pci_exp_rxn, ep_pci_exp_rxp;
+  logic [PHY_WIDTH-1:0] rp_pci_exp_txn, rp_pci_exp_txp;
+  logic [PHY_WIDTH-1:0] rp_pci_exp_rxn, rp_pci_exp_rxp;
 
-  // Live lanes: cross-connect to RP. Unused EP RX lanes stay Electrical Idle
-  // (no Receiver) so Detect.Active narrows lane_en to LINK_WIDTH — matches
-  // UVM peer_lanes narrowing without a self-trained loopback on dead lanes.
-  assign rp_pci_exp_rxp_w = ep_pci_exp_txp[LINK_WIDTH-1:0];
-  assign rp_pci_exp_rxn_w = ep_pci_exp_txn[LINK_WIDTH-1:0];
-  assign ep_pci_exp_rxp[LINK_WIDTH-1:0] = rp_pci_exp_txp;
-  assign ep_pci_exp_rxn[LINK_WIDTH-1:0] = rp_pci_exp_txn;
+  // Live pairs cross-connect. Unused pairs are driven idle on both RX sides
+  // (not left open, and not looped) so neither port detects a Receiver there.
+  assign rp_pci_exp_rxp[LINK_WIDTH-1:0] = ep_pci_exp_txp[LINK_WIDTH-1:0];
+  assign rp_pci_exp_rxn[LINK_WIDTH-1:0] = ep_pci_exp_txn[LINK_WIDTH-1:0];
+  assign ep_pci_exp_rxp[LINK_WIDTH-1:0] = rp_pci_exp_txp[LINK_WIDTH-1:0];
+  assign ep_pci_exp_rxn[LINK_WIDTH-1:0] = rp_pci_exp_txn[LINK_WIDTH-1:0];
   generate
     if (LINK_WIDTH < PHY_WIDTH) begin : g_ei
-      // Differential common-mode idle: both lines low → PHY reports EI / no detect.
+      assign rp_pci_exp_rxp[PHY_WIDTH-1:LINK_WIDTH] = '0;
+      assign rp_pci_exp_rxn[PHY_WIDTH-1:LINK_WIDTH] = '0;
       assign ep_pci_exp_rxp[PHY_WIDTH-1:LINK_WIDTH] = '0;
       assign ep_pci_exp_rxn[PHY_WIDTH-1:LINK_WIDTH] = '0;
     end
@@ -183,10 +185,11 @@ module board;
     .ltssm_state_o (ep_ltssm)
   );
 
-  // Stock PG213 Root Port model — advertised width = LINK_WIDTH (1/2/4).
+  // Stock PG213 Root Port model. Serial shell stays ×4 (same as the
+  // passing full-width run). LINK_WIDTH is the number of live pairs above.
   xilinx_pcie4_uscale_rp #(
     .PL_LINK_CAP_MAX_LINK_SPEED (1), // Gen1 negotiated; EP ctrl is GEN=2 (Speed change = UVM)
-    .PL_LINK_CAP_MAX_LINK_WIDTH (5'(LINK_WIDTH)),
+    .PL_LINK_CAP_MAX_LINK_WIDTH (5'(PHY_WIDTH)),
     .PF0_DEV_CAP_MAX_PAYLOAD_SIZE (3'b011)
   ) RP (
     .sys_clk_n (rp_sys_clk_n),
@@ -194,8 +197,8 @@ module board;
     .sys_rst_n (sys_rst_n),
     .pci_exp_txn (rp_pci_exp_txn),
     .pci_exp_txp (rp_pci_exp_txp),
-    .pci_exp_rxn (rp_pci_exp_rxn_w),
-    .pci_exp_rxp (rp_pci_exp_rxp_w)
+    .pci_exp_rxn (rp_pci_exp_rxn),
+    .pci_exp_rxp (rp_pci_exp_rxp)
   );
 
   initial begin

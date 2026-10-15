@@ -347,7 +347,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       end
 
 
-      // FC DLLP inject in L0: stripe SDP+6+END like MAC (stream_idx = s*LANES+l).
+      // FC DLLP inject in L0: stripe SDP+6+END across peer_lanes (enabled width).
       if (dllp_fc_enable && peer_active && (phase_q == P_IDLE) && !fc_sending) begin
         if (fc_gap_left != 0) begin
           fc_gap_left--;
@@ -404,14 +404,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       vif.rxdatak <= '0;
       if (peer_active) begin
         if (tlp_sending) begin
-          for (l = 0; l < lanes; l++) begin
+          for (l = 0; l < peer_lanes; l++) begin
             automatic int unsigned phys;
             automatic logic [15:0] lfsr;
-            phys = (peer_lane_reverse && (l < peer_lanes))
-                 ? (peer_lanes - 1 - l) : l;
+            phys = peer_lane_reverse ? (peer_lanes - 1 - l) : l;
             lfsr = peer_lfsr[phys];
             for (s = 0; s < 2; s++) begin
-              automatic int unsigned stream_idx = tlp_sym + s * lanes + l;
+              automatic int unsigned stream_idx = tlp_sym + s * peer_lanes + l;
               automatic int unsigned framed_len = tlp_nbytes + 2;
               if (stream_idx < framed_len)
                 tlp_sym9 = rivet_axi_tlp_util::framed_tlp_sym(
@@ -425,18 +424,17 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             end
             peer_lfsr[phys] = lfsr;
           end
-          tlp_sym += lanes * 2;
+          tlp_sym += peer_lanes * 2;
           if (tlp_sym >= (tlp_nbytes + 2))
             tlp_sending = 1'b0;
         end else if (fc_sending) begin
-          for (l = 0; l < lanes; l++) begin
+          for (l = 0; l < peer_lanes; l++) begin
             automatic int unsigned phys;
             automatic logic [15:0] lfsr;
-            phys = (peer_lane_reverse && (l < peer_lanes))
-                 ? (peer_lanes - 1 - l) : l;
+            phys = peer_lane_reverse ? (peer_lanes - 1 - l) : l;
             lfsr = peer_lfsr[phys];
             for (s = 0; s < 2; s++) begin
-              automatic int unsigned stream_idx = fc_sym + s * lanes + l;
+              automatic int unsigned stream_idx = fc_sym + s * peer_lanes + l;
               if (stream_idx < 8) begin
                 fc_sym9  = rivet_dllp_util::framed_sym(stream_idx, fc_wire);
                 peer_tmp = fc_sym9;
@@ -448,7 +446,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             end
             peer_lfsr[phys] = lfsr;
           end
-          fc_sym += lanes * 2;
+          fc_sym += peer_lanes * 2;
           if (fc_sym >= 8) begin
             fc_sending = 1'b0;
             if (fc_idx < 5) begin
