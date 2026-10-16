@@ -38,6 +38,7 @@ synth/yosys/*.blif
 synth/yosys/*.dot
 
 # Xilinx / Vivado (local only)
+fpga/vcu118/build/
 *.xpr
 *.cache/
 *.hw/
