@@ -92,9 +92,14 @@ rivet_try_ip_config $ip pll_type         QPLL1
 rivet_try_ip_config $ip tx_preset        4
 rivet_try_ip_config $ip ins_loss_profile Add-in_Card
 rivet_try_ip_config $ip aspm             No_ASPM
-rivet_try_ip_config $ip lane0_gt_location $lane0_loc
-rivet_try_ip_config $ip lane0_gt_bank     $lane0_bank
-rivet_try_ip_config $ip refclk1_location  $refclk_loc
+# Location is legal only after the quad is selected. Quad 227 defaults to
+# X1Y32; the edge connector's lane 0 is X1Y35, so set that second.
+set bank_ok [rivet_try_ip_config $ip lane0_gt_bank     $lane0_bank]
+set loc_ok  [rivet_try_ip_config $ip lane0_gt_location $lane0_loc]
+set clk_ok  [rivet_try_ip_config $ip refclk1_location  $refclk_loc]
+if {!$bank_ok || !$loc_ok || !$clk_ok} {
+  error "PG239 GT placement rejected (bank $lane0_bank loc $lane0_loc refclk $refclk_loc)"
+}
 generate_target {instantiation_template synthesis} $ip
 
 set_property top rivet_vcu118_ep [current_fileset]
