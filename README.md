@@ -123,6 +123,17 @@ Requires local Vivado example projects + Questa `compile_simlib`. See [tb/bfm/RE
 .\scripts\sim_bfm_pg213.ps1
 ```
 
+## Archive
+
+`scripts/zip_project.ps1` (or `scripts/zip_project.cmd`) packs the working tree and `.git`, so history stays in the zip. Gitignored files and other regenerable outputs stay out: sim `work/`, logs, waveforms, Vivado `fpga/vcu118/build/`, local BFM binaries, `specs/`, and ignored reference clones.
+
+```powershell
+.\scripts\zip_project.ps1
+.\scripts\zip_project.cmd D:\rivet-src.zip
+```
+
+Default path is next to the repo: `../rivet-src-<timestamp>.zip`.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
