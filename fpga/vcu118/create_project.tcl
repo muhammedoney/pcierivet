@@ -23,7 +23,25 @@ set lane0_loc  GTYE4_CHANNEL_X1Y35
 set lane0_bank GTY_Quad_227
 set refclk_loc Bank_227_MGTREFCLK0
 
-proc rivet_add_filelist {repo listfile} {
+# Vivado rejects the assignment-pattern cast data_t'('0) (HDL 9-1206 near '(').
+proc rivet_patch_cdc_2phase {src build} {
+  set dst_dir [file join $build src]
+  file mkdir $dst_dir
+  set dst [file join $dst_dir cc_cdc_2phase.sv]
+  set fh [open $src r]
+  set text [read $fh]
+  close $fh
+  if {![string match "*data_t'('0)*" $text]} {
+    error "cc_cdc_2phase.sv no longer contains data_t'('0); update the Vivado patch"
+  }
+  set text [string map [list {data_t'('0)} {'0}] $text]
+  set out [open $dst w]
+  puts -nonewline $out $text
+  close $out
+  return [file normalize $dst]
+}
+
+proc rivet_add_filelist {repo listfile build} {
   set fh [open $listfile r]
   while {[gets $fh line] >= 0} {
     set line [string trim $line]
@@ -32,13 +50,16 @@ proc rivet_add_filelist {repo listfile} {
     }
     if {[string match "-f *" $line]} {
       set sub [string trim [string range $line 3 end]]
-      rivet_add_filelist $repo [file join $repo $sub]
+      rivet_add_filelist $repo [file join $repo $sub] $build
       continue
     }
     set path [file normalize [file join $repo $line]]
     if {![file exists $path]} {
       close $fh
       error "missing source: $path"
+    }
+    if {[string match *cc_cdc_2phase.sv $path]} {
+      set path [rivet_patch_cdc_2phase $path $build]
     }
     add_files -norecurse $path
   }
@@ -63,7 +84,7 @@ if {[catch {set_property board_part $board [current_project]} err]} {
   puts "WARN: board part $board not installed ($err). Continuing with $part."
 }
 
-rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f]
+rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_dir
 add_files -norecurse [file normalize [file join $script_dir rtl rivet_vcu118_ep.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pipe_pg239_pad.sv]]
 
@@ -74,6 +95,7 @@ foreach f [get_files -of_objects [current_fileset]] {
   }
 }
 set_property include_dirs [list \
+  [file normalize [file join $script_dir include]] \
   [file normalize [file join $repo_root third_party ref common_cells include]] \
 ] [current_fileset]
 
