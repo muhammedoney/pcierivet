@@ -6,6 +6,8 @@
 #
 #   vivado -mode batch -source fpga/vcu118/create_project.tcl
 #   vivado -mode batch -source fpga/vcu118/create_project.tcl -tclargs synth
+#   fpga\vcu118\create_project.cmd
+#   fpga\vcu118\create_project.cmd synth
 #
 # Requires a Vivado install that can generate PG239 (pcie_phy) for XCVU9P GTY.
 # Board files for xilinx.com:vcu118 are optional; the part is set either way.

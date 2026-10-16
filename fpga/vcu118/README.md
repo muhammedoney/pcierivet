@@ -8,13 +8,17 @@ The soft controller is the same RTL as simulation. The PHY is a generated **PG23
 
 From the repo root, on a machine with Vivado and the XCVU9P / VCU118 device:
 
+From `cmd.exe` (finds `vivado.bat` on `PATH`, under `%VIVADO_PATH%`, or under `Program Files\Xilinx\Vivado`):
+
 ```text
-vivado -mode batch -source fpga/vcu118/create_project.tcl
+fpga\vcu118\create_project.cmd
+fpga\vcu118\create_project.cmd synth
 ```
 
-To synthesize in the same batch (no bitstream):
+Or call Vivado directly:
 
 ```text
+vivado -mode batch -source fpga/vcu118/create_project.tcl
 vivado -mode batch -source fpga/vcu118/create_project.tcl -tclargs synth
 ```
 
