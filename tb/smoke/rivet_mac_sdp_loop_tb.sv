@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// ×1 SDP framing loopback: os_tx → os_rx (no scramble). DLLP beat round-trip.
+// SDP framing loopback: os_tx → os_rx (no scramble), plus a lane-2 STP/SDP start.
 
 `timescale 1ns/1ps
 
@@ -28,6 +28,16 @@ module rivet_mac_sdp_loop_tb;
   logic [2*LANES-1:0]               sym_os_d;
   logic                             sym_valid;
 
+  // Direct RX stimulus so a frame can start on a lane other than 0.
+  logic                             inj_en;
+  logic [PIPE_DATA_WIDTH*LANES-1:0] inj_data;
+  logic [2*LANES-1:0]               inj_datak;
+  logic [PIPE_DATA_WIDTH*LANES-1:0] rx_data;
+  logic [2*LANES-1:0]               rx_datak;
+
+  assign rx_data  = inj_en ? inj_data  : sym_data;
+  assign rx_datak = inj_en ? inj_datak : sym_datak;
+
   rivet_dll_mac_rx_beat_t dll_rx;
   logic                   dll_rx_valid;
   logic                   dll_rx_ready;
@@ -40,6 +50,8 @@ module rivet_mac_sdp_loop_tb;
   logic [8*LANES-1:0] rx_lane_num;
   logic rx_lane_num_changed, deskew_done, rx_err;
   logic [LANES-1:0] polarity_inverted;
+  logic [LANES-1:0] ts1_link_lanes;
+  logic [LANES-1:0] ts1_lane_lanes;
   logic [11:0] os_sent_cnt;
 
   rivet_mac_os_tx #(
@@ -77,8 +89,8 @@ module rivet_mac_sdp_loop_tb;
   ) u_rx (
     .pclk_i                (pclk),
     .rst_ni                (rst_n),
-    .sym_data_i            (sym_data),
-    .sym_datak_i           (sym_datak),
+    .sym_data_i            (rx_data),
+    .sym_datak_i           (rx_datak),
     .sym_valid_i           ({LANES{sym_valid}}),
     .rxstatus_i            ({LANES{3'b000}}),
     .lane_en_i             ({LANES{1'b1}}),
@@ -91,6 +103,8 @@ module rivet_mac_sdp_loop_tb;
     .ts1_link_any_o        (ts1_link_any),
     .ts1_lane_all_o        (ts1_lane_all),
     .ts1_lane_any_o        (ts1_lane_any),
+    .ts1_link_lanes_o      (ts1_link_lanes),
+    .ts1_lane_lanes_o      (ts1_lane_lanes),
     .ts2_cfg_all_o         (ts2_cfg_all),
     .ts2_cfg_any_o         (ts2_cfg_any),
     .idle_all_o            (idle_all),
@@ -115,17 +129,32 @@ module rivet_mac_sdp_loop_tb;
 
   logic got;
   logic [63:0] got_data;
+  logic        got_err;
+  logic [1:0]  got_type;
+  logic        got_sop;
+  logic        got_eop;
   int unsigned skp_hits;
+  int unsigned beat_n;
 
   always_ff @(posedge pclk or negedge rst_n) begin
     if (!rst_n) begin
       got      <= 1'b0;
       got_data <= '0;
+      got_err  <= 1'b0;
+      got_type <= '0;
+      got_sop  <= 1'b0;
+      got_eop  <= 1'b0;
       skp_hits <= 0;
+      beat_n   <= 0;
     end else begin
       if (dll_rx_valid && dll_rx_ready) begin
         got      <= 1'b1;
         got_data <= dll_rx.data;
+        got_err  <= dll_rx.err;
+        got_type <= dll_rx.pkt_type;
+        got_sop  <= dll_rx.sop;
+        got_eop  <= dll_rx.eop;
+        beat_n   <= beat_n + 1;
       end
       // Lane0 Symbol0: COM, Symbol1: SKP (16-bit PIPE, SKP OS start)
       if (sym_valid &&
@@ -144,6 +173,9 @@ module rivet_mac_sdp_loop_tb;
     dll_tx        = '0;
     dll_tx_valid  = 1'b0;
     dll_rx_ready  = 1'b1;
+    inj_en        = 1'b0;
+    inj_data      = '0;
+    inj_datak     = '0;
 
     repeat (4) @(posedge pclk);
     rst_n = 1'b1;
@@ -187,9 +219,69 @@ module rivet_mac_sdp_loop_tb;
       $fatal(1);
     end
 
-    $display("PASS: rivet_mac_sdp_loop_tb (SDP + SKP hits=%0d)", skp_hits);
+    // Partner continues the stripe: Logical Idle on lanes 0 and 1, SDP on lane 2.
+    drive_offlane(2, 1'b0, 64'h0000_1122_3344_5566, 6);
+    wait (beat_n == 2);
+    @(posedge pclk);
+    if (got_data !== 64'h0000_1122_3344_5566 || got_err ||
+        (got_type !== RIVET_MAC_PKT_DLLP)) begin
+      $error("lane2 SDP mismatch data=%016h err=%0b type=%0d", got_data, got_err, got_type);
+      $fatal(1);
+    end
+
+    // Same phase, STP + 4 data bytes + END. One DLL beat, sop and eop.
+    drive_offlane(2, 1'b1, 64'h0000_0000_AABB_CCDD, 4);
+    wait (beat_n == 3);
+    @(posedge pclk);
+    if (got_data[31:0] !== 32'hAABB_CCDD || got_err || !got_sop || !got_eop ||
+        (got_type !== RIVET_MAC_PKT_TLP)) begin
+      $error("lane2 STP mismatch data=%016h err=%0b sop=%0b eop=%0b type=%0d",
+             got_data, got_err, got_sop, got_eop, got_type);
+      $fatal(1);
+    end
+
+    $display("PASS: rivet_mac_sdp_loop_tb (SDP + SKP hits=%0d, lane2 SDP/STP)", skp_hits);
     $finish;
   end
+
+  // Place STP/SDP at `start_lane` of symbol 0. Earlier lanes in that beat are Idle.
+  task automatic drive_offlane(
+      input int unsigned start_lane,
+      input logic        stp,
+      input logic [63:0] payload,
+      input int unsigned nbytes);
+    int unsigned pos;
+    int unsigned framed;
+    logic [8:0] sym;
+    framed = nbytes + 2;
+    inj_en = 1'b1;
+    for (int unsigned base = 0; base < start_lane + framed; base += LANES * 2) begin
+      inj_data  = '0;
+      inj_datak = '0;
+      for (int unsigned s = 0; s < 2; s++) begin
+        for (int unsigned l = 0; l < LANES; l++) begin
+          pos = base + s * LANES + l;
+          if (pos < start_lane)
+            sym = {1'b0, 8'h00};
+          else if (pos == start_lane)
+            sym = {1'b1, stp ? RIVET_SYM_STP : RIVET_SYM_SDP};
+          else if (pos < start_lane + 1 + nbytes)
+            sym = {1'b0, payload[8*(pos - start_lane - 1) +: 8]};
+          else if (pos == start_lane + 1 + nbytes)
+            sym = {1'b1, RIVET_SYM_END};
+          else
+            sym = {1'b0, 8'h00};
+          inj_data[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym[7:0];
+          inj_datak[2*l + s]                     = sym[8];
+        end
+      end
+      @(posedge pclk);
+    end
+    inj_data  = '0;
+    inj_datak = '0;
+    @(posedge pclk);
+    inj_en = 1'b0;
+  endtask
 
   initial begin
     #50000;

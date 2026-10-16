@@ -409,8 +409,10 @@ module rivet_mac_os_rx #(
 
   // ---------------------------------------------------------------------------
   // Packet framing RX: SDP + 6 D-bytes + END, or STP + N D-bytes + END/EDB
-  // striped across LANES (Gen2 16b PIPE). STP/SDP may land on either symbol
-  // phase of Lane 0. EDB nullifies: one err beat, no good TLP delivery.
+  // striped across enabled lanes (Gen2 16b PIPE). After Logical Idle the next
+  // STP/SDP may land on any enabled lane and either symbol phase. Symbols
+  // before that token (Idle, ordered sets) are not a start. EDB nullifies:
+  // one err beat, no good TLP delivery.
   // ---------------------------------------------------------------------------
   localparam bit PKT_RX_OK = (PIPE_DATA_WIDTH == 16);
   localparam int unsigned TLP_BUF_B = RIVET_MAC_TLP_BUF_BYTES;
@@ -466,7 +468,7 @@ module rivet_mac_os_rx #(
     if (rx_lanes_ok) begin
       unique case (rx_pkt_q)
         RX_IDLE: begin
-          // SDP/STP on Lane 0, either 16-bit PIPE symbol phase.
+          // SDP/STP on any enabled lane, either 16-bit PIPE symbol phase.
           automatic logic        saw_sdp = 1'b0;
           automatic logic        saw_stp = 1'b0;
           automatic logic [3:0]  c   = 4'd0;
@@ -484,9 +486,9 @@ module rivet_mac_os_rx #(
                 rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
                 rx_ky = sym_datak_i[SYMS*l + s];
                 if (!saw_sdp && !saw_stp) begin
-                  if ((l == 0) && rx_ky && (rx_sy == RIVET_SYM_SDP))
+                  if (rx_ky && (rx_sy == RIVET_SYM_SDP))
                     saw_sdp = 1'b1;
-                  else if ((l == 0) && rx_ky && (rx_sy == RIVET_SYM_STP))
+                  else if (rx_ky && (rx_sy == RIVET_SYM_STP))
                     saw_stp = 1'b1;
                 end else if (saw_sdp) begin
                   if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
