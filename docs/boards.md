@@ -41,7 +41,6 @@ Default `FPGA_FAMILY` on `rivet_pcie` remains UltraScale+ (0) → US+ / VCU118.
 
 ## Bring-up notes
 
-- Create Vivado project with part **XCVU9P** matching the physical VCU118 revision (2L vs 2LV).
-- Generate **PCIe PHY (PG239)** with device **VU9P**, GTY, lane width matching Rivet `LANES` (start ×1, then ×2/×4).
-- Wire `rivet_pcie` serial ports to the VCU118 PCIe edge GT quads (see UG1224).
+- Create the lab project with `fpga/vcu118/create_project.tcl` (part **XCVU9P-FLGA2104-2L-E**, PG239 Gen2 ×4 on edge lanes 0–3). See `fpga/vcu118/README.md`.
+- Generated IP and the Vivado project stay local (`fpga/vcu118/build/`, gitignored).
 - Gen2 ×1/×2/×4 soft-controller validation does not require Gen3 ×16; the ×16 edge still helps host bring-up later.
