@@ -198,25 +198,23 @@ module rivet_ltssm #(
   assign detect_none = (detect_map_q  == '0);
 
   // Enabled physical Lanes numbered 0..W-1 in ascending phys order.
+  // Both loops are bounded by LANES. A trip count of w does not unroll in Vivado.
   function automatic logic lanes_num_forward(
       input logic [LANES-1:0]     en,
       input logic [8*LANES-1:0]   nums
   );
-    int unsigned w;
-    int unsigned e[LANES];
-    w = 0;
+    int unsigned seen;
+    logic        ok;
+    seen = 0;
+    ok   = 1'b1;
     for (int unsigned i = 0; i < LANES; i++) begin
-      e[i] = 0;
       if (en[i]) begin
-        e[w] = i;
-        w++;
+        if (nums[8*i +: 8] != 8'(seen))
+          ok = 1'b0;
+        seen++;
       end
     end
-    if (w == 0) return 1'b0;
-    for (int unsigned k = 0; k < w; k++) begin
-      if (nums[8*e[k] +: 8] != 8'(k)) return 1'b0;
-    end
-    return 1'b1;
+    return ok && (seen != 0);
   endfunction
 
   // Full reverse only: nums on enabled phys = W-1 .. 0 (×1 is never reverse).
@@ -225,20 +223,21 @@ module rivet_ltssm #(
       input logic [8*LANES-1:0]   nums
   );
     int unsigned w;
-    int unsigned e[LANES];
+    int unsigned seen;
+    logic        ok;
     w = 0;
+    for (int unsigned i = 0; i < LANES; i++)
+      if (en[i]) w++;
+    seen = 0;
+    ok   = (w > 1);
     for (int unsigned i = 0; i < LANES; i++) begin
-      e[i] = 0;
       if (en[i]) begin
-        e[w] = i;
-        w++;
+        if (nums[8*i +: 8] != 8'(w - 1 - seen))
+          ok = 1'b0;
+        seen++;
       end
     end
-    if (w <= 1) return 1'b0;
-    for (int unsigned k = 0; k < w; k++) begin
-      if (nums[8*e[k] +: 8] != 8'(w - 1 - k)) return 1'b0;
-    end
-    return 1'b1;
+    return ok;
   endfunction
 
   always_comb begin
