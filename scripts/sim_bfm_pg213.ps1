@@ -357,9 +357,9 @@ function New-RivetCompileDo {
   [void]$sb.AppendLine(('"{0}/glbl.v"' -f $WorkUnix))
   [void]$sb.AppendLine("")
   $revDef = $(if ($Reverse) { " +define+RIVET_BFM_LANE_REVERSE" } else { "" })
-  # Repo root is on the include path so rivet_pkg's `include of rivet_crc_fold.svh
-  # resolves when vlog runs from tb/bfm/pg213_ep/work.
-  [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}" "+incdir+{1}" "+incdir+{1}/third_party/ref/common_cells/include" "+define+RIVET_BFM_LANES={2}{3}" \' -f $Imp213, $RepoUnix, $Lanes, $revDef))
+  # Header sits next to rivet_pkg.sv. vlog's cwd is tb/bfm/pg213_ep/work, so the
+  # package directory is on +incdir as well as the including-file directory.
+  [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}" "+incdir+{1}/rtl/pcie_ctrl" "+incdir+{1}/third_party/ref/common_cells/include" "+define+RIVET_BFM_LANES={2}{3}" \' -f $Imp213, $RepoUnix, $Lanes, $revDef))
   for ($i = 0; $i -lt $rivetSv.Count; $i++) {
     $suffix = if ($i -lt $rivetSv.Count - 1) { " \" } else { "" }
     [void]$sb.AppendLine("$($rivetSv[$i])$suffix")

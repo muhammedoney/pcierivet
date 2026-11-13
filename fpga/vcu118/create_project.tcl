@@ -112,9 +112,11 @@ foreach f [get_files -of_objects [current_fileset]] {
 #   build/src/common_cells/registers.svh
 # The upstream header under third_party/ref/common_cells/include uses
 # default macro arguments. Leave that directory off this list.
+# rivet_pkg.sv includes rivet_crc_fold.svh by basename from the same directory.
 set_property include_dirs [list \
   [file normalize [file join $build_dir src]] \
   [file normalize [file join $script_dir include]] \
+  [file normalize [file join $repo_root rtl pcie_ctrl]] \
 ] [current_fileset]
 
 set xdc [file join $script_dir constraints vcu118_pcie.xdc]

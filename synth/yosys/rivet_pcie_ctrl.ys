@@ -1,4 +1,7 @@
 # Yosys synthesis sanity for rivet_pcie_ctrl (not FPGA timing-accurate)
+# rivet_pkg includes rivet_crc_fold.svh from the same directory.
+
+verilog_defaults -add -Irtl/pcie_ctrl
 
 read_verilog -sv rtl/pcie_ctrl/rivet_pkg.sv
 read_verilog -sv rtl/pcie_ctrl/dll/rivet_dll_mac_if.sv
