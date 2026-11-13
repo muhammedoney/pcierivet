@@ -39,29 +39,42 @@ module rivet_mac_lane_map #(
   end
 `endif
 
-  // Phys index that carries logical lane e[k] when reversed: e[W-1-k].
+  // Phys index that carries logical lane of rank k when reversed: rank W-1-k.
+  // Every loop is bounded by LANES. A trip count of w does not unroll in Vivado,
+  // and a variable part-select base is out of range for the same reason.
   logic [LANES-1:0][4:0] map_phys; // map_phys[log] = phys
   logic [LANES-1:0][4:0] map_log;  // map_log[phys] = log
 
   always_comb begin
     int unsigned w;
-    int unsigned e[LANES];
+    logic [4:0]  rank_phys [LANES];
     w = 0;
     for (int unsigned i = 0; i < LANES; i++) begin
-      map_phys[i] = 5'(i);
-      map_log[i]  = 5'(i);
-      e[i] = 0;
+      map_phys[i]  = 5'(i);
+      map_log[i]   = 5'(i);
+      rank_phys[i] = 5'(i);
     end
     for (int unsigned i = 0; i < LANES; i++) begin
-      if (lane_en_i[i]) begin
-        e[w] = i;
-        w++;
+      if (lane_en_i[i] && (w < LANES)) begin
+        for (int unsigned s = 0; s < LANES; s++) begin
+          if (s == w)
+            rank_phys[s] = 5'(i);
+        end
+        w = w + 1;
       end
     end
-    if (reverse_i && (w > 1)) begin
-      for (int unsigned k = 0; k < w; k++) begin
-        map_phys[e[k]] = 5'(e[w - 1 - k]);
-        map_log[e[w - 1 - k]] = 5'(e[k]);
+    for (int unsigned k = 0; k < LANES; k++) begin
+      for (int unsigned r = 0; r < LANES; r++) begin
+        if (reverse_i && (w > 1) && (k < w) && ((k + r + 1) == w)) begin
+          for (int unsigned log = 0; log < LANES; log++) begin
+            if (rank_phys[k] == 5'(log))
+              map_phys[log] = rank_phys[r];
+          end
+          for (int unsigned phys = 0; phys < LANES; phys++) begin
+            if (rank_phys[r] == 5'(phys))
+              map_log[phys] = rank_phys[k];
+          end
+        end
       end
     end
   end
@@ -70,10 +83,13 @@ module rivet_mac_lane_map #(
     tx_data_o  = '0;
     tx_datak_o = '0;
     for (int unsigned log = 0; log < LANES; log++) begin
-      automatic int unsigned phys = int'(map_phys[log]);
-      tx_data_o[PIPE_DATA_WIDTH*phys +: PIPE_DATA_WIDTH] =
-          tx_data_i[PIPE_DATA_WIDTH*log +: PIPE_DATA_WIDTH];
-      tx_datak_o[SYMS*phys +: SYMS] = tx_datak_i[SYMS*log +: SYMS];
+      for (int unsigned phys = 0; phys < LANES; phys++) begin
+        if (map_phys[log] == 5'(phys)) begin
+          tx_data_o[PIPE_DATA_WIDTH*phys +: PIPE_DATA_WIDTH] =
+              tx_data_i[PIPE_DATA_WIDTH*log +: PIPE_DATA_WIDTH];
+          tx_datak_o[SYMS*phys +: SYMS] = tx_datak_i[SYMS*log +: SYMS];
+        end
+      end
     end
   end
   assign tx_valid_o = tx_valid_i;
@@ -83,11 +99,14 @@ module rivet_mac_lane_map #(
     rx_datak_o = '0;
     rx_valid_o = '0;
     for (int unsigned phys = 0; phys < LANES; phys++) begin
-      automatic int unsigned log = int'(map_log[phys]);
-      rx_data_o[PIPE_DATA_WIDTH*log +: PIPE_DATA_WIDTH] =
-          rx_data_i[PIPE_DATA_WIDTH*phys +: PIPE_DATA_WIDTH];
-      rx_datak_o[SYMS*log +: SYMS] = rx_datak_i[SYMS*phys +: SYMS];
-      rx_valid_o[log] = rx_valid_i[phys];
+      for (int unsigned log = 0; log < LANES; log++) begin
+        if (map_log[phys] == 5'(log)) begin
+          rx_data_o[PIPE_DATA_WIDTH*log +: PIPE_DATA_WIDTH] =
+              rx_data_i[PIPE_DATA_WIDTH*phys +: PIPE_DATA_WIDTH];
+          rx_datak_o[SYMS*log +: SYMS] = rx_datak_i[SYMS*phys +: SYMS];
+          rx_valid_o[log] = rx_valid_i[phys];
+        end
+      end
     end
   end
 
