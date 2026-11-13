@@ -23,10 +23,16 @@ set lane0_loc  GTYE4_CHANNEL_X1Y35
 set lane0_bank GTY_Quad_227
 set refclk_loc Bank_227_MGTREFCLK0
 
-# Vivado rejects the assignment-pattern cast data_t'('0) (HDL 9-1206 near '(').
-proc rivet_patch_cdc_2phase {src build} {
+# Quoted `include is resolved from the including file's directory first.
+# The Vivado copy of cc_cdc_2phase.sv lives in build/src, so
+# `include "common_cells/registers.svh" needs
+# build/src/common_cells/registers.svh. That copy is the header without
+# default macro arguments. data_t'('0) is still rewritten to '0.
+# FF / FFL call sites stay as they are. Simulation keeps the upstream file.
+proc rivet_patch_cdc_2phase {src build regs_svh} {
   set dst_dir [file join $build src]
-  file mkdir $dst_dir
+  set inc_dir [file join $dst_dir common_cells]
+  file mkdir $inc_dir
   set dst [file join $dst_dir cc_cdc_2phase.sv]
   set fh [open $src r]
   set text [read $fh]
@@ -34,14 +40,18 @@ proc rivet_patch_cdc_2phase {src build} {
   if {![string match "*data_t'('0)*" $text]} {
     error "cc_cdc_2phase.sv no longer contains data_t'('0); update the Vivado patch"
   }
+  if {![string match {*`include "common_cells/registers.svh"*} $text]} {
+    error "cc_cdc_2phase.sv no longer includes common_cells/registers.svh; update the Vivado patch"
+  }
   set text [string map [list {data_t'('0)} {'0}] $text]
   set out [open $dst w]
   puts -nonewline $out $text
   close $out
+  file copy -force $regs_svh [file join $inc_dir registers.svh]
   return [file normalize $dst]
 }
 
-proc rivet_add_filelist {repo listfile build} {
+proc rivet_add_filelist {repo listfile build regs_svh} {
   set fh [open $listfile r]
   while {[gets $fh line] >= 0} {
     set line [string trim $line]
@@ -50,7 +60,7 @@ proc rivet_add_filelist {repo listfile build} {
     }
     if {[string match "-f *" $line]} {
       set sub [string trim [string range $line 3 end]]
-      rivet_add_filelist $repo [file join $repo $sub] $build
+      rivet_add_filelist $repo [file join $repo $sub] $build $regs_svh
       continue
     }
     set path [file normalize [file join $repo $line]]
@@ -59,7 +69,7 @@ proc rivet_add_filelist {repo listfile build} {
       error "missing source: $path"
     }
     if {[string match *cc_cdc_2phase.sv $path]} {
-      set path [rivet_patch_cdc_2phase $path $build]
+      set path [rivet_patch_cdc_2phase $path $build $regs_svh]
     }
     add_files -norecurse $path
   }
@@ -84,7 +94,8 @@ if {[catch {set_property board_part $board [current_project]} err]} {
   puts "WARN: board part $board not installed ($err). Continuing with $part."
 }
 
-rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_dir
+set regs_svh [file normalize [file join $script_dir include common_cells registers.svh]]
+rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_dir $regs_svh
 add_files -norecurse [file normalize [file join $script_dir rtl rivet_vcu118_ep.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pipe_pg239_pad.sv]]
 
@@ -95,6 +106,7 @@ foreach f [get_files -of_objects [current_fileset]] {
   }
 }
 set_property include_dirs [list \
+  [file normalize [file join $build_dir src]] \
   [file normalize [file join $script_dir include]] \
   [file normalize [file join $repo_root third_party ref common_cells include]] \
 ] [current_fileset]
