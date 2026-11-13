@@ -3,10 +3,10 @@
 //
 // Vivado 2024.2 rejects default macro arguments in upstream
 // common_cells/registers.svh (`__clk = `REG_DFLT_CLK). The `FF / `FFL
-// defines then never take effect, and each call is HDL 9-1206 near '('.
-// This file is earlier on the Vivado include path and uses the same
-// include guard, so the upstream header is not read. cc_cdc_2phase.sv
-// passes clk and reset explicitly.
+// defines then never take effect. This header has no defaults.
+// create_project.tcl copies it to build/src/common_cells/registers.svh
+// so `include "common_cells/registers.svh" resolves next to the patched
+// cc_cdc_2phase.sv. Simulation still uses the upstream header.
 
 `ifndef COMMON_CELLS_REGISTERS_SVH_
 `define COMMON_CELLS_REGISTERS_SVH_
