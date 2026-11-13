@@ -4,6 +4,9 @@
 // TLP LCRC-32 (Base 2.1 §3.5): poly 04C11DB7, seed FFFF_FFFF, LSB-first per
 // byte over Sequence Number (2 B) + TLP, then complement. Do not remap bits
 // (same PG213 lesson as DLLP CRC-16).
+//
+// One registered byte per cycle. The byte update is a flat XOR
+// (rivet_crc32_fold), not an 8-step serial LFSR.
 
 module rivet_dll_lcrc32 (
   // One byte per cycle (clear_i loads seed before first data byte).
@@ -19,28 +22,13 @@ module rivet_dll_lcrc32 (
 
   logic [31:0] crc_q;
 
-  function automatic logic [31:0] step_byte(input logic [31:0] crc_in, input logic [7:0] b);
-    logic [31:0] crc;
-    logic        din;
-    logic        fb;
-    int unsigned bit_i;
-    crc = crc_in;
-    for (bit_i = 0; bit_i < 8; bit_i++) begin
-      din = b[bit_i];
-      fb  = crc[0] ^ din;
-      crc = {1'b0, crc[31:1]};
-      if (fb) crc = crc ^ 32'hEDB88320; // reflected 04C11DB7
-    end
-    return crc;
-  endfunction
-
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       crc_q <= 32'hFFFF_FFFF;
     end else if (clear_i) begin
       crc_q <= 32'hFFFF_FFFF;
     end else if (valid_i) begin
-      crc_q <= step_byte(crc_q, data_i);
+      crc_q <= rivet_crc32_fold(crc_q, {56'd0, data_i}, 4'd1);
     end
   end
 

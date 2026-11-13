@@ -528,8 +528,9 @@ package rivet_pkg;
     return {seq[7:0], 4'h0, seq[11:8]};
   endfunction
 
-  // Combinational LCRC (same algorithm as rivet_dll_lcrc32 streaming core).
-  // Argument width covers default REPLAY_SLOT_BYTES (160).
+  // Serial LCRC reference for scoreboards and directed tests. Synthesis paths
+  // use rivet_crc32_fold (flat XOR). This loop is data-dependent and must not
+  // be called from a clocked datapath. Argument width covers REPLAY_SLOT_BYTES.
   function automatic logic [31:0] rivet_lcrc32_calc(
       input logic [8*160-1:0] bytes_le, // byte0 in [7:0]
       input int unsigned      nbytes);
@@ -624,5 +625,9 @@ package rivet_pkg;
             lfsr[8]};
     return {lfsr, pad};
   endfunction
+
+  // Parallel DLLP CRC-16 and LCRC-32 folds (scripts/gen_crc_fold.py).
+  // Path is relative to the repo root, which is the compile cwd.
+  `include "rtl/pcie_ctrl/rivet_crc_fold.svh"
 
 endpackage : rivet_pkg
