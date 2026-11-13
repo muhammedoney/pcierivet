@@ -52,19 +52,36 @@ Default `FPGA_FAMILY` on `rivet_pcie` remains UltraScale+ (0) → US+ / VCU118.
 
 VPK180 (Versal Premium, GTYP) remains the Gen5 kit. Gen2 ×4 on VMK180 GTY matches the active generation, and PG345 on GTY already reaches Gen4 ×8.
 
-| Rivet module | Vivado PHY | Board |
+Lab project: `fpga/vmk180/create_project.tcl` (part **XCVM1802-VSVA2197-2MP-E-S**, PG345 Gen2 ×4). Generated IP stays in `fpga/vmk180/build/` (gitignored). Slot PERST# is PMC MIO38, so the PL shell uses SW4 as the lab reset until a CIPS forward exists.
+
+`FPGA_FAMILY`: 0 = UltraScale+, 1 = UltraScale, 2 = Versal, 3 = Cyclone 10 GX. Simulation default stays 0.
+
+## Intel primary (locked)
+
+| Item | Choice |
+|------|--------|
+| **Primary board** | Altera **Cyclone 10 GX FPGA Development Kit** (DK-DEV-10CX220-B) |
+| **Primary FPGA** | **10CX220YF780E5G** |
+| **PCIe on board** | Edge connector Gen2 ×4 (kit default resistor R507) |
+| **PHY IP** | Quartus **Native PHY**, PIPE Gen2 ×4. Same transceiver IP as Arria 10 |
+| **Lane 0** | Bank 1C channel 4 (TX W28/W27, RX V26/V25). PCS bonding master |
+| **Refclk** | Bank 1D bottom refclk R24/R23, 100 MHz |
+
+Agilex 5 kits are current and sometimes cheaper, and they do not offer PIPE mode. A soft MAC cannot attach to them. The Cyclone 10 GX kit is the production board that is still sold (DigiKey and Mouser, $2,999) and whose edge is Gen2 ×4. The Arria 10 DE5a-Net uses the same PHY IP and costs about $5,000, so it is not the primary. DK-DEV-10CX220-A is discontinued; -B is the replacement.
+
+| Rivet module | Vendor PHY | Board |
 |--------------|------------|-------|
 | `rivet_pcie_phy_usplus` | PG239, VU9P (GTY) | **VCU118** |
 | `rivet_pcie_phy_us` | PG239, KU040 / KU115 / VU440 (GTH) | Secondary / legacy |
 | `rivet_pcie_phy_versal` | PG345, XCVM1802 (GTY) | **VMK180** |
+| `rivet_pcie_phy_c10gx` | Native PHY PIPE, 10CX220 | **DK-DEV-10CX220-B** |
 
-`FPGA_FAMILY`: 0 = UltraScale+, 1 = UltraScale, 2 = Versal. Simulation default stays 0.
-
-Lab project: `fpga/vmk180/create_project.tcl` (part **XCVM1802-VSVA2197-2MP-E-S**, PG345 Gen2 ×4). Generated IP stays in `fpga/vmk180/build/` (gitignored). Slot PERST# is PMC MIO38, so the PL shell uses SW4 as the lab reset until a CIPS forward exists.
+Lab project: `fpga/c10gx/create_project.tcl`. Generated IP stays in `fpga/c10gx/build/` (gitignored). PERST# is fabric pin AB11.
 
 ## Bring-up notes
 
 - Create the VCU118 project with `fpga/vcu118/create_project.tcl` (part **XCVU9P-FLGA2104-2L-E**, PG239 Gen2 ×4 on edge lanes 0–3). See `fpga/vcu118/README.md`.
 - Create the VMK180 project with `fpga/vmk180/create_project.tcl` (part **XCVM1802-VSVA2197-2MP-E-S**, PG345 Gen2 ×4 on quad 103). See `fpga/vmk180/README.md`.
-- Generated IP and the Vivado projects stay local (`fpga/vcu118/build/`, `fpga/vmk180/build/`, gitignored).
+- Create the Cyclone 10 GX project with `fpga/c10gx/create_project.tcl` (part **10CX220YF780E5G**, Native PHY PIPE Gen2 ×4). See `fpga/c10gx/README.md`.
+- Generated IP and the vendor projects stay local (`fpga/vcu118/build/`, `fpga/vmk180/build/`, `fpga/c10gx/build/`, gitignored).
 - Gen2 ×1/×2/×4 soft-controller validation does not require Gen3 ×16; the ×16 edge still helps host bring-up later.
