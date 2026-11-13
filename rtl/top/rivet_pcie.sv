@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Full Rivet PCIe soft IP: rivet_pcie_ctrl + family PHY (PG239).
-// FPGA_FAMILY: 0 = UltraScale+, 1 = UltraScale
+// FPGA_FAMILY: 0 = UltraScale+, 1 = UltraScale, 2 = Versal (VMK180 / PG345)
 
 module rivet_pcie #(
   parameter int unsigned MODE            = 0,
@@ -260,6 +260,13 @@ module rivet_pcie #(
     .link_up(link_up)
   );
 
+`ifndef SYNTHESIS
+  initial begin
+    if (!(FPGA_FAMILY == 0 || FPGA_FAMILY == 1 || FPGA_FAMILY == 2))
+      $error("rivet_pcie FPGA_FAMILY must be 0 (US+), 1 (US), or 2 (Versal)");
+  end
+`endif
+
   generate
     if (FPGA_FAMILY == 0) begin : g_usplus
       rivet_pcie_phy_usplus #(
@@ -316,8 +323,63 @@ module rivet_pcie #(
         .sys_clk(sys_clk),
         .sys_reset_n(sys_reset_n)
       );
-    end else begin : g_us
+    end else if (FPGA_FAMILY == 1) begin : g_us
       rivet_pcie_phy_us #(
+        .LANES(LANES),
+        .PIPE_DATA_WIDTH(PIPE_DATA_WIDTH)
+      ) u_phy (
+        .pclk(pclk),
+        .preset_n(preset_n),
+        .pipe_txdata(pipe_txdata),
+        .pipe_txdatak(pipe_txdatak),
+        .pipe_txdata_valid(pipe_txdata_valid),
+        .pipe_txstart_block(pipe_txstart_block),
+        .pipe_txsync_header(pipe_txsync_header),
+        .pipe_rxdata(pipe_rxdata),
+        .pipe_rxdatak(pipe_rxdatak),
+        .pipe_rxdata_valid(pipe_rxdata_valid),
+        .pipe_rxstart_block(pipe_rxstart_block),
+        .pipe_rxsync_header(pipe_rxsync_header),
+        .pipe_txdetectrx(pipe_txdetectrx),
+        .pipe_txelecidle(pipe_txelecidle),
+        .pipe_txcompliance(pipe_txcompliance),
+        .pipe_rxpolarity(pipe_rxpolarity),
+        .pipe_powerdown(pipe_powerdown),
+        .pipe_rate(pipe_rate),
+        .pipe_rxvalid(pipe_rxvalid),
+        .pipe_phystatus(pipe_phystatus),
+        .pipe_phystatus_rst(pipe_phystatus_rst),
+        .pipe_rxelecidle(pipe_rxelecidle),
+        .pipe_rxstatus(pipe_rxstatus),
+        .pipe_txmargin(pipe_txmargin),
+        .pipe_txswing(pipe_txswing),
+        .pipe_txdeemph(pipe_txdeemph),
+        .pipe_txeq_ctrl(pipe_txeq_ctrl),
+        .pipe_txeq_preset(pipe_txeq_preset),
+        .pipe_txeq_coeff(pipe_txeq_coeff),
+        .pipe_txeq_fs(pipe_txeq_fs),
+        .pipe_txeq_lf(pipe_txeq_lf),
+        .pipe_txeq_new_coeff(pipe_txeq_new_coeff),
+        .pipe_txeq_done(pipe_txeq_done),
+        .pipe_rxeq_ctrl(pipe_rxeq_ctrl),
+        .pipe_rxeq_txpreset(pipe_rxeq_txpreset),
+        .pipe_rxeq_preset_sel(pipe_rxeq_preset_sel),
+        .pipe_rxeq_new_txcoeff(pipe_rxeq_new_txcoeff),
+        .pipe_rxeq_adapt_done(pipe_rxeq_adapt_done),
+        .pipe_rxeq_done(pipe_rxeq_done),
+        .pipe_as_mac_in_detect(pipe_as_mac_in_detect),
+        .pipe_as_cdr_hold_req(pipe_as_cdr_hold_req),
+        .pipe_as_mac_in_L0(pipe_as_mac_in_L0),
+        .pipe_cfg_rx_pm_state(pipe_cfg_rx_pm_state),
+        .pci_exp_txp(pci_exp_txp),
+        .pci_exp_txn(pci_exp_txn),
+        .pci_exp_rxp(pci_exp_rxp),
+        .pci_exp_rxn(pci_exp_rxn),
+        .sys_clk(sys_clk),
+        .sys_reset_n(sys_reset_n)
+      );
+    end else if (FPGA_FAMILY == 2) begin : g_versal
+      rivet_pcie_phy_versal #(
         .LANES(LANES),
         .PIPE_DATA_WIDTH(PIPE_DATA_WIDTH)
       ) u_phy (
