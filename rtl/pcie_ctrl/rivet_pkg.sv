@@ -627,7 +627,7 @@ package rivet_pkg;
   endfunction
 
   // Parallel DLLP CRC-16 and LCRC-32 folds (scripts/gen_crc_fold.py).
-  // Path is relative to the repo root, which is the compile cwd.
+  // Path is relative to the repo root (compile cwd, or +incdir of the repo root).
   `include "rtl/pcie_ctrl/rivet_crc_fold.svh"
 
 endpackage : rivet_pkg
