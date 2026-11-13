@@ -40,7 +40,7 @@ Part: `xcvu9p-flga2104-2L-e`. If the installed board-part version is not `xilinx
 
 If Vivado rejects a PG239 enum (`lane0_gt_bank`, `refclk1_location`), the script prints the legal values. Set lane 0 to slot lane 0 and refclk to `MGTREFCLK0` of that quad, then regenerate.
 
-Vivado resolves `` `include "common_cells/registers.svh" `` from the including file's directory before the project include path. The patched `cc_cdc_2phase.sv` is in `build/src`, so `create_project.tcl` also copies the Vivado `registers.svh` (no default macro arguments) to `build/src/common_cells/registers.svh`. `FF` / `FFL` call sites are unchanged. `data_t'('0)` is rewritten to `'0` (HDL 9-1206). Simulation still uses the upstream files.
+`` `include "common_cells/registers.svh" `` keeps the `common_cells/` prefix. The Vivado include directory is the parent of that folder (`fpga/vcu118/include` and `build/src`), not the directory that contains `registers.svh`. `create_project.tcl` copies the Vivado header (no default macro arguments) to `build/src/common_cells/registers.svh`. `FF` / `FFL` call sites are unchanged. `data_t'('0)` is rewritten to `'0` (HDL 9-1206). The upstream `common_cells/include` tree stays off the Vivado include path. Simulation still uses the upstream files.
 
 ## LEDs (DS37 down toward DS30)
 
