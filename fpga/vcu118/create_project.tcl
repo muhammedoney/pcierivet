@@ -105,10 +105,16 @@ foreach f [get_files -of_objects [current_fileset]] {
     set_property file_type SystemVerilog $f
   }
 }
+# `include "common_cells/registers.svh" has a directory component.
+# The include dir must be the parent of common_cells/, not the folder
+# that contains registers.svh:
+#   fpga/vcu118/include/common_cells/registers.svh
+#   build/src/common_cells/registers.svh
+# The upstream header under third_party/ref/common_cells/include uses
+# default macro arguments. Leave that directory off this list.
 set_property include_dirs [list \
   [file normalize [file join $build_dir src]] \
   [file normalize [file join $script_dir include]] \
-  [file normalize [file join $repo_root third_party ref common_cells include]] \
 ] [current_fileset]
 
 set xdc [file join $script_dir constraints vcu118_pcie.xdc]
