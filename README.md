@@ -69,7 +69,7 @@ Where each layer, interface, and vendor product sits in the stack:
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
 | Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
-| Target FPGA | **VCU118** / **VMK180** / **VPK180** (whichever kit is available; PHY path adapts) |
+| Target FPGA | **VCU118** (US+) and **VMK180** (Versal primary). VPK180 is the later Premium path |
 | Verification | Phase 1 MVP + Phase 2 Full Gen2 EP (sim) closed; Verilator CI; Vivado BFM side-path |
 
 Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen3 when link proof allows — not Gen3/4 protocol yet.
@@ -79,7 +79,7 @@ Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verificatio
 ```text
 rtl/pcie_ctrl/        Soft controller top + rivet_pkg (to PIPE)
   mac/ dll/ tl/       Layer sources (LTSSM/OS, DLLP/FC, TLP/cfg)
-rtl/phy/              PG239 family PHY wrappers
+rtl/phy/              PG239 / PG345 family PHY wrappers
 rtl/top/              rivet_pcie = ctrl + phy
 rtl/interfaces/       PIPE, AXI-ST, cfg_mgmt SV interfaces
 tb/uvm/               Primary UVM (DUT = rivet_pcie_ctrl)
@@ -92,11 +92,11 @@ Any of these evaluation kits works for FPGA bring-up; the soft PHY / constraints
 
 | Kit | FPGA | Notes |
 |-----|------|-------|
-| **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | UltraScale+ GTY; current in-tree PG239 US+ path |
-| **AMD Versal™ Prime Series VMK180** | Versal Prime | Versal bring-up path when sponsored |
-| **AMD Versal™ Premium VPK180** | Versal Premium | Versal bring-up path when sponsored |
+| **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | UltraScale+ GTY; in-tree PG239 US+ path (`fpga/vcu118`) |
+| **AMD Versal Prime VMK180** | **XCVM1802** | Versal primary. PG345 GTY, Gen2 ×4 on quad 103 (`fpga/vmk180`) |
+| **AMD Versal Premium VPK180** | Versal Premium | Later GTYP / Gen5 path. Not the Versal bring-up target |
 
-Sim / RTL default today still exercises the UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`) path. Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
+Sim / RTL default today still exercises the UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`) path. Versal is `FPGA_FAMILY=2` → `rivet_pcie_phy_versal`. Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
 
 ## Tools
 
@@ -166,9 +166,9 @@ Early-stage open interconnect IP. **Hardware sponsorship is a real blocker** for
 
 **Any of these kits (loan or donation) is enough** — we will adapt the PHY wrapper / board flow to the part:
 
-- **AMD Virtex UltraScale+ VCU118** (**XCVU9P**)
-- **AMD Versal™ Prime Series VMK180**
-- **AMD Versal™ Premium VPK180**
+- **AMD Virtex UltraScale+ VCU118** (**XCVU9P**) — UltraScale+ primary
+- **AMD Versal Prime VMK180** (**XCVM1802**) — Versal primary
+- **AMD Versal Premium VPK180** — later GTYP / Gen5 path
 
 Also welcome:
 

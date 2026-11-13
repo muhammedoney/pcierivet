@@ -50,21 +50,21 @@ Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac
 |-----|-------|
 | `RIVET_GEN2` active | Use `RIVET_GEN4` / enums in params; helpers for legal `PIPE_DATA_WIDTH` vs `GEN` |
 
-### `rtl/phy/rivet_pcie_phy_usplus.sv` / `rivet_pcie_phy_us.sv`
+### `rtl/phy/rivet_pcie_phy_usplus.sv` / `rivet_pcie_phy_us.sv` / `rivet_pcie_phy_versal.sv`
 
 | Now (Gen2) | Later (Gen3/4) |
 |------------|----------------|
-| Behavioral stub; serial tied | Real PG239 instance; map Rivet PIPE ↔ `phy_*` |
+| Behavioral stub; serial tied | Real PHY instance; map Rivet PIPE ↔ `phy_*` |
 | 16-bit logical width | Connect full 32/64-bit `phy_txdata`/`phy_rxdata` per family table |
-| US wrapper shares US+ stub packing | Honor US 1-bit `rxstart_block` vs US+ 2-bit if wrapping real IP |
-| No GT/DRP on stub | Wire GT-specific / clocking for VCU118 (refclk, `gt_gtpowergood`, etc.) |
+| US and Versal wrappers share the US+ stub packing | Honor US 1-bit `rxstart_block` vs US+ 2-bit if wrapping real IP |
+| No GT/DRP on the stub | VCU118: PG239 (`gt_gtpowergood`). VMK180: PG345 (`phy_ready`, external GT quad) |
 
 ### `rtl/top/rivet_pcie.sv`
 
 | Now | Later |
 |-----|-------|
 | Pass-through PIPE between `u_ctrl` and `u_phy` | Same; optional width/adapters if ctrl logical width ≠ PHY pin width |
-| `FPGA_FAMILY` select | Gen4 speed-grade / part constraints in Vivado (not in soft RTL) |
+| `FPGA_FAMILY` select | Gen4 speed-grade / part constraints in Vivado (not in soft RTL). 0=US+, 1=US, 2=Versal |
 
 ### `rtl/interfaces/rivet_axi_st_if.sv` / `rivet_cfg_mgmt_if.sv`
 

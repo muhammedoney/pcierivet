@@ -5,7 +5,7 @@
 | Name | Module(s) | Role |
 |------|-----------|------|
 | **Controller** | `rivet_pcie_ctrl` | Soft PCIe controller. Parameter `MODE` selects EP, RC (root port), USP, or DSP. Ends at **PIPE**. No vendor cells. |
-| **PHY** | `rivet_pcie_phy_*` | Family-specific wrapper around Xilinx **PCIe PHY (PG239)**. PIPE ↔ serial lanes. |
+| **PHY** | `rivet_pcie_phy_*` | Family wrapper around Xilinx **PG239** (US/US+) or **PG345** (Versal). PIPE ↔ serial lanes. |
 | **PCIe IP (full)** | `rivet_pcie` | Integrator-facing soft IP = **controller + PHY**. |
 
 User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`cfg_mgmt_*`** naming conventions in the style of Xilinx **PG213**. That is the *user* boundary — not the PHY. There is **no AXI-Lite** user port.
@@ -21,7 +21,7 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`
             | PIPE
             v
   +--------------------+
-  | rivet_pcie_phy_*   |   PG239 family wrap
+  | rivet_pcie_phy_*   |   PG239 (US/US+) or PG345 (Versal)
   +---------+----------+
             | serial
 ```
@@ -43,9 +43,8 @@ Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
 
 | Item | Choice |
 |------|--------|
-| Board | **VCU118** |
-| FPGA | **XCVU9P** (UltraScale+, GTY) |
-| PHY IP | PG239 generated for **VU9P** |
+| Board | **VCU118** (US+ primary) and **VMK180** (Versal primary) |
+| FPGA | **XCVU9P** (PG239 GTY) and **XCVM1802** (PG345 GTY) |
 
 Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-evolution.md](gen-evolution.md).
 
@@ -56,7 +55,7 @@ Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-
 | `MODE` | EP / RC (Config) | USP/DSP share UP/DP Config paths; full RC TL later |
 | `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 3+ |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
-| `FPGA_FAMILY` | 0=US+, 1=US | On `rivet_pcie` / PHY only; primary bring-up **VCU118 / XCVU9P** (US+) |
+| `FPGA_FAMILY` | 0=US+, 1=US, 2=Versal | On `rivet_pcie` / PHY only. US+ bring-up **VCU118 / XCVU9P**. Versal bring-up **VMK180 / XCVM1802** |
 | `PIPE_DATA_WIDTH` | `16` now | 32 Gen3 / 64 Gen4 US+ later |
 
 ## MAC and PIPE
