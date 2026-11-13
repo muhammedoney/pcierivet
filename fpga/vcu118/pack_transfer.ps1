@@ -7,6 +7,8 @@
 #   powershell -File fpga\vcu118\pack_transfer.ps1 -OutDir D:\bags
 #   powershell -File fpga\vcu118\pack_transfer.ps1 -IncludeGit
 #   fpga\vcu118\pack_transfer.cmd
+#   fpga/vcu118/pack_transfer.sh
+#   fpga/vcu118/pack_transfer.sh --out-dir ~/bags
 #
 # Default zip (next to the repo):
 #   ..\rivet_transfer_vcu118_YYYYMMDD_HHMM.zip
