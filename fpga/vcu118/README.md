@@ -60,9 +60,11 @@ If Vivado rejects a PG239 enum (`lane0_gt_bank`, `refclk1_location`), the script
 ```text
 fpga\vcu118\pack_transfer.cmd
 fpga\vcu118\pack_transfer.cmd -OutDir D:\bags
+fpga/vcu118/pack_transfer.sh
+fpga/vcu118/pack_transfer.sh --out-dir ~/bags
 ```
 
-Default zip, next to the repo: `rivet_transfer_vcu118_<timestamp>.zip`. The zip root folder is `rivet\`. Sim builds, `fpga/vcu118/build/`, `specs/`, local path files, and `.git` stay out. `-IncludeGit` keeps history.
+Default zip, next to the repo: `rivet_transfer_vcu118_<timestamp>.zip`. The zip root folder is `rivet\`. Sim builds, `fpga/vcu118/build/`, `specs/`, local path files, and `.git` stay out. `-IncludeGit` / `--include-git` keeps history.
 
 On the machine with an XCVU9P Vivado license, unzip, then:
 
