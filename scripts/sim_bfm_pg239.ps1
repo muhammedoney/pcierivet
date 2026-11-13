@@ -258,7 +258,9 @@ function New-CompileDo {
       "tb/bfm/pg239_phy/rtl/rivet_pg239_board.sv"
     ) | ForEach-Object { ('"{0}/{1}"' -f $repoUnix, $_) }
     [void]$sb.AppendLine("")
-    [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}/third_party/ref/common_cells/include" \' -f $repoUnix))
+    # Repo root is on the include path so rivet_pkg's `include of rivet_crc_fold.svh
+    # resolves when vlog runs from tb/bfm/pg239_phy/work.
+    [void]$sb.AppendLine(('vlog -work xil_defaultlib -sv -incr -mfcu "+incdir+{0}" "+incdir+{0}/third_party/ref/common_cells/include" \' -f $repoUnix))
     for ($i = 0; $i -lt $rivetSv.Count; $i++) {
       $suffix = if ($i -lt $rivetSv.Count - 1) { " \" } else { "" }
       [void]$sb.AppendLine("$($rivetSv[$i])$suffix")
