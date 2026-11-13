@@ -391,9 +391,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           if (go_c) begin
             rivet_axi_tlp_util::pack_cpld_tl_beats(
                 tlp_cpld_rid, tlp_cpld_tag, tlp_cpld_data, tlp_b0, tlp_b1);
-            // Distinct DLL seq from peer MemRd (seq 0) so replay/dup detect accepts CplD.
+            // First TLP on the link is seq 0. After the peer MemRd, CplD is seq 1
+            // so replay/duplicate detection still accepts it.
             rivet_axi_tlp_util::pack_dll_tlp_frame(
-                12'd1, tlp_b0, tlp_b1, 16, tlp_frame, tlp_nbytes);
+                tlp_memrd_done ? 12'd1 : 12'd0, tlp_b0, tlp_b1, 16, tlp_frame, tlp_nbytes);
             tlp_sym = 0; tlp_sending = 1'b1; tlp_cpld_done = 1'b1;
             uvm_config_db#(bit)::set(null, "*", "peer_tlp_cpld_done", 1'b1);
           end
