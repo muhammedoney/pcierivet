@@ -134,6 +134,8 @@ Requires local Vivado example projects + Questa `compile_simlib`. See [tb/bfm/RE
 
 Default path is next to the repo: `../rivet-src-<timestamp>.zip`.
 
+`fpga/vcu118/pack_transfer.ps1` is a separate zip for a machine that has a Vivado license. It leaves out `.git` unless `-IncludeGit` is set. On that machine, `fpga\vcu118\create_project.cmd` creates the project and `fpga\vcu118\synth.cmd` runs synthesis. See [fpga/vcu118/README.md](fpga/vcu118/README.md).
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)

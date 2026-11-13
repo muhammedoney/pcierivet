@@ -12,13 +12,16 @@ From `cmd.exe` (finds `vivado.bat` via `%VIVADO_PATH%`, `%XILINX_VIVADO%`, `PATH
 
 ```text
 fpga\vcu118\create_project.cmd
-fpga\vcu118\create_project.cmd synth
+fpga\vcu118\synth.cmd
 ```
+
+`create_project.cmd` only creates the project. `synth.cmd` opens `fpga/vcu118/build/rivet_vcu118.xpr` and runs `synth_1`. One-shot create-and-synth is still `create_project.cmd synth`.
 
 Or call Vivado directly:
 
 ```text
 vivado -mode batch -source fpga/vcu118/create_project.tcl
+vivado -mode batch -source fpga/vcu118/synth.tcl
 vivado -mode batch -source fpga/vcu118/create_project.tcl -tclargs synth
 ```
 
@@ -50,9 +53,27 @@ Vivado 2024.2 does not accept upstream `common_cells` register macros (default a
 
 `pcie_perst_n` is slot PERST# (AM17, active-low). `cpu_reset` is SW9 (L19, active-high).
 
+## Transfer to a licensed machine
+
+`pack_transfer` only zips sources. It does not call Vivado.
+
+```text
+fpga\vcu118\pack_transfer.cmd
+fpga\vcu118\pack_transfer.cmd -OutDir D:\bags
+```
+
+Default zip, next to the repo: `rivet_transfer_vcu118_<timestamp>.zip`. The zip root folder is `rivet\`. Sim builds, `fpga/vcu118/build/`, `specs/`, local path files, and `.git` stay out. `-IncludeGit` keeps history.
+
+On the machine with an XCVU9P Vivado license, unzip, then:
+
+```text
+fpga\vcu118\create_project.cmd
+fpga\vcu118\synth.cmd
+```
+
 ## After it opens
 
-1. Run synthesis, then implementation, then bitstream.
+1. Run `synth.cmd`, then implementation, then bitstream.
 2. Program the VCU118 with the card in a host slot.
 3. LED 1 should light after PHY reset. LED 0 and LTSSM `0x10` mean L0.
 4. On the host, `lspci` is the config-TLP check. A BAR0 read/write is the PIO check.
