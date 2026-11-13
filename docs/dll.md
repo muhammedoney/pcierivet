@@ -237,8 +237,8 @@ tie DLL to AXI.
 
 | Concern | Width coupling |
 |---------|----------------|
-| DLLP CRC-16 | Byte-stream; 4 info bytes + CRC field |
-| TLP LCRC-32 | Byte-stream over Seq# + TLP; complement only (no per-byte remap) |
+| DLLP CRC-16 | Flat XOR of the 4 info bytes (not a 32-step LFSR) |
+| TLP LCRC-32 | 8-byte parallel fold per pclk over Seq# + TLP; complement only. RX checks the residue on EOP. TX folds the latched frame for ceil(N/8) cycles, then emits through a shift register |
 | FC credits | Header / DW units |
 | MAC striping | Scales with `LANES` + PIPE |
 

@@ -694,7 +694,7 @@ module rivet_mac_os_rx #(
             end else if (n != 8'd0) begin
               for (int unsigned i = 0; i < 8; i++) begin
                 if (8'(i) < n) begin
-                  dll_beat_d.data[8*i +: 8] = tlp_buf_q[8*(tlp_off_q + 8'(i)) +: 8];
+                  dll_beat_d.data[8*i +: 8] = tlp_buf_q[8*i +: 8];
                   dll_beat_d.keep[i]        = 1'b1;
                 end
               end
@@ -703,6 +703,7 @@ module rivet_mac_os_rx #(
               dll_beat_valid_d = 1'b1;
               tlp_off_d        = tlp_off_q + n;
               if ((tlp_off_q + n) >= tlp_len_q) rx_pkt_d = RX_IDLE;
+              else tlp_buf_d = tlp_buf_q >> 64; // full beat is 8 bytes; tail does not shift
             end else begin
               rx_pkt_d = RX_IDLE;
             end

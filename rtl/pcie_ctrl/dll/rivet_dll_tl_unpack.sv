@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Unpack a whole TLP payload from rivet_dll_tlp_rx into TL AXI-ST-like beats.
+// The head beat is always buf_q[DATA_W-1:0]; a full beat shifts the buffer
+// down so the read is wiring, not a byte-index barrel mux.
 
 module rivet_dll_tl_unpack #(
   parameter int unsigned DATA_W     = rivet_pkg::RIVET_TL_DLL_DATA_W,
@@ -47,7 +49,7 @@ module rivet_dll_tl_unpack #(
     m_tkeep_o  = '0;
     for (int unsigned i = 0; i < KEEP_W; i++) begin
       if (i < beat_bytes) begin
-        m_tdata_o[8*i +: 8] = buf_q[8*(off_q + OFF_W'(i)) +: 8];
+        m_tdata_o[8*i +: 8] = buf_q[8*i +: 8];
         m_tkeep_o[i]        = 1'b1;
       end
     end
@@ -74,7 +76,8 @@ module rivet_dll_tl_unpack #(
         busy_q <= 1'b0;
         off_q  <= '0;
       end else begin
-        off_q <= off_q + OFF_W'(beat_bytes);
+        off_q <= off_q + OFF_W'(KEEP_W);
+        buf_q <= buf_q >> DATA_W;
       end
     end
   end
