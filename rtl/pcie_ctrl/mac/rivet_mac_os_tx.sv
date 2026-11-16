@@ -6,8 +6,11 @@
 // Streams the ordered set the LTSSM asks for and, when L0 packet enable is high,
 // may insert SKP OS (Gen1/Gen2 clock compensation), framed DLLP
 // (SDP + 6 bytes + END), and framed TLP (STP + bytes + END) striped across
-// the enabled lanes (1, 2, or 4). TLP beats are collected to EOP, then emitted as one framed
-// image so PIPE never inserts Idle between STP and END.
+// the enabled lanes (1, 2, or 4). TLP beats are collected to EOP into a
+// register. Emit starts the following cycle and shifts that image so each
+// pclk only muxes the low 8 bytes. A variable index into the whole buffer
+// does not close into PHY TXDATA at Gen2 pclk. PIPE still has no Idle
+// between STP and END.
 
 module rivet_mac_os_tx #(
   parameter int unsigned LANES           = 1,
@@ -55,6 +58,7 @@ module rivet_mac_os_tx #(
   // Must hold TLP framed length (1 STP + 64 data + 1 END) + one PIPE beat.
   localparam int unsigned PTR_W       = 7;
   localparam int unsigned TLP_BUF_B   = RIVET_MAC_TLP_BUF_BYTES;
+  localparam int unsigned TLP_SLOTS   = TLP_BUF_B / 8;
 
   localparam logic [CNT_W-1:0] SYMS_C  = CNT_W'(SYMS);
   localparam logic [CNT_W-1:0] CNT_MAX = {CNT_W{1'b1}};
@@ -134,19 +138,37 @@ module rivet_mac_os_tx #(
     return sym;
   endfunction
 
-  function automatic logic [8:0] tlp_symbol(input logic [6:0] idx,
-                                            input logic [TLP_BUF_B*8-1:0] payload,
-                                            input logic [7:0] nbytes);
-    logic [8:0] sym;
-    if (idx == 7'd0)
-      sym = {1'b1, RIVET_SYM_STP};
-    else if (idx == 7'(nbytes) + 7'd1)
-      sym = {1'b1, RIVET_SYM_END};
-    else if ((idx > 7'd0) && ((idx - 7'd1) < 7'(nbytes)))
-      sym = {1'b0, payload[8*(idx-1) +: 8]};
-    else
-      sym = {1'b0, 8'h00};
-    return sym;
+  // Low 8 payload bytes only. The buffer is shifted so byte 0 of this window
+  // is at [7:0]; a 160-byte indexed read does not close at Gen2 pclk.
+  function automatic logic [7:0] head_byte(input logic [63:0] head,
+                                           input logic [2:0]  sel);
+    case (sel)
+      3'd0: return head[ 7: 0];
+      3'd1: return head[15: 8];
+      3'd2: return head[23:16];
+      3'd3: return head[31:24];
+      3'd4: return head[39:32];
+      3'd5: return head[47:40];
+      3'd6: return head[55:48];
+      default: return head[63:56];
+    endcase
+  endfunction
+
+  // Payload bytes (framed indices 1..nbytes) inside one PIPE beat.
+  function automatic logic [3:0] tlp_pay_take(input logic [7:0] pos,
+                                              input logic [7:0] nbytes,
+                                              input logic [4:0] step);
+    logic [7:0] idx;
+    logic [3:0] n;
+    n = '0;
+    for (int unsigned k = 0; k < 8; k++) begin
+      if (5'(k) < step) begin
+        idx = pos + 8'(k);
+        if ((idx != 8'd0) && (idx <= nbytes))
+          n = n + 4'd1;
+      end
+    end
+    return n;
   endfunction
 
   typedef enum logic [1:0] {
@@ -182,7 +204,6 @@ module rivet_mac_os_tx #(
   logic                   want_tlp;
   logic                   take_tlp_start;
   logic                   take_tlp_col;
-  logic                   take_tlp_emit;
   logic                   want_skp;
   logic                   skp_due;
   logic                   skp_finishing;
@@ -191,8 +212,8 @@ module rivet_mac_os_tx #(
   logic [SKP_CNT_W-1:0]   skp_sym_q;
   logic [TLP_BUF_B*8-1:0] tlp_buf_q, tlp_buf_d;
   logic [7:0]             tlp_len_q, tlp_len_d;
-  logic [7:0]             tlp_framed;
-  logic                   tlp_done;
+  logic [7:0]             tlp_pos_q, tlp_pos_d;
+  logic [3:0]             tlp_take;
 
   assign at_boundary  = (ptr_q == 5'd0) && (mode_q == ST_OS);
   assign transmitting = os_req_valid_i && (os_req_i != RIVET_MAC_OS_NONE);
@@ -235,30 +256,43 @@ module rivet_mac_os_tx #(
   end
 
   assign pkt_done  = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
-  logic [7:0] tlp_len_emit;
-  assign tlp_len_emit = ((take_tlp_start || take_tlp_col) && dll_tx_beat_i.eop)
-      ? tlp_len_d : tlp_len_q;
-  assign tlp_framed = tlp_len_emit + 8'd2;
-  assign tlp_done   = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(tlp_framed);
-  assign take_tlp_emit = (take_tlp_start || take_tlp_col) && dll_tx_beat_i.eop;
-  assign in_pkt_emit = take_dllp || take_tlp_emit ||
-                       (mode_q == ST_PKT) || (mode_q == ST_TLP_EM);
+  // Emit is mode_q, one cycle after EOP is stored. off_q therefore stops at
+  // tlp_buf_q and does not continue into TXDATA.
+  assign in_pkt_emit = take_dllp || (mode_q == ST_PKT) || (mode_q == ST_TLP_EM);
   assign skp_finishing =
       (mode_q == ST_OS) && !in_pkt_emit && set_done && (cur == RIVET_MAC_OS_SKP);
 
   always_comb begin
+    logic [TLP_BUF_B*8-1:0] base_buf;
+    logic [7:0]             base_len;
+    logic [7:0]             beat_n;
     tlp_buf_d = tlp_buf_q;
     tlp_len_d = tlp_len_q;
+    tlp_take  = '0;
+    base_buf  = tlp_buf_q;
+    base_len  = tlp_len_q;
+    beat_n    = '0;
     if (take_tlp_start || take_tlp_col) begin
-      if (take_tlp_start) begin
-        tlp_buf_d = '0;
-        tlp_len_d = 8'd0;
-      end
-      for (int unsigned i = 0; i < 8; i++) begin
-        if (dll_tx_beat_i.keep[i] && (tlp_len_d < 8'(TLP_BUF_B))) begin
-          tlp_buf_d[8*tlp_len_d +: 8] = dll_tx_beat_i.data[8*i +: 8];
-          tlp_len_d = tlp_len_d + 8'd1;
+      // One 8-byte slot chosen by the registered length. Beats are a low
+      // prefix, and only the last beat is shorter than 8, so the slot is aligned.
+      base_buf = take_tlp_start ? '0 : tlp_buf_q;
+      base_len = take_tlp_start ? 8'd0 : tlp_len_q;
+      beat_n   = keep_nbytes(dll_tx_beat_i.keep);
+      tlp_buf_d = base_buf;
+      tlp_len_d = base_len + beat_n;
+      for (int unsigned s = 0; s < TLP_SLOTS; s++) begin
+        if (base_len[7:3] == 5'(s)) begin
+          for (int unsigned i = 0; i < 8; i++) begin
+            if (8'(i) < beat_n)
+              tlp_buf_d[8*(s*8 + i) +: 8] = dll_tx_beat_i.data[8*i +: 8];
+          end
         end
+      end
+    end else if (mode_q == ST_TLP_EM) begin
+      tlp_take = tlp_pay_take(tlp_pos_q, tlp_len_q, sym_step);
+      for (int unsigned sh = 0; sh <= 8; sh++) begin
+        if (tlp_take == 4'(sh))
+          tlp_buf_d = tlp_buf_q >> (sh * 8);
       end
     end
   end
@@ -267,6 +301,7 @@ module rivet_mac_os_tx #(
     mode_d    = mode_q;
     pkt_d     = pkt_q;
     pkt_ptr_d = pkt_ptr_q;
+    tlp_pos_d = tlp_pos_q;
     unique case (mode_q)
       ST_OS: begin
         if (take_dllp) begin
@@ -280,18 +315,10 @@ module rivet_mac_os_tx #(
             pkt_ptr_d = PTR_W'(sym_step);
           end
         end else if (take_tlp_start) begin
-          if (dll_tx_beat_i.eop) begin
-            if (sym_step >= int'(tlp_framed)) begin
-              mode_d    = ST_OS;
-              pkt_ptr_d = '0;
-            end else begin
-              mode_d    = ST_TLP_EM;
-              pkt_ptr_d = PTR_W'(sym_step);
-            end
-          end else begin
-            mode_d    = ST_TLP_COL;
-            pkt_ptr_d = '0;
-          end
+          // Buffer updates this cycle; STP goes out on the next pclk.
+          tlp_pos_d = '0;
+          pkt_ptr_d = '0;
+          mode_d    = dll_tx_beat_i.eop ? ST_TLP_EM : ST_TLP_COL;
         end
       end
       ST_PKT: begin
@@ -304,21 +331,18 @@ module rivet_mac_os_tx #(
       end
       ST_TLP_COL: begin
         if (take_tlp_col && dll_tx_beat_i.eop) begin
-          if (sym_step >= int'(tlp_framed)) begin
-            mode_d    = ST_OS;
-            pkt_ptr_d = '0;
-          end else begin
-            mode_d    = ST_TLP_EM;
-            pkt_ptr_d = PTR_W'(sym_step);
-          end
+          mode_d    = ST_TLP_EM;
+          tlp_pos_d = '0;
+          pkt_ptr_d = '0;
         end
       end
       ST_TLP_EM: begin
-        if (tlp_done) begin
+        if ((tlp_pos_q + 8'(sym_step)) >= (tlp_len_q + 8'd2)) begin
           mode_d    = ST_OS;
+          tlp_pos_d = '0;
           pkt_ptr_d = '0;
         end else begin
-          pkt_ptr_d = pkt_ptr_q + PTR_W'(sym_step);
+          tlp_pos_d = tlp_pos_q + 8'(sym_step);
         end
       end
       default: mode_d = ST_OS;
@@ -351,19 +375,26 @@ module rivet_mac_os_tx #(
           end
         end
       end
-    end else if (take_tlp_emit || (mode_q == ST_TLP_EM)) begin
+    end else if (mode_q == ST_TLP_EM) begin
       for (int unsigned s = 0; s < SYMS; s++) begin
         automatic int unsigned ord = 0;
         for (int unsigned l = 0; l < LANES; l++) begin
           if (lane_en_i[l]) begin
-            if (take_tlp_emit)
-              stream_idx = PTR_W'(s * int'(n_en) + ord);
-            else
-              stream_idx = pkt_ptr_q + PTR_W'(s * int'(n_en) + ord);
-            if (take_tlp_emit)
-              sym_tmp = tlp_symbol(stream_idx[6:0], tlp_buf_d, tlp_len_d);
-            else
-              sym_tmp = tlp_symbol(stream_idx[6:0], tlp_buf_q, tlp_len_q);
+            automatic logic [7:0] idx;
+            automatic logic [2:0] boff;
+            automatic int unsigned sym_i;
+            sym_i = s * int'(n_en) + ord;
+            idx   = tlp_pos_q + 8'(sym_i);
+            if (idx == 8'd0) begin
+              sym_tmp = {1'b1, RIVET_SYM_STP};
+            end else if (idx == (tlp_len_q + 8'd1)) begin
+              sym_tmp = {1'b1, RIVET_SYM_END};
+            end else if ((idx != 8'd0) && (idx <= tlp_len_q)) begin
+              boff = (tlp_pos_q == 8'd0) ? (3'(sym_i) - 3'd1) : 3'(sym_i);
+              sym_tmp = {1'b0, head_byte(tlp_buf_q[63:0], boff)};
+            end else begin
+              sym_tmp = {1'b0, 8'h00};
+            end
             sym_data_o[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
             sym_datak_o[SYMS*l + s]                  = sym_tmp[8];
             ord++;
@@ -386,7 +417,7 @@ module rivet_mac_os_tx #(
     end
   end
 
-  assign sym_valid_o = take_dllp || take_tlp_emit ||
+  assign sym_valid_o = take_dllp ||
                        (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) ||
                        (cur != RIVET_MAC_OS_NONE);
 
@@ -401,12 +432,14 @@ module rivet_mac_os_tx #(
       skp_sym_q <= '0;
       tlp_buf_q <= '0;
       tlp_len_q <= '0;
+      tlp_pos_q <= '0;
     end else begin
       mode_q    <= mode_d;
       pkt_q     <= pkt_d;
       pkt_ptr_q <= pkt_ptr_d;
       tlp_buf_q <= tlp_buf_d;
       tlp_len_q <= tlp_len_d;
+      tlp_pos_q <= tlp_pos_d;
 
       if (in_pkt_emit) begin
         // Freeze OS pointer while framing a packet.
