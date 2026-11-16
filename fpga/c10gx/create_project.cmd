@@ -24,12 +24,14 @@ if not defined QSH call :pick_where quartus_sh.exe
 if not defined QSH call :pick_where quartus_sh
 if not defined QSH call :pick_tree "C:\intelFPGA_pro"
 if not defined QSH call :pick_tree "C:\altera_pro"
+if not defined QSH call :pick_tree "D:\intelFPGA_pro"
+if not defined QSH call :pick_tree "D:\altera_pro"
 if not defined QSH call :pick_tree "%ProgramFiles%\intelFPGA_pro"
 if not defined QSH (
   echo ERROR: quartus_sh.exe not found.
   echo Set QUARTUS_ROOTDIR to the Quartus Prime Pro root
   echo ^(the folder that contains bin64\quartus_sh.exe^), or add quartus_sh to PATH.
-  echo Also checked C:\intelFPGA_pro and C:\altera_pro.
+  echo Also checked C:\ and D:\ intelFPGA_pro and altera_pro.
   call :pause_if_explorer
   exit /b 1
 )
