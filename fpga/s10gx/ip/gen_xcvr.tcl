@@ -4,9 +4,10 @@
 # Platform Designer system for the Stratix 10 GX Gen2 x4 PIPE PHY.
 # Run by fpga/s10gx/create_project.tcl via qsys-script.
 #
-# L-tile and H-tile share altera_xcvr_native_s10_htile. The kit FPGA is
-# the L-tile 1SG280. PIPE Gen2 x4, simplified data interface off, so the
-# 80-bit/lane map in rivet_s10gx_ep.sv. Polarity and rate live in the TX word.
+# L-tile and H-tile share altera_xcvr_native_s10_htile. This kit is the
+# H-tile 1SG280 (DK-DEV-1SGX-H-A). PIPE Gen2 x4, simplified data interface
+# off. The 80-bit/lane map is in rivet_s10gx_ep.sv. Polarity and rate live
+# in the TX word.
 
 package require qsys
 if {![info exists ::rivet_s10gx_build]} {
@@ -62,7 +63,7 @@ proc rivet_require_named {inst names value} {
 }
 
 create_system rivet_s10gx_xcvr
-set_project_property DEVICE 1SG280LU2F50E2VG
+set_project_property DEVICE 1SG280HU2F50E2VG
 set_project_property DEVICE_FAMILY {Stratix 10}
 set_project_property HIDE_FROM_IP_CATALOG true
 catch {set_use_testbench_naming_pattern 0 {}}
@@ -152,7 +153,7 @@ rivet_require_param phy std_rx_rmfifo_pattern_n {192892}
 set_instance_property phy AUTO_EXPORT true
 
 add_instance rst altera_xcvr_reset_control_s10
-# h_tile is the production L-tile / H-tile setting. L-tile ES is gone.
+# h_tile is the H-tile and production L-tile setting. L-tile ES is gone.
 rivet_require_param rst TILE_TYPE {h_tile}
 rivet_require_param rst CHANNELS {4}
 rivet_require_param rst PLLS {1}

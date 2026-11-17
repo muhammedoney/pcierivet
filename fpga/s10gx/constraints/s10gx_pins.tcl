@@ -1,7 +1,7 @@
 # Copyright 2026 Rivet contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# Stratix 10 GX FPGA Development Kit (UG-683674, DK-DEV-1SGX-L-A).
+# Stratix 10 GX FPGA Development Kit (UG-683674, DK-DEV-1SGX-H-A).
 # Edge lanes 0-3. Quartus takes the positive serial pin and pairs the
 # complement. Refclk is the slot HCSL pair, DC-coupled, terminated on
 # the motherboard.

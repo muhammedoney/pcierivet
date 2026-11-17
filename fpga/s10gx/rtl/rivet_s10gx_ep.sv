@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Stratix 10 GX FPGA Development Kit (DK-DEV-1SGX-L-A) Endpoint shell.
+// Stratix 10 GX FPGA Development Kit (DK-DEV-1SGX-H-A) Endpoint shell.
 // Rivet Gen2 controller + L/H-tile Native PHY in PIPE Gen2 x4 mode.
 // Config completions stay inside the controller. BAR0 Mem32 uses rivet_tl_pio_app.
 // Requester (RQ/RC) is idle until a later host-memory step.

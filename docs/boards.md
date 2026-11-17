@@ -82,8 +82,8 @@ Lab project: `fpga/c10gx/create_project.tcl`. Generated IP stays in `fpga/c10gx/
 
 | Item | Choice |
 |------|--------|
-| **Board** | Stratix 10 GX FPGA Development Kit (**DK-DEV-1SGX-L-A**, Terasic archive No. 1068) |
-| **FPGA** | **1SG280LU2F50E2VG** (L-tile). Older kits used 1SG280LU3F50E3VGS1 |
+| **Board** | Stratix 10 GX FPGA Development Kit (**DK-DEV-1SGX-H-A**, Terasic archive No. 1068) |
+| **FPGA** | **1SG280HU2F50E2VG** (H-tile). Older kits used 1SG280HU2F50E2VGS1 |
 | **PCIe on board** | Edge connector Gen3 x16. This project is Gen2 x4 on lanes 0–3 |
 | **PHY IP** | L/H-tile Native PHY PIPE (`altera_xcvr_native_s10_htile`) |
 | **Refclk** | Slot HCSL AK41/AK40, 100 MHz |
