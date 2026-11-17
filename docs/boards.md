@@ -78,6 +78,19 @@ Agilex 5 kits are current and sometimes cheaper, and they do not offer PIPE mode
 
 Lab project: `fpga/c10gx/create_project.tcl`. Generated IP stays in `fpga/c10gx/build/` (gitignored). PERST# is fabric pin AB11.
 
+## Stratix 10 GX kit (additional)
+
+| Item | Choice |
+|------|--------|
+| **Board** | Stratix 10 GX FPGA Development Kit (**DK-DEV-1SGX-L-A**, Terasic archive No. 1068) |
+| **FPGA** | **1SG280LU2F50E2VG** (L-tile). Older kits used 1SG280LU3F50E3VGS1 |
+| **PCIe on board** | Edge connector Gen3 x16. This project is Gen2 x4 on lanes 0–3 |
+| **PHY IP** | L/H-tile Native PHY PIPE (`altera_xcvr_native_s10_htile`) |
+| **Refclk** | Slot HCSL AK41/AK40, 100 MHz |
+| **PERST#** | AJ34, 3.0 V |
+
+Cyclone 10 GX stays the Intel primary. The Stratix 10 kit is the lab project in `fpga/s10gx/`. Generated IP stays in `fpga/s10gx/build/` (gitignored). Set presence-detect DIP SW2 to x4 or x16.
+
 ## Bring-up notes
 
 - Create the VCU118 project with `fpga/vcu118/create_project.tcl` (part **XCVU9P-FLGA2104-2L-E**, PG239 Gen2 ×4 on edge lanes 0–3). See `fpga/vcu118/README.md`.

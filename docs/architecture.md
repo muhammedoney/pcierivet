@@ -43,7 +43,7 @@ Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
 
 | Item | Choice |
 |------|--------|
-| Board | **VCU118** (US+ primary), **VMK180** (Versal primary), **DK-DEV-10CX220-B** (Intel primary) |
+| Board | **VCU118** (US+ primary), **VMK180** (Versal primary), **DK-DEV-10CX220-B** (Intel primary), **DK-DEV-1SGX-L-A** (Stratix 10 GX, additional) |
 | FPGA | **XCVU9P** (PG239 GTY), **XCVM1802** (PG345 GTY), **10CX220YF780E5G** (Native PHY PIPE) |
 
 Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-evolution.md](gen-evolution.md).
