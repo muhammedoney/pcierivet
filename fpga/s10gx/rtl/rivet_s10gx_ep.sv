@@ -41,6 +41,7 @@ module rivet_s10gx_ep (
   localparam int unsigned WORD            = 80;
 
   logic sys_rst_n;
+  logic ninit_done;
   logic pipe_clk;
   logic phy_ready;
   logic link_up;
@@ -89,8 +90,13 @@ module rivet_s10gx_ep (
   logic [87:0] cq_tuser;
   logic [32:0] cc_tuser;
 
-  // All three are active-low and released high.
-  assign sys_rst_n = pcie_perstn & cpu_resetn & user_pb0;
+  // ninit_done is high until the SDM finishes initialization, then low.
+  // User logic, including the transceiver reset, stays in reset until then.
+  // The three board resets are active-low and released high.
+  rivet_s10gx_init u_init (
+    .ninit_done (ninit_done)
+  );
+  assign sys_rst_n = pcie_perstn & cpu_resetn & user_pb0 & ~ninit_done;
 
   always_comb begin
     tx_parallel_data = '0;
