@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Quartus project for the Stratix 10 GX FPGA Development Kit
-# (DK-DEV-1SGX-L-A, 1SG280LU2F50E2VG). Gen2 x4 Endpoint.
+# (DK-DEV-1SGX-H-A, 1SG280HU2F50E2VG). Gen2 x4 Endpoint.
 # Generated IP and the project directory are gitignored.
 #
 #   quartus_sh -t fpga/s10gx/create_project.tcl
@@ -12,7 +12,7 @@ set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir .. ..]]
 set build_dir  [file join $script_dir build]
 set ip_dir     [file join $build_dir ip]
-set part       1SG280LU2F50E2VG
+set part       1SG280HU2F50E2VG
 
 proc rivet_patch_cdc_2phase {src build regs_svh} {
   set dst_dir [file join $build src]

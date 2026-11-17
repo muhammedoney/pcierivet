@@ -1,6 +1,6 @@
-# Stratix 10 GX Gen2 Endpoint (DK-DEV-1SGX-L-A)
+# Stratix 10 GX Gen2 Endpoint (DK-DEV-1SGX-H-A)
 
-Additional Intel board for Rivet. The kit is the **Stratix 10 GX FPGA Development Kit** sold by Terasic (archive No. 1068) and by Altera as **DK-DEV-1SGX-L-A**. Device **1SG280LU2F50E2VG** (L-tile). The older user-guide photograph lists 1SG280LU3F50E3VGS1; the pinout is the same L-tile board.
+Additional Intel board for Rivet. The kit is the **Stratix 10 GX FPGA Development Kit**, H-tile, ordering code **DK-DEV-1SGX-H-A** (Terasic archive No. 1068). Device **1SG280HU2F50E2VG**. Older H-tile kits were marked 1SG280HU2F50E2VGS1; the edge pinout is the same.
 
 The edge connector is PCIe Gen3 x16. This project uses Gen2 x4, which is the active Rivet generation. The soft controller stays the MAC. The PHY is the L/H-tile Native PHY in PIPE mode (`altera_xcvr_native_s10_htile`), not the hard IP.
 
@@ -10,7 +10,7 @@ Cyclone 10 GX remains the Intel primary. This tree is the lab project for the St
 
 `fpga/s10gx/rtl/rivet_s10gx_ep.sv` is the project top. It instantiates `rivet_pcie_ctrl` (Gen2, x4, PIO on BAR0) and `rivet_s10gx_link`. The link wrapper is written by `create_project.tcl` after Platform Designer generates the ATX PLL, the Native PHY, and the reset controller.
 
-Gen2 PIPE with the simplified data interface off uses an 80-bit word per lane. The L-tile map is not the Arria 10 128-bit map: the second byte starts at bit 11, rate is bits [33:32], and rxpolarity is bit 34. Logical lane 0 is edge lane 0 and the PCS bonding master.
+Gen2 PIPE with the simplified data interface off uses an 80-bit word per lane. The H-tile map is not the Arria 10 128-bit map: the second byte starts at bit 11, rate is bits [33:32], and rxpolarity is bit 34. Logical lane 0 is edge lane 0 and the PCS bonding master.
 
 Set the presence-detect DIP **SW2** to x4 or x16 before inserting the card. x1 leaves the link narrower than this endpoint.
 

@@ -37,7 +37,7 @@ Agilex 5 is not this target: it has no PIPE mode, so the soft controller cannot 
 
 ## Sponsorship / lab status
 
-Rivet needs a **VCU118**, a **VMK180**, or a **DK-DEV-10CX220-B** (or loan/donation). Prefer a VU9P-class board with a PCIe edge and native PG239 GTY generation, the VMK180 for the PG345 path, or the Cyclone 10 GX kit for the Native PHY PIPE path. The Stratix 10 GX kit (**DK-DEV-1SGX-L-A**) is an additional lab target in `fpga/s10gx/`; it uses the same soft controller on the L-tile Native PHY.
+Rivet needs a **VCU118**, a **VMK180**, or a **DK-DEV-10CX220-B** (or loan/donation). Prefer a VU9P-class board with a PCIe edge and native PG239 GTY generation, the VMK180 for the PG345 path, or the Cyclone 10 GX kit for the Native PHY PIPE path. The Stratix 10 GX kit (**DK-DEV-1SGX-H-A**) is an additional lab target in `fpga/s10gx/`; it uses the same soft controller on the H-tile Native PHY.
 
 **FPGA lab is backlogged** until a board is available. Sim gates (UVM + PG213/PG239 BFM) do not wait on hardware. When the kit arrives:
 
