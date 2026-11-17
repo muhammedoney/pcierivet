@@ -281,6 +281,24 @@ puts -nonewline $link_fh $link_txt
 close $link_fh
 puts "rivet: wrote $link_v"
 
+set init_tcl [file join $script_dir ip gen_init.tcl]
+puts "rivet: generating Reset Release IP"
+if {[catch {exec $qsys $qsys_flag $qsys_cmd --script=$init_tcl 2>@1} err]} {
+  error "reset-release qsys-script failed:\n$err"
+}
+puts $err
+# A one-instance system is saved as a standalone .ip, not a .qsys.
+set init_ip [file join $ip_dir rivet_s10gx_init.ip]
+if {![file exists $init_ip]} {
+  error "missing $init_ip"
+}
+puts "rivet: generating $init_ip"
+if {[catch {exec $qgen $init_ip --synthesis=VERILOG --part=$part --parallel=off 2>@1} err]} {
+  error "qsys-generate failed for $init_ip:\n$err"
+}
+puts $err
+lappend ip_files $init_ip
+
 package require ::quartus::project
 cd $build_dir
 catch {project_close}

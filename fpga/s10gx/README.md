@@ -53,4 +53,4 @@ fpga\s10gx\impl.cmd
 
 The project file is `fpga/s10gx/build/rivet_s10gx.qpf`. The bitstream is `fpga/s10gx/build/output_files/rivet_s10gx.sof`. Generated IP is not committed.
 
-Program over the on-board USB Blaster II. The SOF includes the kit SmartVID settings (LTM4677 at PMBus address 0x4F). Power the board from the slot with the ATX auxiliaries, or from the brick, not both.
+Program over the on-board USB Blaster II. The SOF includes the kit SmartVID settings (LTM4677 at PMBus address 0x4F). The shell holds user reset until the Reset Release IP drops `ninit_done`, which is required for Stratix 10 to enter user mode. Power the board from the slot with the ATX auxiliaries, or from the brick, not both.
