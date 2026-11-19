@@ -6,8 +6,8 @@ alwaysApply: false
 
 # PHY and full IP
 
-- Only `rtl/phy/` and `rtl/top/rivet_pcie` may reference a vendor PHY (Xilinx PG239 or PG345, Intel Native PHY PIPE).
+- Only `rtl/phy/` and `rtl/top/rivet_pcie` may reference a vendor PHY (Xilinx PG239 or PG345).
 - PIPE is the sole boundary between `rivet_pcie_ctrl` and PHY.
-- Family select via `FPGA_FAMILY` (0=US+, 1=US, 2=Versal, 3=Cyclone 10 GX).
+- Family select via `FPGA_FAMILY` (0=US+, 1=US, 2=Versal).
 - Do not check in encrypted IP; stub PHYs are OK until board IP is generated.
 - Instance names in top: `u_ctrl`, `u_phy`.

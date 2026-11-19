@@ -14,5 +14,4 @@ rtl/pcie_ctrl/rivet_pcie_ctrl.sv
 rtl/phy/rivet_pcie_phy_usplus.sv
 rtl/phy/rivet_pcie_phy_us.sv
 rtl/phy/rivet_pcie_phy_versal.sv
-rtl/phy/rivet_pcie_phy_c10gx.sv
 rtl/top/rivet_pcie.sv

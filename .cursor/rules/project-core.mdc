@@ -9,11 +9,11 @@ alwaysApply: true
 - English only for code, comments, commits, docs.
 - Terminology (locked):
   - **`rivet_pcie_ctrl`** — multi-mode soft controller (EP/RC/USP/DSP) to PIPE
-  - **`rivet_pcie_phy_*`** — family PHY wrappers (PG239 US/US+, PG345 Versal, Cyclone 10 GX Native PHY PIPE)
+  - **`rivet_pcie_phy_*`** — family PHY wrappers (PG239 US/US+, PG345 Versal)
   - **`rivet_pcie`** — full soft IP = ctrl + phy
 - User IF on controller: AXI-ST CQ/CC/RQ/RC + `cfg_mgmt_*` (PG213-style); no AXI-Lite
 - Current focus: `MODE=EP`, Gen2, `LANES` in {1,2,4}
-- Primary FPGA/board: **VCU118 / XCVU9P** (PG239 GTY). Versal primary: **VMK180 / XCVM1802** (PG345 GTY). Intel primary: **DK-DEV-10CX220-B / 10CX220YF780E5G** (Native PHY PIPE).
+- Primary FPGA/board: **VCU118 / XCVU9P** (PG239 GTY). Versal primary: **VMK180 / XCVM1802** (PG345 GTY).
 - Phase 1: UVM environment first, then Gen2 link RTL (see `docs/roadmap.md`)
 - Gen3/4 deltas: `docs/gen-evolution.md` — do not implement Gen3/4 protocol while Gen2 is active
 - No vendor cells in `rtl/pcie_ctrl/`; PHY only under `rtl/phy/`

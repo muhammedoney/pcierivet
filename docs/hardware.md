@@ -24,23 +24,12 @@ Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md).
 
 VPK180 is the later Premium / GTYP / Gen5 kit. The in-tree Versal project is `fpga/vmk180/`.
 
-## Intel primary
-
-| Item | Value |
-|------|-------|
-| Kit | Altera Cyclone 10 GX FPGA Development Kit (**DK-DEV-10CX220-B**) |
-| FPGA | **10CX220YF780E5G** |
-| PHY IP | Quartus Native PHY in PIPE Gen2 ×4 (not the hard IP) |
-| Edge | Gen2 ×4, lanes 0–3 on banks 1C/1D, refclk R24/R23 |
-
-Agilex 5 is not this target: it has no PIPE mode, so the soft controller cannot drive it. The in-tree project is `fpga/c10gx/`. DK-DEV-10CX220-B was in stock at DigiKey and Mouser at $2,999 when this board was locked.
-
 ## Sponsorship / lab status
 
-Rivet needs a **VCU118**, a **VMK180**, or a **DK-DEV-10CX220-B** (or loan/donation). Prefer a VU9P-class board with a PCIe edge and native PG239 GTY generation, the VMK180 for the PG345 path, or the Cyclone 10 GX kit for the Native PHY PIPE path. The Stratix 10 GX kit (**DK-DEV-1SGX-H-A**) is an additional lab target in `fpga/s10gx/`; it uses the same soft controller on the H-tile Native PHY.
+Rivet needs a **VCU118** or a **VMK180** (or a loan/donation). Prefer a VU9P-class board with a PCIe edge and native PG239 GTY generation, or the VMK180 for the PG345 path.
 
 **FPGA lab is backlogged** until a board is available. Sim gates (UVM + PG213/PG239 BFM) do not wait on hardware. When the kit arrives:
 
-1. Generate the PHY for the board in hand: PG239 on XCVU9P, PG345 on XCVM1802, or the Native PHY on 10CX220. Wire the matching shell (`fpga/vcu118`, `fpga/vmk180`, or `fpga/c10gx`).
+1. Generate the PHY for the board in hand: PG239 on XCVU9P or PG345 on XCVM1802. Wire the matching shell (`fpga/vcu118` or `fpga/vmk180`).
 2. Board gates: `link_up`, BAR0 PIO, optional DMA/RQ.
 3. Keep behavioral PHY stub + pad for CI; board project stays out of the soft-IP MVP tag.
