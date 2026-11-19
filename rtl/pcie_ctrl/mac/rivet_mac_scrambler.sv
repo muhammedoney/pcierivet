@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Per-lane Gen2 TX scrambler (symbol plane, before PIPE / 8b/10b in PHY).
+// Outputs are registered so LFSR XOR does not chain into lane remap / PIPE TX.
 
 module rivet_mac_scrambler #(
   parameter int unsigned LANES           = 1,
@@ -35,6 +36,9 @@ module rivet_mac_scrambler #(
   logic [15:0] lfsr_q [LANES];
   logic [15:0] lfsr_next [LANES];
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_scr;
+  logic [PIPE_DATA_WIDTH*LANES-1:0] data_q;
+  logic [2*LANES-1:0]               datak_q;
+  logic                             valid_q;
 
   always_comb begin
     data_scr = data_i;
@@ -61,14 +65,20 @@ module rivet_mac_scrambler #(
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
+      data_q  <= '0;
+      datak_q <= '0;
+      valid_q <= 1'b0;
       for (int unsigned l = 0; l < LANES; l++) lfsr_q[l] <= RIVET_LFSR_SEED;
     end else begin
+      data_q  <= data_scr;
+      datak_q <= datak_i;
+      valid_q <= valid_i;
       for (int unsigned l = 0; l < LANES; l++) lfsr_q[l] <= lfsr_next[l];
     end
   end
 
-  assign data_o  = data_scr;
-  assign datak_o = datak_i;
-  assign valid_o = valid_i;
+  assign data_o  = data_q;
+  assign datak_o = datak_q;
+  assign valid_o = valid_q;
 
 endmodule : rivet_mac_scrambler

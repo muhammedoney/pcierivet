@@ -181,6 +181,8 @@ module rivet_ltssm #(
   logic             lane_rev_q,    lane_rev_d;   // full lane reversal sticky
   logic             speed_chg_done_q, speed_chg_done_d; // Speed executed this Recovery
   logic             l0s_exit_q,    l0s_exit_d;   // Tx_L0s exit (FTS) sub-phase
+  logic             accept_dll_tlp_q;
+  logic             in_detect_q;
 
   logic timer_expired;
   logic timer_load;
@@ -306,7 +308,6 @@ module rivet_ltssm #(
     as_mac_in_detect_o = 1'b0;
     as_cdr_hold_req_o  = 1'b0;
     as_mac_in_L0_o     = 1'b0;
-    accept_dll_tlp_o   = 1'b0;
     tx_train_ctrl_o    = 8'h00;
 
     unique case (state_q)
@@ -568,7 +569,6 @@ module rivet_ltssm #(
       RIVET_LTSSM_L0: begin
         os_req_o         = RIVET_MAC_OS_IDLE; // DLL payload arrives with the DLL
         as_mac_in_L0_o   = 1'b1;
-        accept_dll_tlp_o = 1'b1;
         speed_chg_done_d = 1'b0;
         speed_ei_d       = 1'b0;
         l0s_exit_d       = 1'b0;
@@ -823,6 +823,8 @@ module rivet_ltssm #(
       lane_rev_q      <= 1'b0;
       speed_chg_done_q <= 1'b0;
       l0s_exit_q      <= 1'b0;
+      accept_dll_tlp_q <= 1'b0;
+      in_detect_q     <= 1'b1;
     end else begin
       state_q         <= state_d;
       lane_en_q       <= lane_en_d;
@@ -848,6 +850,9 @@ module rivet_ltssm #(
       lane_rev_q      <= lane_rev_d;
       speed_chg_done_q <= speed_chg_done_d;
       l0s_exit_q      <= l0s_exit_d;
+      accept_dll_tlp_q <= (state_d == RIVET_LTSSM_L0);
+      in_detect_q     <= (state_d == RIVET_LTSSM_DETECT_QUIET) ||
+                         (state_d == RIVET_LTSSM_DETECT_ACTIVE);
     end
   end
 
@@ -855,8 +860,8 @@ module rivet_ltssm #(
   // Outputs
   // ---------------------------------------------------------------------------
   logic in_detect;
-  assign in_detect = (state_q == RIVET_LTSSM_DETECT_QUIET) ||
-                     (state_q == RIVET_LTSSM_DETECT_ACTIVE);
+  assign in_detect        = in_detect_q;
+  assign accept_dll_tlp_o = accept_dll_tlp_q;
 
   assign ltssm_state_o  = state_q;
   assign link_up_o      = link_up_q;

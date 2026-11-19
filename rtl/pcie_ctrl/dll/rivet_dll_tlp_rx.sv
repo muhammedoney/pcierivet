@@ -3,9 +3,9 @@
 //
 // Assemble MAC TLP beats, check Seq# / LCRC, deliver payload to TL, schedule ACK/NAK.
 //
-// LCRC advances one beat per cycle with rivet_crc32_fold. A good frame, LCRC
-// bytes included, leaves the LFSR at RIVET_LCRC32_RESIDUE. Keep is a low-bit
-// prefix (the MAC and TX emiters set it that way).
+// LCRC advances one beat per cycle with rivet_crc32_fold. Beats arrive as
+// aligned 8-byte chunks (only EOP may be shorter), so buf_q writes one 8-byte
+// slot selected by len_q[OFF_W-1:3] instead of a 160x8 byte-address mux.
 
 module rivet_dll_tlp_rx #(
   parameter int unsigned SLOT_BYTES = 160
@@ -35,11 +35,21 @@ module rivet_dll_tlp_rx #(
   import rivet_pkg::*;
 
   localparam int unsigned DATA_W = SLOT_BYTES * 8;
+  localparam int unsigned SLOTS  = SLOT_BYTES / 8;
+  localparam int unsigned SLOT_W = (SLOTS <= 1) ? 1 : $clog2(SLOTS);
   localparam int unsigned OFF_W  = (SLOT_BYTES <= 1) ? 1 : $clog2(SLOT_BYTES + 1);
   localparam int unsigned MIN_FR = RIVET_TLP_SEQ_BYTES + RIVET_TLP_LCRC_BYTES;
 
+`ifndef SYNTHESIS
+  initial begin
+    if ((SLOT_BYTES % 8) != 0)
+      $error("rivet_dll_tlp_rx SLOT_BYTES (%0d) must be a multiple of 8", SLOT_BYTES);
+  end
+`endif
+
   logic [DATA_W-1:0] buf_q;
   logic [OFF_W-1:0]  len_q;
+  logic [15:0]       pld_len_cand_q;
 
   logic [DATA_W-1:0] pld_q;
   logic [15:0]       pld_len_q;
@@ -52,8 +62,6 @@ module rivet_dll_tlp_rx #(
   logic [11:0]       expect_q;
   logic              lcrc_err_q;
   logic [31:0]       crc_q;
-  // EOP checks the registered frame. CRC and the byte insert already fill a
-  // 250 MHz cycle; the ACK decision runs on the following cycle.
   logic              decide_q;
 
   assign last_good_seq_o = last_good_q;
@@ -64,8 +72,6 @@ module rivet_dll_tlp_rx #(
   assign tl_seq_o        = seq_q;
   assign ack_valid_o     = ack_pend_q;
   assign ack_req_o       = ack_q;
-  // ACK/NAK may sit pending while another TLP arrives; cumulative ACK/NAK
-  // simply overwrites. Only TL delivery backpressure blocks RX.
   assign beat_ready_o    = enable_i && !tl_pend_q && !decide_q;
 
   function automatic logic [7:0] keep_popcount(input logic [7:0] k);
@@ -78,30 +84,27 @@ module rivet_dll_tlp_rx #(
   logic [DATA_W-1:0] buf_next;
   logic [OFF_W-1:0]  len_next;
   logic [OFF_W-1:0]  wr_base;
-  logic [63:0]       pack_d;
+  logic [SLOT_W-1:0] wr_slot;
   logic [31:0]       crc_next;
 
   assign take_beat = beat_valid_i && beat_ready_o &&
                      (beat_i.pkt_type == RIVET_MAC_PKT_TLP) && !beat_i.err;
 
   always_comb begin
+    logic [63:0] masked_d;
     nbytes   = keep_popcount(beat_i.keep);
     buf_next = beat_i.sop ? '0 : buf_q;
     wr_base  = beat_i.sop ? '0 : len_q;
-    // CRC sees the beat bytes directly. Folding them through the frame
-    // insert makes one path of the byte mux plus the CRC tree.
-    pack_d   = '0;
+    wr_slot  = SLOT_W'(wr_base >> 3);
+    masked_d = '0;
     for (int unsigned i = 0; i < 8; i++) begin
-      if (take_beat && (8'(i) < nbytes))
-        pack_d[8*i +: 8] = beat_i.data[8*i +: 8];
+      if (beat_i.keep[i])
+        masked_d[8*i +: 8] = beat_i.data[8*i +: 8];
     end
-    // Parallel insert. Keep is a low prefix, so byte i lands at wr_base+i.
-    // A variable part-select across the frame does not close at Gen2 pclk.
-    for (int unsigned b = 0; b < SLOT_BYTES; b++) begin
-      for (int unsigned i = 0; i < 8; i++) begin
-        if (take_beat && (8'(i) < nbytes) &&
-            (int'(wr_base) + int'(i) == int'(b)))
-          buf_next[8*b +: 8] = beat_i.data[8*i +: 8];
+    if (take_beat) begin
+      for (int unsigned s = 0; s < SLOTS; s++) begin
+        if (wr_slot == SLOT_W'(s))
+          buf_next[64*s +: 64] = masked_d;
       end
     end
     len_next = take_beat ? OFF_W'(int'(wr_base) + int'(nbytes)) : len_q;
@@ -109,7 +112,6 @@ module rivet_dll_tlp_rx #(
 
   logic        eop_take;
   logic [11:0] rx_seq;
-  logic [15:0] pld_len;
   logic        lcrc_ok;
   logic        seq_ok;
   logic        seq_dup;
@@ -118,12 +120,11 @@ module rivet_dll_tlp_rx #(
   assign eop_take = take_beat && beat_i.eop;
   assign crc_next = rivet_crc32_fold(
       (take_beat && beat_i.sop) ? 32'hFFFF_FFFF : crc_q,
-      pack_d, nbytes[3:0]);
+      beat_i.data, nbytes[3:0]);
 
   // Sampled the cycle after EOP, when buf_q / crc_q / len_q hold the frame.
   always_comb begin
     rx_seq    = {buf_q[3:0], buf_q[15:8]};
-    pld_len   = (int'(len_q) >= MIN_FR) ? 16'(int'(len_q) - MIN_FR) : 16'd0;
     lcrc_ok   = (crc_q == RIVET_LCRC32_RESIDUE) && (int'(len_q) >= MIN_FR);
     seq_ok    = (rx_seq == expect_q);
     seq_delta = expect_q - rx_seq;
@@ -132,19 +133,20 @@ module rivet_dll_tlp_rx #(
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
-      buf_q       <= '0;
-      len_q       <= '0;
-      pld_q       <= '0;
-      pld_len_q   <= '0;
-      seq_q       <= '0;
-      tl_pend_q   <= 1'b0;
-      ack_q       <= '0;
-      ack_pend_q  <= 1'b0;
-      last_good_q <= 12'hFFF;
-      expect_q    <= 12'd0;
-      lcrc_err_q  <= 1'b0;
-      crc_q       <= 32'hFFFF_FFFF;
-      decide_q    <= 1'b0;
+      buf_q          <= '0;
+      len_q          <= '0;
+      pld_len_cand_q <= '0;
+      pld_q          <= '0;
+      pld_len_q      <= '0;
+      seq_q          <= '0;
+      tl_pend_q      <= 1'b0;
+      ack_q          <= '0;
+      ack_pend_q     <= 1'b0;
+      last_good_q    <= 12'hFFF;
+      expect_q       <= 12'd0;
+      lcrc_err_q     <= 1'b0;
+      crc_q          <= 32'hFFFF_FFFF;
+      decide_q       <= 1'b0;
     end else begin
       lcrc_err_q <= 1'b0;
 
@@ -152,6 +154,10 @@ module rivet_dll_tlp_rx #(
       if (ack_pend_q && ack_ready_i) ack_pend_q <= 1'b0;
 
       if (take_beat) begin
+`ifndef SYNTHESIS
+        if (!beat_i.sop && (len_q[2:0] != 3'b000))
+          $error("rivet_dll_tlp_rx: unaligned wr_base=%0d on non-SOP beat", int'(len_q));
+`endif
         buf_q <= buf_next;
         len_q <= len_next;
         crc_q <= crc_next;
@@ -163,7 +169,8 @@ module rivet_dll_tlp_rx #(
           $error("rivet_dll_tlp_rx: keep %02h is not a low prefix of %0d bytes",
                  beat_i.keep, nbytes);
 `endif
-        decide_q <= 1'b1;
+        pld_len_cand_q <= (int'(len_next) >= MIN_FR) ? 16'(int'(len_next) - MIN_FR) : 16'd0;
+        decide_q       <= 1'b1;
       end else if (decide_q) begin
         decide_q <= 1'b0;
 `ifndef SYNTHESIS
@@ -173,11 +180,9 @@ module rivet_dll_tlp_rx #(
 `endif
         if (lcrc_ok && seq_ok) begin
           pld_q <= '0;
-          for (int unsigned j = 0; j < SLOT_BYTES - MIN_FR; j++) begin
-            if (16'(j) < pld_len)
-              pld_q[8*j +: 8] <= buf_q[8*j + 8*RIVET_TLP_SEQ_BYTES +: 8];
-          end
-          pld_len_q     <= pld_len;
+          pld_q[8*(SLOT_BYTES - MIN_FR) - 1 : 0] <=
+              buf_q[8*(SLOT_BYTES - RIVET_TLP_LCRC_BYTES) - 1 : 8*RIVET_TLP_SEQ_BYTES];
+          pld_len_q     <= pld_len_cand_q;
           seq_q         <= rx_seq;
           tl_pend_q     <= 1'b1;
           last_good_q   <= rx_seq;

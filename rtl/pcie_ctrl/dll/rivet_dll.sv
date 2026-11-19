@@ -3,6 +3,9 @@
 //
 // Data Link Layer top: FC + DL SM + streaming TL hook + TLP seq/LCRC +
 // ACK/NAK + replay (D5).
+// Boundary streams (dll_tx, dll_rx, tl_tx, tl_rx) pass through 2-entry
+// registered skid buffers so valid/data and ready have no cross-layer
+// combinational feedthrough at 250 MHz.
 
 module rivet_dll #(
   parameter int unsigned LANES             = 1,
@@ -30,7 +33,7 @@ module rivet_dll #(
   input  rivet_pkg::rivet_tl_dll_fc_sb_t    tl_to_dll_fc_i,
   output rivet_pkg::rivet_dll_tl_fc_sb_t    dll_to_tl_fc_o,
 
-  // TL ↔ DLL TLP stream (payload only; seq/LCRC added/stripped in DLL)
+  // TL <-> DLL TLP stream (payload only; seq/LCRC added/stripped in DLL)
   input  logic [TL_DATA_W-1:0]              tl_tx_tdata_i,
   input  logic [TL_DATA_W/8-1:0]            tl_tx_tkeep_i,
   input  logic                              tl_tx_tlast_i,
@@ -46,6 +49,8 @@ module rivet_dll #(
 );
 
   import rivet_pkg::*;
+
+  localparam int unsigned TL_KEEP_W = TL_DATA_W / 8;
 
 `ifndef SYNTHESIS
   initial begin
@@ -79,16 +84,16 @@ module rivet_dll #(
   logic            dllp_req_valid;
   logic            dllp_req_ready;
 
-  logic                       push_v, push_r;
-  logic [11:0]                push_seq;
+  logic                           push_v, push_r;
+  logic [11:0]                    push_seq;
   logic [REPLAY_SLOT_BYTES*8-1:0] push_data;
-  logic [15:0]                push_len;
-  logic                       rep_start, rep_active, rep_v, rep_r;
-  logic [11:0]                rep_seq;
+  logic [15:0]                    push_len;
+  logic                           rep_start, rep_active, rep_v, rep_r;
+  logic [11:0]                    rep_seq;
   logic [REPLAY_SLOT_BYTES*8-1:0] rep_data;
-  logic [15:0]                rep_len;
-  logic                       rep_full, rep_empty;
-  logic [15:0]                rep_occ;
+  logic [15:0]                    rep_len;
+  logic                           rep_full, rep_empty;
+  logic [15:0]                    rep_occ;
 
   logic        ack_to_buf;
   logic [11:0] ack_seq_to_buf;
@@ -102,25 +107,39 @@ module rivet_dll #(
   logic        nak_storm_q;
   logic        timer_exp_q;
 
-  rivet_dll_mac_tx_beat_t dllp_beat, tlp_beat;
+  rivet_dll_mac_tx_beat_t dllp_beat, tlp_beat, mux_tx_beat;
   logic                   dllp_v, tlp_v, dllp_r, tlp_r;
+  logic                   mux_tx_v, mux_tx_r;
   logic                   dllp_hold_ack_q;
+  logic                   tlp_in_pkt_q;
   logic                   present_dllp;
   logic [11:0]            next_tx_seq;
 
-  logic dllp_rx_v, tlp_rx_v, dllp_rx_r, tlp_rx_r;
-  logic rx_is_dllp, rx_is_tlp;
-  logic rx_enable;
-  logic [11:0] last_good;
-  logic        lcrc_err;
+  rivet_dll_mac_rx_beat_t rx_skid_beat;
+  logic                   rx_skid_v, rx_skid_r;
+  logic                   dllp_rx_v, tlp_rx_v, dllp_rx_r, tlp_rx_r;
+  logic                   rx_is_dllp, rx_is_tlp;
+  logic                   rx_enable_q;
+  logic [11:0]            last_good;
+  logic                   lcrc_err;
 
-  logic                              whole_tx_v, whole_tx_r;
-  logic [REPLAY_SLOT_BYTES*8-1:0]    whole_tx_d;
-  logic [15:0]                       whole_tx_len;
-  logic                              whole_rx_v, whole_rx_r;
-  logic [REPLAY_SLOT_BYTES*8-1:0]    whole_rx_d;
-  logic [15:0]                       whole_rx_len;
-  logic [11:0]                       whole_rx_seq;
+  logic                           whole_tx_v, whole_tx_r;
+  logic [REPLAY_SLOT_BYTES*8-1:0] whole_tx_d;
+  logic [15:0]                    whole_tx_len;
+  logic                           whole_rx_v, whole_rx_r;
+  logic [REPLAY_SLOT_BYTES*8-1:0] whole_rx_d;
+  logic [15:0]                    whole_rx_len;
+  logic [11:0]                    whole_rx_seq;
+
+  // Skid wires for TL <-> DLL streams
+  logic [TL_DATA_W-1:0]  tl_tx_s_tdata;
+  logic [TL_KEEP_W-1:0]  tl_tx_s_tkeep;
+  logic                  tl_tx_s_tlast, tl_tx_s_tvalid, tl_tx_s_tready;
+
+  logic [TL_DATA_W-1:0]  tl_rx_u_tdata;
+  logic [TL_KEEP_W-1:0]  tl_rx_u_tkeep;
+  logic                  tl_rx_u_tlast, tl_rx_u_tvalid, tl_rx_u_tready;
+  logic [11:0]           tl_rx_u_seq;
 
   assign clear_replay = !mac_to_dll_sb_i.accept_dll_tlp;
   assign dec_ready    = 1'b1;
@@ -136,43 +155,48 @@ module rivet_dll #(
       replay_num_q <= '0;
       nak_storm_q  <= 1'b0;
       timer_exp_q  <= 1'b0;
-    end else if (clear_replay) begin
-      timer_q      <= '0;
-      timer_en_q   <= 1'b0;
-      replay_num_q <= '0;
-      nak_storm_q  <= 1'b0;
-      timer_exp_q  <= 1'b0;
+      rx_enable_q  <= 1'b0;
     end else begin
-      timer_exp_q <= 1'b0;
+      rx_enable_q <= mac_to_dll_sb_i.accept_dll_tlp && (dl_state == RIVET_DL_ACTIVE);
 
-      if (push_v && push_r) begin
-        timer_en_q <= 1'b1;
-        timer_q    <= REPLAY_TIMER_CYC[15:0];
-      end else if (ack_to_buf) begin
+      if (clear_replay) begin
+        timer_q      <= '0;
+        timer_en_q   <= 1'b0;
         replay_num_q <= '0;
-        timer_en_q   <= 1'b1;
-        timer_q      <= REPLAY_TIMER_CYC[15:0];
-      end else if (rep_empty && timer_en_q) begin
-        timer_en_q <= 1'b0;
-        timer_q    <= '0;
-      end else if (rep_active) begin
-        timer_en_q <= 1'b0;
-        timer_q    <= '0;
-      end else if (timer_en_q && (timer_q != 16'd0)) begin
-        timer_q <= timer_q - 16'd1;
-        if (timer_q == 16'd1) begin
-          timer_exp_q  <= 1'b1;
-          timer_en_q   <= 1'b0;
+        nak_storm_q  <= 1'b0;
+        timer_exp_q  <= 1'b0;
+      end else begin
+        timer_exp_q <= 1'b0;
+
+        if (push_v && push_r) begin
+          timer_en_q <= 1'b1;
+          timer_q    <= REPLAY_TIMER_CYC[15:0];
+        end else if (ack_to_buf) begin
+          replay_num_q <= '0;
+          timer_en_q   <= 1'b1;
+          timer_q      <= REPLAY_TIMER_CYC[15:0];
+        end else if (rep_empty && timer_en_q) begin
+          timer_en_q <= 1'b0;
+          timer_q    <= '0;
+        end else if (rep_active) begin
+          timer_en_q <= 1'b0;
+          timer_q    <= '0;
+        end else if (timer_en_q && (timer_q != 16'd0)) begin
+          timer_q <= timer_q - 16'd1;
+          if (timer_q == 16'd1) begin
+            timer_exp_q  <= 1'b1;
+            timer_en_q   <= 1'b0;
+            replay_num_q <= replay_num_q + 4'd1;
+            if ((replay_num_q + 4'd1) >= REPLAY_NUM_LIMIT[3:0])
+              nak_storm_q <= 1'b1;
+          end
+        end
+
+        if (nak_pulse && !rep_empty) begin
           replay_num_q <= replay_num_q + 4'd1;
           if ((replay_num_q + 4'd1) >= REPLAY_NUM_LIMIT[3:0])
             nak_storm_q <= 1'b1;
         end
-      end
-
-      if (nak_pulse && !rep_empty) begin
-        replay_num_q <= replay_num_q + 4'd1;
-        if ((replay_num_q + 4'd1) >= REPLAY_NUM_LIMIT[3:0])
-          nak_storm_q <= 1'b1;
       end
     end
   end
@@ -224,17 +248,71 @@ module rivet_dll #(
     dll_to_tl_fc_o.dl_active = dl_up;
   end
 
+  // -------------------------------------------------------------------------
+  // 2-entry skid buffer on tl_tx -> u_tl_pack
+  // -------------------------------------------------------------------------
+  typedef struct packed {
+    logic [TL_DATA_W-1:0] data;
+    logic [TL_KEEP_W-1:0] keep;
+    logic                 last;
+  } tl_tx_beat_t;
+
+  tl_tx_beat_t tl_tx_d0_q, tl_tx_d1_q;
+  logic        tl_tx_v0_q, tl_tx_v1_q;
+
+  assign tl_tx_tready_o  = !tl_tx_v1_q;
+  assign tl_tx_s_tvalid  = tl_tx_v0_q;
+  assign tl_tx_s_tdata   = tl_tx_d0_q.data;
+  assign tl_tx_s_tkeep   = tl_tx_d0_q.keep;
+  assign tl_tx_s_tlast   = tl_tx_d0_q.last;
+
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      tl_tx_v0_q <= 1'b0;
+      tl_tx_v1_q <= 1'b0;
+      tl_tx_d0_q <= '0;
+      tl_tx_d1_q <= '0;
+    end else begin
+      automatic logic        push = tl_tx_tvalid_i && !tl_tx_v1_q;
+      automatic logic        pop  = tl_tx_v0_q && tl_tx_s_tready;
+      automatic tl_tx_beat_t din  = {tl_tx_tdata_i, tl_tx_tkeep_i, tl_tx_tlast_i};
+      unique case ({push, pop})
+        2'b10: begin
+          if (!tl_tx_v0_q) begin
+            tl_tx_v0_q <= 1'b1;
+            tl_tx_d0_q <= din;
+          end else begin
+            tl_tx_v1_q <= 1'b1;
+            tl_tx_d1_q <= din;
+          end
+        end
+        2'b01: begin
+          if (tl_tx_v1_q) begin
+            tl_tx_d0_q <= tl_tx_d1_q;
+            tl_tx_v1_q <= 1'b0;
+          end else begin
+            tl_tx_v0_q <= 1'b0;
+          end
+        end
+        2'b11: begin
+          tl_tx_d0_q <= din;
+        end
+        default: ;
+      endcase
+    end
+  end
+
   rivet_dll_tl_pack #(
     .DATA_W     (TL_DATA_W),
     .SLOT_BYTES (REPLAY_SLOT_BYTES)
   ) u_tl_pack (
     .clk_i      (pclk_i),
     .rst_ni     (rst_ni),
-    .s_tdata_i  (tl_tx_tdata_i),
-    .s_tkeep_i  (tl_tx_tkeep_i),
-    .s_tlast_i  (tl_tx_tlast_i),
-    .s_tvalid_i (tl_tx_tvalid_i),
-    .s_tready_o (tl_tx_tready_o),
+    .s_tdata_i  (tl_tx_s_tdata),
+    .s_tkeep_i  (tl_tx_s_tkeep),
+    .s_tlast_i  (tl_tx_s_tlast),
+    .s_tvalid_i (tl_tx_s_tvalid),
+    .s_tready_o (tl_tx_s_tready),
     .m_valid_o  (whole_tx_v),
     .m_ready_i  (whole_tx_r),
     .m_data_o   (whole_tx_d),
@@ -252,13 +330,70 @@ module rivet_dll #(
     .s_data_i   (whole_rx_d),
     .s_len_i    (whole_rx_len),
     .s_seq_i    (whole_rx_seq),
-    .m_tdata_o  (tl_rx_tdata_o),
-    .m_tkeep_o  (tl_rx_tkeep_o),
-    .m_tlast_o  (tl_rx_tlast_o),
-    .m_tvalid_o (tl_rx_tvalid_o),
-    .m_tready_i (tl_rx_tready_i),
-    .m_seq_o    (tl_rx_seq_o)
+    .m_tdata_o  (tl_rx_u_tdata),
+    .m_tkeep_o  (tl_rx_u_tkeep),
+    .m_tlast_o  (tl_rx_u_tlast),
+    .m_tvalid_o (tl_rx_u_tvalid),
+    .m_tready_i (tl_rx_u_tready),
+    .m_seq_o    (tl_rx_u_seq)
   );
+
+  // -------------------------------------------------------------------------
+  // 2-entry skid buffer on u_tl_unpack -> tl_rx
+  // -------------------------------------------------------------------------
+  typedef struct packed {
+    logic [TL_DATA_W-1:0] data;
+    logic [TL_KEEP_W-1:0] keep;
+    logic                 last;
+    logic [11:0]          seq;
+  } tl_rx_beat_t;
+
+  tl_rx_beat_t tl_rx_d0_q, tl_rx_d1_q;
+  logic        tl_rx_v0_q, tl_rx_v1_q;
+
+  assign tl_rx_u_tready = !tl_rx_v1_q;
+  assign tl_rx_tvalid_o = tl_rx_v0_q;
+  assign tl_rx_tdata_o  = tl_rx_d0_q.data;
+  assign tl_rx_tkeep_o  = tl_rx_d0_q.keep;
+  assign tl_rx_tlast_o  = tl_rx_d0_q.last;
+  assign tl_rx_seq_o    = tl_rx_d0_q.seq;
+
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      tl_rx_v0_q <= 1'b0;
+      tl_rx_v1_q <= 1'b0;
+      tl_rx_d0_q <= '0;
+      tl_rx_d1_q <= '0;
+    end else begin
+      automatic logic        push = tl_rx_u_tvalid && !tl_rx_v1_q;
+      automatic logic        pop  = tl_rx_v0_q && tl_rx_tready_i;
+      automatic tl_rx_beat_t din  = {tl_rx_u_tdata, tl_rx_u_tkeep,
+                                     tl_rx_u_tlast, tl_rx_u_seq};
+      unique case ({push, pop})
+        2'b10: begin
+          if (!tl_rx_v0_q) begin
+            tl_rx_v0_q <= 1'b1;
+            tl_rx_d0_q <= din;
+          end else begin
+            tl_rx_v1_q <= 1'b1;
+            tl_rx_d1_q <= din;
+          end
+        end
+        2'b01: begin
+          if (tl_rx_v1_q) begin
+            tl_rx_d0_q <= tl_rx_d1_q;
+            tl_rx_v1_q <= 1'b0;
+          end else begin
+            tl_rx_v0_q <= 1'b0;
+          end
+        end
+        2'b11: begin
+          tl_rx_d0_q <= din;
+        end
+        default: ;
+      endcase
+    end
+  end
 
   rivet_dll_replay #(
     .TLP_SLOTS  (REPLAY_TLP_SLOTS),
@@ -308,17 +443,30 @@ module rivet_dll #(
   end
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
-    if (!rst_ni) dllp_hold_ack_q <= 1'b0;
-    else if (dllp_req_valid && dllp_req_ready) begin
-      dllp_hold_ack_q <= (dllp_req.kind == RIVET_DLLP_KIND_ACK) ||
-                         (dllp_req.kind == RIVET_DLLP_KIND_NAK);
-    end else if (dllp_v && dllp_r) begin
+    if (!rst_ni) begin
       dllp_hold_ack_q <= 1'b0;
+      tlp_in_pkt_q    <= 1'b0;
+    end else if (clear_replay) begin
+      dllp_hold_ack_q <= 1'b0;
+      tlp_in_pkt_q    <= 1'b0;
+    end else begin
+      if (dllp_req_valid && dllp_req_ready) begin
+        dllp_hold_ack_q <= (dllp_req.kind == RIVET_DLLP_KIND_ACK) ||
+                           (dllp_req.kind == RIVET_DLLP_KIND_NAK);
+      end else if (dllp_v && dllp_r) begin
+        dllp_hold_ack_q <= 1'b0;
+      end
+
+      if (tlp_v && tlp_r) begin
+        if (tlp_beat.eop)      tlp_in_pkt_q <= 1'b0;
+        else if (tlp_beat.sop) tlp_in_pkt_q <= 1'b1;
+      end
     end
   end
 
-  // Pending FC yields to TLP; pending ACK/NAK keeps the wire.
-  assign present_dllp = dllp_v && (dllp_hold_ack_q || !tlp_v);
+  // Pending FC yields to TLP; pending ACK/NAK waits only until an in-flight
+  // multi-beat TLP finishes its EOP so the stream stays packet-atomic.
+  assign present_dllp = dllp_v && !tlp_in_pkt_q && (dllp_hold_ack_q || !tlp_v);
 
   rivet_dllp_tx u_dllp_tx (
     .clk_i        (pclk_i),
@@ -356,22 +504,118 @@ module rivet_dll #(
     .next_tx_seq_o   (next_tx_seq)
   );
 
-  assign dll_tx_valid_o = present_dllp || tlp_v;
-  assign dll_tx_beat_o  = present_dllp ? dllp_beat : tlp_beat;
-  assign dllp_r         = dll_tx_ready_i && present_dllp;
-  assign tlp_r          = dll_tx_ready_i && !present_dllp && tlp_v;
+  assign mux_tx_v    = present_dllp || tlp_v;
+  assign mux_tx_beat = present_dllp ? dllp_beat : tlp_beat;
+  assign dllp_r      = mux_tx_r && present_dllp;
+  assign tlp_r       = mux_tx_r && !present_dllp && tlp_v;
 
-  assign rx_is_dllp = dll_rx_valid_i && (dll_rx_beat_i.pkt_type == RIVET_MAC_PKT_DLLP);
-  assign rx_is_tlp  = dll_rx_valid_i && (dll_rx_beat_i.pkt_type == RIVET_MAC_PKT_TLP);
+  // -------------------------------------------------------------------------
+  // 2-entry skid buffer on dll_tx (u_dll -> u_mac)
+  // -------------------------------------------------------------------------
+  rivet_dll_mac_tx_beat_t dll_tx_d0_q, dll_tx_d1_q;
+  logic                   dll_tx_v0_q, dll_tx_v1_q;
+
+  assign mux_tx_r       = !dll_tx_v1_q;
+  assign dll_tx_valid_o = dll_tx_v0_q;
+  assign dll_tx_beat_o  = dll_tx_d0_q;
+
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      dll_tx_v0_q <= 1'b0;
+      dll_tx_v1_q <= 1'b0;
+      dll_tx_d0_q <= '0;
+      dll_tx_d1_q <= '0;
+    end else if (clear_replay) begin
+      dll_tx_v0_q <= 1'b0;
+      dll_tx_v1_q <= 1'b0;
+    end else begin
+      automatic logic push = mux_tx_v && !dll_tx_v1_q;
+      automatic logic pop  = dll_tx_v0_q && dll_tx_ready_i;
+      unique case ({push, pop})
+        2'b10: begin
+          if (!dll_tx_v0_q) begin
+            dll_tx_v0_q <= 1'b1;
+            dll_tx_d0_q <= mux_tx_beat;
+          end else begin
+            dll_tx_v1_q <= 1'b1;
+            dll_tx_d1_q <= mux_tx_beat;
+          end
+        end
+        2'b01: begin
+          if (dll_tx_v1_q) begin
+            dll_tx_d0_q <= dll_tx_d1_q;
+            dll_tx_v1_q <= 1'b0;
+          end else begin
+            dll_tx_v0_q <= 1'b0;
+          end
+        end
+        2'b11: begin
+          dll_tx_d0_q <= mux_tx_beat;
+        end
+        default: ;
+      endcase
+    end
+  end
+
+  // -------------------------------------------------------------------------
+  // 2-entry skid buffer on dll_rx (u_mac -> u_dll)
+  // -------------------------------------------------------------------------
+  rivet_dll_mac_rx_beat_t dll_rx_d0_q, dll_rx_d1_q;
+  logic                   dll_rx_v0_q, dll_rx_v1_q;
+
+  assign dll_rx_ready_o = !dll_rx_v1_q;
+  assign rx_skid_v      = dll_rx_v0_q;
+  assign rx_skid_beat   = dll_rx_d0_q;
+
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      dll_rx_v0_q <= 1'b0;
+      dll_rx_v1_q <= 1'b0;
+      dll_rx_d0_q <= '0;
+      dll_rx_d1_q <= '0;
+    end else if (clear_replay) begin
+      dll_rx_v0_q <= 1'b0;
+      dll_rx_v1_q <= 1'b0;
+    end else begin
+      automatic logic push = dll_rx_valid_i && !dll_rx_v1_q;
+      automatic logic pop  = dll_rx_v0_q && rx_skid_r;
+      unique case ({push, pop})
+        2'b10: begin
+          if (!dll_rx_v0_q) begin
+            dll_rx_v0_q <= 1'b1;
+            dll_rx_d0_q <= dll_rx_beat_i;
+          end else begin
+            dll_rx_v1_q <= 1'b1;
+            dll_rx_d1_q <= dll_rx_beat_i;
+          end
+        end
+        2'b01: begin
+          if (dll_rx_v1_q) begin
+            dll_rx_d0_q <= dll_rx_d1_q;
+            dll_rx_v1_q <= 1'b0;
+          end else begin
+            dll_rx_v0_q <= 1'b0;
+          end
+        end
+        2'b11: begin
+          dll_rx_d0_q <= dll_rx_beat_i;
+        end
+        default: ;
+      endcase
+    end
+  end
+
+  assign rx_is_dllp = rx_skid_v && (rx_skid_beat.pkt_type == RIVET_MAC_PKT_DLLP);
+  assign rx_is_tlp  = rx_skid_v && (rx_skid_beat.pkt_type == RIVET_MAC_PKT_TLP);
   assign dllp_rx_v  = rx_is_dllp;
   assign tlp_rx_v   = rx_is_tlp;
-  assign dll_rx_ready_o = rx_is_dllp ? dllp_rx_r :
-                          rx_is_tlp  ? tlp_rx_r  : 1'b1;
+  assign rx_skid_r  = rx_is_dllp ? dllp_rx_r :
+                      rx_is_tlp  ? tlp_rx_r  : 1'b1;
 
   rivet_dllp_rx u_dllp_rx (
     .clk_i        (pclk_i),
     .rst_ni       (rst_ni),
-    .beat_i       (dll_rx_beat_i),
+    .beat_i       (rx_skid_beat),
     .beat_valid_i (dllp_rx_v),
     .beat_ready_o (dllp_rx_r),
     .dec_o        (dec),
@@ -379,13 +623,11 @@ module rivet_dll #(
     .dec_ready_i  (dec_ready)
   );
 
-  assign rx_enable = mac_to_dll_sb_i.accept_dll_tlp && (dl_state == RIVET_DL_ACTIVE);
-
   rivet_dll_tlp_rx #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_rx (
     .clk_i           (pclk_i),
     .rst_ni          (rst_ni),
-    .enable_i        (rx_enable),
-    .beat_i          (dll_rx_beat_i),
+    .enable_i        (rx_enable_q),
+    .beat_i          (rx_skid_beat),
     .beat_valid_i    (tlp_rx_v),
     .beat_ready_o    (tlp_rx_r),
     .tl_valid_o      (whole_rx_v),
