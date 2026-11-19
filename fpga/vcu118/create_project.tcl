@@ -98,6 +98,7 @@ set regs_svh [file normalize [file join $script_dir include common_cells registe
 rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_dir $regs_svh
 add_files -norecurse [file normalize [file join $script_dir rtl rivet_vcu118_ep.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pipe_pg239_pad.sv]]
+add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pcie_phy_wrap.sv]]
 
 foreach f [get_files -of_objects [current_fileset]] {
   set name [get_property NAME $f]

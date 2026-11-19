@@ -62,6 +62,8 @@ Lab project: `fpga/vmk180/create_project.tcl` (part **XCVM1802-VSVA2197-2MP-E-S*
 | `rivet_pcie_phy_us` | PG239, KU040 / KU115 / VU440 (GTH) | Secondary / legacy |
 | `rivet_pcie_phy_versal` | PG345, XCVM1802 (GTY) | **VMK180** |
 
+`rivet_pcie_phy_wrap` is the board select (`RIVET_BOARD_VCU118` or `RIVET_BOARD_VMK180`), in the same role as Wupper `pcie_ep_wrap` / `CARD_TYPE`. The controller still presents 16-bit Gen2 PIPE. PG345's per-lane controls are expanded in that wrapper.
+
 ## Bring-up notes
 
 - Create the VCU118 project with `fpga/vcu118/create_project.tcl` (part **XCVU9P-FLGA2104-2L-E**, PG239 Gen2 ×4 on edge lanes 0–3). See `fpga/vcu118/README.md`.

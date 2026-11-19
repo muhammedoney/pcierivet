@@ -37,22 +37,21 @@ Part: `xcvm1802-vsva2197-2MP-e-s` (kit marking XCVM1802-2MSEVSVA2197). The scrip
 
 | Piece | Role |
 |-------|------|
-| `pcie_phy_0` | PG345, max speed 5.0 GT/s, ×4, 100 MHz refclk, third-party MAC (`phy_use_xilinx_mac` false) so TX/RX EQ pins exist |
+| `rivet_pcie_phy_wrap` | `BOARD=VMK180`. Pads 16-bit PIPE to the PG345 pins and replicates per-lane controls |
 | GT quad | Block automation. LOC `GTY_QUAD_X0Y3` (quad 103, slot lanes 0–3). Refclk site `GTY_REFCLK_X0Y6` (package W39/W40) |
 | `rivet_pcie_ctrl` | `MODE=EP`, `GEN=2`, `SPEED_CHANGE_EN=1`, hardware LTSSM timers |
 | `rivet_tl_pio_app` | BAR0 Mem32 completions. Config space is answered inside the controller |
 | RQ/RC | Tied idle. Host-memory TLP traffic is a later step |
 
-PG345 differences wired in `rivet_vmk180_ep` (see the PG345 upgrade table):
+PG345 x4 pin widths checked against `pcie_phy_versal` in Vivado 2024.2. The wrapper, not the shell, applies them:
 
-- `phy_rate` is 3 bits. Gen2 uses the same rate encoding as the controller.
-- `phy_txdetectrx_loopback` is one bit for the link. It is driven by the controller `pipe_txdetectrx`.
-- `phy_rxtermination` is 1 during LTSSM Detect (`as_mac_in_detect`) and 0 in every other state.
-- `phy_ready` holds the MAC in reset until the master-lane GT is up. PG345 has no `phy_phystatus_rst` and no `gt_gtpowergood` on the PHY.
+- `phy_rate` is 3 bits, shared by the link.
+- `phy_txdetectrx_loopback`, `phy_txswing`, `phy_txdeemph`, and `phy_rx_termination` are 4 bits (one per lane). The controller value is copied onto every lane. Termination is 1 only while `as_mac_in_detect` is 1.
+- `phy_powerdown` is 8 bits and `phy_txmargin` is 12 bits. Each lane gets the controller's link-wide value.
+- `phy_ready` holds the MAC in reset until the PHY clock is up. `phy_phystatus_rst` is a 1-bit PG345 output and is copied onto every controller lane. There is no `gt_gtpowergood` on this PHY.
 - `pcie_ltssm_state` is driven from the controller. `pcie_link_reach_target` follows `link_up`.
-- `as_mac_in_detect` and `as_cdr_hold_req` are not PG345 ports. Detect is used only for `phy_rxtermination`.
 
-If Vivado rejects a PG345 property or a port width, the script prints the legal values or the real pin list and stops. The widths in `create_project.tcl` are the contract with `rivet_vmk180_ep`.
+If Vivado rejects a PG345 property or a port width, the script prints the legal values or the real pin list and stops. The widths in `create_project.tcl` are the contract with `rivet_pcie_phy_wrap`.
 
 `` `include "common_cells/registers.svh" `` keeps the `common_cells/` prefix. The Vivado include directory is the parent of that folder (`fpga/vmk180/include` and `build/src`). `create_project.tcl` copies the Vivado header (no default macro arguments) to `build/src/common_cells/registers.svh`. Simulation still uses the upstream files.
 
