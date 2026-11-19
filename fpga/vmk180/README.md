@@ -15,15 +15,17 @@ From `cmd.exe` (finds `vivado.bat` via `%VIVADO_PATH%`, `%XILINX_VIVADO%`, `PATH
 ```text
 fpga\vmk180\create_project.cmd
 fpga\vmk180\synth.cmd
+fpga\vmk180\impl.cmd
 ```
 
-`create_project.cmd` only creates the project. `synth.cmd` opens `fpga/vmk180/build/rivet_vmk180.xpr` and runs `synth_1`. One-shot create-and-synth is still `create_project.cmd synth`.
+`create_project.cmd` only creates the project. `synth.cmd` opens `fpga/vmk180/build/rivet_vmk180.xpr` and runs `synth_1`. `impl.cmd` runs synthesis, implementation, and bitstream, and prints each Vivado step in the console. One-shot create-and-synth is still `create_project.cmd synth`.
 
 Or call Vivado directly:
 
 ```text
 vivado -mode batch -source fpga/vmk180/create_project.tcl
 vivado -mode batch -source fpga/vmk180/synth.tcl
+vivado -mode batch -source fpga/vmk180/impl.tcl
 vivado -mode batch -source fpga/vmk180/create_project.tcl -tclargs synth
 ```
 
