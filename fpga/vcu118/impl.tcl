@@ -23,11 +23,9 @@ set impl [get_runs impl_1]
 if {[catch {set_property strategy Flow_PerfOptimized_high $syn} err]} {
   puts "WARN: synth strategy not applied: $err"
 }
-catch {set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING true $syn}
-if {[catch {
-  set_property -name {STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS} -value {-global_retiming} -objects $syn
-} err]} {
-  puts "WARN: global retiming not applied: $err"
+# A previous run stored -global_retiming here. synth_design rejects that flag.
+catch {
+  set_property -name {STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS} -value {} -objects $syn
 }
 
 if {[catch {set_property strategy Performance_ExplorePostRoutePhysOpt $impl} err]} {
