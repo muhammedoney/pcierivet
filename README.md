@@ -69,7 +69,7 @@ Where each layer, interface, and vendor product sits in the stack:
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
 | Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
-| Target FPGA | **VCU118** (US+), **VMK180** (Versal primary). VPK180 is the later Premium path |
+| Target FPGA | **VMK180** preferred, **VCU118** also in tree. VPK180 is the later Premium path |
 | Verification | Phase 1 MVP + Phase 2 Full Gen2 EP (sim) closed; Verilator CI; Vivado BFM side-path |
 
 Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen3 when link proof allows — not Gen3/4 protocol yet.
@@ -88,13 +88,13 @@ tb/bfm/               Vivado BFM side-path (PG239 PHY example first)
 
 ## Target hardware
 
-Any of these evaluation kits works for FPGA bring-up; the soft PHY / constraints path will follow the board we get.
+The lab ask is a **VMK180** first. A **VCU118** still covers the UltraScale+ shell that is already in the tree.
 
 | Kit | FPGA | Notes |
 |-----|------|-------|
-| **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | UltraScale+ GTY; in-tree PG239 US+ path (`fpga/vcu118`) |
-| **AMD Versal Prime VMK180** | **XCVM1802** | Versal primary. PG345 GTY, Gen2 ×4 on quad 103 (`fpga/vmk180`) |
-| **AMD Versal Premium VPK180** | Versal Premium | Later GTYP / Gen5 path. Not the Versal bring-up target |
+| **AMD Versal Prime VMK180** | **XCVM1802** | Preferred. PG345 GTY, Gen2 ×4 on quad 103 (`fpga/vmk180`) |
+| **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | Also in tree. PG239 GTY (`fpga/vcu118`) |
+| **AMD Versal Premium VPK180** | Versal Premium | Later GTYP / Gen5 path. Not a bring-up request |
 
 Sim / RTL default today still exercises the UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`) path. Versal is `FPGA_FAMILY=2` → `rivet_pcie_phy_versal`. Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
 
@@ -164,11 +164,10 @@ Specifications are not redistributed; obtain PCIe / PIPE / PG213 / PG239 yoursel
 
 Early-stage open interconnect IP. **Hardware sponsorship is a real blocker** for FPGA bring-up.
 
-**Any of these kits (loan or donation) is enough** — we will adapt the PHY wrapper / board flow to the part:
+A loan or a donation of one of these kits unblocks the lab. The **VMK180** is the kit we want first.
 
-- **AMD Virtex UltraScale+ VCU118** (**XCVU9P**) — UltraScale+ primary
-- **AMD Versal Prime VMK180** (**XCVM1802**) — Versal primary
-- **AMD Versal Premium VPK180** — later GTYP / Gen5 path
+- **AMD Versal Prime VMK180** (**XCVM1802**, EK-VMK180-G) — preferred. PG345 GTY, Gen2 ×4, project `fpga/vmk180`
+- **AMD Virtex UltraScale+ VCU118** (**XCVU9P**, EK-U1-VCU118-G) — second choice. PG239 GTY, project `fpga/vcu118`
 
 Also welcome:
 

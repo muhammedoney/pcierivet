@@ -1,18 +1,6 @@
 # Target hardware
 
-Primary bring-up platform (locked):
-
-| Item | Value |
-|------|-------|
-| Kit | AMD Virtex UltraScale+ FPGA **VCU118** Evaluation Kit (EK-U1-VCU118-G) |
-| FPGA | **XCVU9P** (UltraScale+, GTY) |
-| Example Vivado part | `xcvu9p-flga2104-2L-e` (Rev 2.0+, VCCINT 0.85 V) |
-| PG239 generate part | **VU9P** (official GTY target) |
-| Board GTs | 52 GTY (16 on PCIe ×16 edge) |
-
-Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md).
-
-## Versal primary
+Preferred bring-up kit:
 
 | Item | Value |
 |------|-------|
@@ -24,12 +12,24 @@ Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md).
 
 VPK180 is the later Premium / GTYP / Gen5 kit. The in-tree Versal project is `fpga/vmk180/`.
 
+## UltraScale+ (second choice)
+
+| Item | Value |
+|------|-------|
+| Kit | AMD Virtex UltraScale+ FPGA **VCU118** Evaluation Kit (EK-U1-VCU118-G) |
+| FPGA | **XCVU9P** (UltraScale+, GTY) |
+| Example Vivado part | `xcvu9p-flga2104-2L-e` (Rev 2.0+, VCCINT 0.85 V) |
+| PG239 generate part | **VU9P** (official GTY target) |
+| Board GTs | 52 GTY (16 on PCIe ×16 edge) |
+
+Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md). The project for this kit is `fpga/vcu118/`.
+
 ## Sponsorship / lab status
 
-Rivet needs a **VCU118** or a **VMK180** (or a loan/donation). Prefer a VU9P-class board with a PCIe edge and native PG239 GTY generation, or the VMK180 for the PG345 path.
+The kit we need first is a **VMK180** (EK-VMK180-G, **XCVM1802**), on loan or as a donation. A **VCU118** (EK-U1-VCU118-G, **XCVU9P**) is the second choice and still covers the UltraScale+ shell.
 
 **FPGA lab is backlogged** until a board is available. Sim gates (UVM + PG213/PG239 BFM) do not wait on hardware. When the kit arrives:
 
-1. Generate the PHY for the board in hand: PG239 on XCVU9P or PG345 on XCVM1802. Wire the matching shell (`fpga/vcu118` or `fpga/vmk180`).
+1. On a VMK180, generate PG345 for XCVM1802 and use `fpga/vmk180`. On a VCU118, generate PG239 for XCVU9P and use `fpga/vcu118`.
 2. Board gates: `link_up`, BAR0 PIO, optional DMA/RQ.
 3. Keep behavioral PHY stub + pad for CI; board project stays out of the soft-IP MVP tag.
