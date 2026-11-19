@@ -52,6 +52,9 @@ module rivet_dll_tlp_rx #(
   logic [11:0]       expect_q;
   logic              lcrc_err_q;
   logic [31:0]       crc_q;
+  // EOP checks the registered frame. CRC and the byte insert already fill a
+  // 250 MHz cycle; the ACK decision runs on the following cycle.
+  logic              decide_q;
 
   assign last_good_seq_o = last_good_q;
   assign lcrc_err_o      = lcrc_err_q;
@@ -63,7 +66,7 @@ module rivet_dll_tlp_rx #(
   assign ack_req_o       = ack_q;
   // ACK/NAK may sit pending while another TLP arrives; cumulative ACK/NAK
   // simply overwrites. Only TL delivery backpressure blocks RX.
-  assign beat_ready_o    = enable_i && !tl_pend_q;
+  assign beat_ready_o    = enable_i && !tl_pend_q && !decide_q;
 
   function automatic logic [7:0] keep_popcount(input logic [7:0] k);
     return 8'(k[0]) + 8'(k[1]) + 8'(k[2]) + 8'(k[3]) +
@@ -85,16 +88,20 @@ module rivet_dll_tlp_rx #(
     nbytes   = keep_popcount(beat_i.keep);
     buf_next = beat_i.sop ? '0 : buf_q;
     wr_base  = beat_i.sop ? '0 : len_q;
+    // CRC sees the beat bytes directly. Folding them through the frame
+    // insert makes one path of the byte mux plus the CRC tree.
     pack_d   = '0;
+    for (int unsigned i = 0; i < 8; i++) begin
+      if (take_beat && (8'(i) < nbytes))
+        pack_d[8*i +: 8] = beat_i.data[8*i +: 8];
+    end
     // Parallel insert. Keep is a low prefix, so byte i lands at wr_base+i.
     // A variable part-select across the frame does not close at Gen2 pclk.
     for (int unsigned b = 0; b < SLOT_BYTES; b++) begin
       for (int unsigned i = 0; i < 8; i++) begin
         if (take_beat && (8'(i) < nbytes) &&
-            (int'(wr_base) + int'(i) == int'(b))) begin
+            (int'(wr_base) + int'(i) == int'(b)))
           buf_next[8*b +: 8] = beat_i.data[8*i +: 8];
-          pack_d[8*i +: 8]   = beat_i.data[8*i +: 8];
-        end
       end
     end
     len_next = take_beat ? OFF_W'(int'(wr_base) + int'(nbytes)) : len_q;
@@ -113,10 +120,11 @@ module rivet_dll_tlp_rx #(
       (take_beat && beat_i.sop) ? 32'hFFFF_FFFF : crc_q,
       pack_d, nbytes[3:0]);
 
+  // Sampled the cycle after EOP, when buf_q / crc_q / len_q hold the frame.
   always_comb begin
-    rx_seq    = {buf_next[3:0], buf_next[15:8]};
-    pld_len   = (int'(len_next) >= MIN_FR) ? 16'(int'(len_next) - MIN_FR) : 16'd0;
-    lcrc_ok   = (crc_next == RIVET_LCRC32_RESIDUE) && (int'(len_next) >= MIN_FR);
+    rx_seq    = {buf_q[3:0], buf_q[15:8]};
+    pld_len   = (int'(len_q) >= MIN_FR) ? 16'(int'(len_q) - MIN_FR) : 16'd0;
+    lcrc_ok   = (crc_q == RIVET_LCRC32_RESIDUE) && (int'(len_q) >= MIN_FR);
     seq_ok    = (rx_seq == expect_q);
     seq_delta = expect_q - rx_seq;
     seq_dup   = lcrc_ok && !seq_ok && (seq_delta != 12'd0) && (seq_delta <= 12'd32);
@@ -136,6 +144,7 @@ module rivet_dll_tlp_rx #(
       expect_q    <= 12'd0;
       lcrc_err_q  <= 1'b0;
       crc_q       <= 32'hFFFF_FFFF;
+      decide_q    <= 1'b0;
     end else begin
       lcrc_err_q <= 1'b0;
 
@@ -153,15 +162,20 @@ module rivet_dll_tlp_rx #(
         if (beat_i.keep != (8'hFF >> (8 - nbytes)))
           $error("rivet_dll_tlp_rx: keep %02h is not a low prefix of %0d bytes",
                  beat_i.keep, nbytes);
+`endif
+        decide_q <= 1'b1;
+      end else if (decide_q) begin
+        decide_q <= 1'b0;
+`ifndef SYNTHESIS
         $display("[%t] : TLP RX eop len=%0d seq=%03h expect=%03h crc=%08h ok=%0b seq_ok=%0b dup=%0b",
-                 $realtime, int'(len_next), rx_seq, expect_q, crc_next,
+                 $realtime, int'(len_q), rx_seq, expect_q, crc_q,
                  lcrc_ok, seq_ok, seq_dup);
 `endif
         if (lcrc_ok && seq_ok) begin
           pld_q <= '0;
           for (int unsigned j = 0; j < SLOT_BYTES - MIN_FR; j++) begin
             if (16'(j) < pld_len)
-              pld_q[8*j +: 8] <= buf_next[8*j + 8*RIVET_TLP_SEQ_BYTES +: 8];
+              pld_q[8*j +: 8] <= buf_q[8*j + 8*RIVET_TLP_SEQ_BYTES +: 8];
           end
           pld_len_q     <= pld_len;
           seq_q         <= rx_seq;

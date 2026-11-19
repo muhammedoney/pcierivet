@@ -57,6 +57,10 @@ module rivet_tl_cfg_space (
   (* ram_style = "block" *) logic [31:0] mem_q [0:RIVET_CFG_DW_N-1];
   logic [31:0] ram_rdata_q;
   logic [9:0]  ram_raddr;
+  logic        mem_we;
+  logic [9:0]  mem_waddr;
+  logic [31:0] mem_wdata;
+  logic [31:0] dev_now_c;
   logic [9:0]  init_q;
   logic        init_done_q;
   logic [31:0] sh_cmd_q;
@@ -253,6 +257,38 @@ module rivet_tl_cfg_space (
       return ram_rdata_q;
   endfunction
 
+  // Write port is its own clocked process so Vivado can infer block RAM.
+  // An asynchronous reset on the same process keeps the array in flip-flops.
+  always_comb begin
+    dev_now_c = sh_dev_q;
+    if (init_done_q && aer_set_cor_i)      dev_now_c[16] = 1'b1;
+    if (init_done_q && aer_set_nonfatal_i) dev_now_c[17] = 1'b1;
+
+    mem_we    = 1'b0;
+    mem_waddr = init_q;
+    mem_wdata = cfg_reset_dw(init_q);
+    if (!init_done_q) begin
+      mem_we = 1'b1;
+    end else if (((st_q == ST_FAB) || ((st_q == ST_MGMT) && mgmt_pf0_q)) &&
+                 write_q) begin
+      mem_we    = 1'b1;
+      mem_waddr = addr_q;
+      mem_wdata = apply_write(addr_q,
+                    (addr_q == 10'd30) ? dev_now_c : snap_dw(addr_q, sh_dev_q),
+                    wdata_q, be_q);
+    end else if (dev_now_c != sh_dev_q) begin
+      mem_we    = 1'b1;
+      mem_waddr = 10'd30;
+      mem_wdata = dev_now_c;
+    end
+  end
+
+  always_ff @(posedge clk_i) begin
+    ram_rdata_q <= mem_q[ram_raddr];
+    if (mem_we)
+      mem_q[mem_waddr] <= mem_wdata;
+  end
+
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       st_q          <= ST_IDLE;
@@ -271,7 +307,6 @@ module rivet_tl_cfg_space (
       mgmt_wdata_q  <= '0;
       init_q        <= '0;
       init_done_q   <= 1'b0;
-      ram_rdata_q   <= '0;
       sh_cmd_q      <= cfg_reset_dw(10'd1);
       sh_bar0_q     <= '0;
       sh_msi_ctrl_q <= cfg_reset_dw(10'd20);
@@ -280,22 +315,9 @@ module rivet_tl_cfg_space (
       sh_dev_q      <= '0;
       sh_link_q     <= '0;
     end else begin
-      logic        wr_do;
-      logic [9:0]  wr_addr;
-      logic [31:0] wr_data;
-      logic [31:0] dev_now;
       logic [31:0] cur;
       logic [31:0] nxt;
-      wr_do   = 1'b0;
-      wr_addr = init_q;
-      wr_data = cfg_reset_dw(init_q);
-      dev_now = sh_dev_q;
-      if (init_done_q && aer_set_cor_i)      dev_now[16] = 1'b1;
-      if (init_done_q && aer_set_nonfatal_i) dev_now[17] = 1'b1;
-      sh_dev_q <= dev_now;
-
-      // Synchronous read. The address was presented last cycle.
-      ram_rdata_q <= mem_q[ram_raddr];
+      sh_dev_q    <= dev_now_c;
       fab_ack_q   <= 1'b0;
       mgmt_done_q <= 1'b0;
 
@@ -310,7 +332,6 @@ module rivet_tl_cfg_space (
 
       if (!init_done_q) begin
         // One dword per cycle after reset. fab_busy stays high until this ends.
-        wr_do = 1'b1;
         if (init_q == 10'(RIVET_CFG_DW_N - 1))
           init_done_q <= 1'b1;
         else
@@ -339,13 +360,10 @@ module rivet_tl_cfg_space (
             if ((st_q == ST_MGMT) && !mgmt_pf0_q) begin
               rdata_q <= '0;
             end else begin
-              cur = (addr_q == 10'd30) ? dev_now : snap_dw(addr_q, sh_dev_q);
+              cur = (addr_q == 10'd30) ? dev_now_c : snap_dw(addr_q, sh_dev_q);
               nxt = apply_write(addr_q, cur, wdata_q, be_q);
               rdata_q <= snap_dw(addr_q, sh_dev_q);
               if (write_q) begin
-                wr_do   = 1'b1;
-                wr_addr = addr_q;
-                wr_data = nxt;
                 if (addr_q == 10'd1)  sh_cmd_q      <= nxt;
                 if (addr_q == 10'd4)  sh_bar0_q     <= nxt;
                 if (addr_q == 10'd20) sh_msi_ctrl_q <= nxt;
@@ -363,15 +381,7 @@ module rivet_tl_cfg_space (
           end
           default: st_q <= ST_IDLE;
         endcase
-        if (!wr_do && (dev_now != sh_dev_q)) begin
-          wr_do   = 1'b1;
-          wr_addr = 10'd30;
-          wr_data = dev_now;
-        end
       end
-
-      if (wr_do)
-        mem_q[wr_addr] <= wr_data;
     end
   end
 

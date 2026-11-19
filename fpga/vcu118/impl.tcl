@@ -24,6 +24,11 @@ if {[catch {set_property strategy Flow_PerfOptimized_high $syn} err]} {
   puts "WARN: synth strategy not applied: $err"
 }
 catch {set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING true $syn}
+if {[catch {
+  set_property -name {STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS} -value {-global_retiming} -objects $syn
+} err]} {
+  puts "WARN: global retiming not applied: $err"
+}
 
 if {[catch {set_property strategy Performance_ExplorePostRoutePhysOpt $impl} err]} {
   puts "WARN: $err"
@@ -33,7 +38,9 @@ if {[catch {set_property strategy Performance_ExplorePostRoutePhysOpt $impl} err
 
 reset_run synth_1
 launch_runs impl_1 -to_step write_bitstream -jobs 8
-wait_on_run impl_1
+if {[catch {wait_on_run impl_1} err]} {
+  puts "WARN: wait_on_run: $err"
+}
 
 set st   [get_property STATUS   $impl]
 set prog [get_property PROGRESS $impl]
