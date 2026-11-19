@@ -9,9 +9,9 @@
 // window: with two symbols per pclk a TS can complete on either symbol phase,
 // so both alignments are compared each cycle.
 //
-// A polarity-inverted lane delivers the complement of the TS identifier
-// (Base 2.1 §4.2.4.4). Polling accepts "training sequences or their complement",
-// so inverted sets still count and the inversion is reported for rxpolarity.
+// Packet framing uses a registered symbol pre-decoder feeding a 16-byte
+// byte-packing gearbox and a 32x64b distributed LUTRAM so 250 MHz timing
+// closes without a 160-byte byte-address mux.
 
 module rivet_mac_os_rx #(
   parameter int unsigned LANES           = 1,
@@ -62,7 +62,7 @@ module rivet_mac_os_rx #(
   output logic               deskew_done_o,
   output logic               rx_err_o,
 
-  // Toward DLL (idle until the DLL slice)
+  // Toward DLL
   output rivet_pkg::rivet_dll_mac_rx_beat_t dll_rx_beat_o,
   output logic                              dll_rx_valid_o,
   input  logic                              dll_rx_ready_i
@@ -72,10 +72,11 @@ module rivet_mac_os_rx #(
 
   localparam int unsigned SYMS = PIPE_DATA_WIDTH / 8;
   localparam int unsigned WIN  = RIVET_TS_LEN + SYMS - 1;
+  localparam int unsigned NSYM = SYMS * LANES;
 
-  localparam logic [3:0] TH_TS   = 4'(RIVET_N_TS_CONSEC);
-  localparam logic [3:0] TH_NUM  = 4'(RIVET_N_TS_NUM_CONSEC);
-  localparam logic [3:0] TH_IDLE = 4'(RIVET_N_IDLE_CONSEC);
+  localparam logic [3:0] TH_TS     = 4'(RIVET_N_TS_CONSEC);
+  localparam logic [3:0] TH_NUM    = 4'(RIVET_N_TS_NUM_CONSEC);
+  localparam logic [3:0] TH_IDLE   = 4'(RIVET_N_IDLE_CONSEC);
   localparam logic [3:0] CNT_MAX   = 4'hF;
   localparam logic [3:0] IDLE_STEP = 4'(SYMS); // Idle counts Symbol Times
 
@@ -152,7 +153,6 @@ module rivet_mac_os_rx #(
           if (sym_datak_i[SYMS*l + s]) hit_k[l] = 1'b1;
           else if (sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8] == 8'h00)
             hit_idle[l] = 1'b1;
-          // Non-zero D after descramble breaks the Idle run (handled via !hit_idle).
         end
       end
 
@@ -234,7 +234,7 @@ module rivet_mac_os_rx #(
   logic [7:0]       n_fts_q;
   logic [7:0]       rate_id_q;
   logic [7:0]       train_q;
-  logic [7:0]       lane_num_q  [LANES];
+  logic [7:0]       lane_num_q     [LANES];
   logic [7:0]       lane_num_ref_q [LANES];
   logic             lane_num_seen_q;
   logic [LANES-1:0] inverted_q;
@@ -406,16 +406,15 @@ module rivet_mac_os_rx #(
     end
   end
 
-
   // ---------------------------------------------------------------------------
   // Packet framing RX: SDP + 6 D-bytes + END, or STP + N D-bytes + END/EDB
-  // striped across enabled lanes (Gen2 16b PIPE). After Logical Idle the next
-  // STP/SDP may land on any enabled lane and either symbol phase. Symbols
-  // before that token (Idle, ordered sets) are not a start. EDB nullifies:
-  // one err beat, no good TLP delivery.
+  // striped across enabled lanes (Gen2 16b PIPE).
+  // Stage P0 pre-decodes framing tokens per symbol slot; Stage P1 packs TLP
+  // bytes through a 16-byte gearbox into a 32x64b distributed LUTRAM.
   // ---------------------------------------------------------------------------
-  localparam bit PKT_RX_OK = (PIPE_DATA_WIDTH == 16);
-  localparam int unsigned TLP_BUF_B = RIVET_MAC_TLP_BUF_BYTES;
+  localparam bit PKT_RX_OK        = (PIPE_DATA_WIDTH == 16);
+  localparam int unsigned TLP_BUF_B  = RIVET_MAC_TLP_BUF_BYTES;
+  localparam int unsigned TLP_RAM_N  = 32;
 
   typedef enum logic [2:0] {
     RX_IDLE    = 3'b000,
@@ -425,29 +424,82 @@ module rivet_mac_os_rx #(
     RX_TLP_OUT = 3'b100
   } rx_pkt_e;
 
-  rx_pkt_e       rx_pkt_q, rx_pkt_d;
-  logic [63:0]   rx_body_q, rx_body_d;
-  logic [3:0]    rx_cnt_q, rx_cnt_d;
-  logic          rx_err_pkt_q, rx_err_pkt_d;
-  logic          dll_beat_valid_q, dll_beat_valid_d;
+  // Stage P0: registered per-symbol token flags
+  logic             p0_lanes_ok_q;
+  logic [NSYM-1:0]  p0_en_q;
+  logic [NSYM-1:0]  p0_sdp_q;
+  logic [NSYM-1:0]  p0_stp_q;
+  logic [NSYM-1:0]  p0_end_q;
+  logic [NSYM-1:0]  p0_edb_q;
+  logic [NSYM-1:0]  p0_k_q;
+  logic [7:0]       p0_data_q [0:NSYM-1];
+
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      p0_lanes_ok_q <= 1'b0;
+      p0_en_q       <= '0;
+      p0_sdp_q      <= '0;
+      p0_stp_q      <= '0;
+      p0_end_q      <= '0;
+      p0_edb_q      <= '0;
+      p0_k_q        <= '0;
+      for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= '0;
+    end else begin
+      automatic logic ok = PKT_RX_OK && sym_valid_i[0] && lane_en_i[0];
+      p0_lanes_ok_q <= ok;
+      for (int unsigned s = 0; s < SYMS; s++) begin
+        for (int unsigned l = 0; l < LANES; l++) begin
+          automatic int unsigned p = s * LANES + l;
+          automatic logic [7:0]  b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+          automatic logic        k = sym_datak_i[SYMS*l + s];
+          automatic logic        e = ok && lane_en_i[l];
+          p0_en_q[p]   <= e;
+          p0_sdp_q[p]  <= e && k && (b == RIVET_SYM_SDP);
+          p0_stp_q[p]  <= e && k && (b == RIVET_SYM_STP);
+          p0_end_q[p]  <= e && k && (b == RIVET_SYM_END);
+          p0_edb_q[p]  <= e && k && (b == RIVET_SYM_EDB);
+          p0_k_q[p]    <= e && k;
+          p0_data_q[p] <= b;
+        end
+      end
+    end
+  end
+
+  rx_pkt_e                rx_pkt_q, rx_pkt_d;
+  logic [63:0]            rx_body_q, rx_body_d;
+  logic [3:0]             rx_cnt_q, rx_cnt_d;
+  logic                   rx_err_pkt_q, rx_err_pkt_d;
+  logic                   dll_beat_valid_q, dll_beat_valid_d;
   rivet_dll_mac_rx_beat_t dll_beat_q, dll_beat_d;
-  logic [TLP_BUF_B*8-1:0] tlp_buf_q, tlp_buf_d;
-  logic [7:0]             tlp_len_q, tlp_len_d;
-  logic [7:0]             tlp_off_q, tlp_off_d;
-  logic                   tlp_err_q, tlp_err_d;
 
-  logic          rx_lanes_ok;
-  logic [7:0]    rx_sy;
-  logic          rx_ky;
+  (* ram_style = "distributed" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
+  logic        tlp_ram_we;
+  logic [4:0]  tlp_ram_waddr;
+  logic [63:0] tlp_ram_wdata;
+  logic [63:0] tlp_ram_rdata;
 
-  assign rx_lanes_ok = PKT_RX_OK && sym_valid_i[0] && lane_en_i[0];
+  logic [55:0] tlp_acc_q, tlp_acc_d;
+  logic [2:0]  tlp_acc_cnt_q, tlp_acc_cnt_d;
+  logic [4:0]  tlp_wr_slot_q, tlp_wr_slot_d;
+  logic [4:0]  tlp_rd_slot_q, tlp_rd_slot_d;
+  logic [7:0]  tlp_len_q, tlp_len_d;
+  logic [7:0]  tlp_rem_q, tlp_rem_d;
+  logic        tlp_sop_q, tlp_sop_d;
+  logic        tlp_tail_pend_q, tlp_tail_pend_d;
+  logic        tlp_err_q, tlp_err_d;
 
-  function automatic logic [7:0] tlp_beat_nleft(input logic [7:0] len,
-                                                input logic [7:0] off);
-    logic [7:0] left;
-    left = (len > off) ? (len - off) : 8'd0;
-    return (left > 8'd8) ? 8'd8 : left;
-  endfunction
+`ifndef SYNTHESIS
+  initial begin
+    for (int unsigned ii = 0; ii < TLP_RAM_N; ii++) tlp_ram[ii] = '0;
+  end
+`endif
+
+  assign tlp_ram_rdata = tlp_ram[tlp_rd_slot_q];
+
+  always_ff @(posedge pclk_i) begin
+    if (tlp_ram_we)
+      tlp_ram[tlp_ram_waddr] <= tlp_ram_wdata;
+  end
 
   always_comb begin
     rx_pkt_d         = rx_pkt_q;
@@ -456,77 +508,166 @@ module rivet_mac_os_rx #(
     rx_err_pkt_d     = rx_err_pkt_q;
     dll_beat_valid_d = dll_beat_valid_q;
     dll_beat_d       = dll_beat_q;
-    tlp_buf_d        = tlp_buf_q;
+    tlp_acc_d        = tlp_acc_q;
+    tlp_acc_cnt_d    = tlp_acc_cnt_q;
+    tlp_wr_slot_d    = tlp_wr_slot_q;
+    tlp_rd_slot_d    = tlp_rd_slot_q;
     tlp_len_d        = tlp_len_q;
-    tlp_off_d        = tlp_off_q;
+    tlp_rem_d        = tlp_rem_q;
+    tlp_sop_d        = tlp_sop_q;
+    tlp_tail_pend_d  = 1'b0;
     tlp_err_d        = tlp_err_q;
-    rx_sy            = '0;
-    rx_ky            = 1'b0;
+
+    tlp_ram_we       = 1'b0;
+    tlp_ram_waddr    = tlp_wr_slot_q;
+    tlp_ram_wdata    = '0;
 
     if (dll_beat_valid_q && dll_rx_ready_i) dll_beat_valid_d = 1'b0;
 
-    if (rx_lanes_ok) begin
+    // Pending tail bytes (<8B) from a TLP whose END beat crossed an 8B boundary
+    // write into slot >= 1 while RX_TLP_OUT reads slot 0.
+    if (tlp_tail_pend_q) begin
+      tlp_ram_we    = 1'b1;
+      tlp_ram_waddr = tlp_wr_slot_q;
+      tlp_ram_wdata = {8'd0, tlp_acc_q};
+      tlp_wr_slot_d = tlp_wr_slot_q + 5'd1;
+      tlp_acc_d     = '0;
+      tlp_acc_cnt_d = 3'd0;
+    end
+
+    if (p0_lanes_ok_q || (rx_pkt_q == RX_HOLD) || (rx_pkt_q == RX_TLP_OUT)) begin
       unique case (rx_pkt_q)
         RX_IDLE: begin
-          // SDP/STP on any enabled lane, either 16-bit PIPE symbol phase.
-          automatic logic        saw_sdp = 1'b0;
-          automatic logic        saw_stp = 1'b0;
-          automatic logic [3:0]  c   = 4'd0;
-          automatic logic [63:0] b   = '0;
-          automatic logic [7:0]  tl  = 8'd0;
-          // At most one PIPE beat of payload. Kept narrow so the 160-byte
-          // buffer is a parallel insert, not a variable-index carry chain.
-          automatic logic [7:0]  cap_b [0:7];
-          automatic logic        err = 1'b0;
-          automatic logic        done = 1'b0;
-          automatic logic        nullified = 1'b0;
+          if (p0_lanes_ok_q) begin
+            automatic logic        saw_sdp = 1'b0;
+            automatic logic        saw_stp = 1'b0;
+            automatic logic [3:0]  c       = 4'd0;
+            automatic logic [63:0] b       = '0;
+            automatic logic [3:0]  cap_n   = 4'd0;
+            automatic logic [7:0]  cap_b [0:7];
+            automatic logic [63:0] cap_word;
+            automatic logic        err       = 1'b0;
+            automatic logic        done      = 1'b0;
+            automatic logic        nullified = 1'b0;
 
-          for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
+            for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
 
-          for (int unsigned s = 0; s < SYMS; s++) begin
-            for (int unsigned l = 0; l < LANES; l++) begin
-              if (!lane_en_i[l] || done) begin
-              end else begin
-                rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-                rx_ky = sym_datak_i[SYMS*l + s];
+            for (int unsigned p = 0; p < NSYM; p++) begin
+              if (p0_en_q[p] && !done) begin
                 if (!saw_sdp && !saw_stp) begin
-                  if (rx_ky && (rx_sy == RIVET_SYM_SDP))
-                    saw_sdp = 1'b1;
-                  else if (rx_ky && (rx_sy == RIVET_SYM_STP))
-                    saw_stp = 1'b1;
+                  if (p0_sdp_q[p])      saw_sdp = 1'b1;
+                  else if (p0_stp_q[p]) saw_stp = 1'b1;
                 end else if (saw_sdp) begin
                   if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
-                    if (rx_ky) begin
+                    if (p0_k_q[p]) begin
                       err  = 1'b1;
                       done = 1'b1;
                     end else begin
-                      b[8*c +: 8] = rx_sy;
+                      b[8*c +: 8] = p0_data_q[p];
                       c = c + 4'd1;
                     end
                   end else begin
-                    if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+                    if (p0_end_q[p]) begin
                       done = 1'b1;
-                    end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                    end else if (p0_edb_q[p]) begin
                       nullified = 1'b1;
                       done      = 1'b1;
-                    end else if (!rx_ky && (rx_sy == 8'h00)) begin
+                    end else if (!p0_k_q[p] && (p0_data_q[p] == 8'h00)) begin
                     end else begin
                       err  = 1'b1;
                       done = 1'b1;
                     end
                   end
                 end else begin
-                  if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+                  if (p0_end_q[p]) begin
                     done = 1'b1;
-                  end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                  end else if (p0_edb_q[p]) begin
                     nullified = 1'b1;
                     done      = 1'b1;
-                  end else if (rx_ky) begin
+                  end else if (p0_k_q[p]) begin
                     err  = 1'b1;
                     done = 1'b1;
-                  end else if (tl < 8'd8) begin
-                    cap_b[int'(tl)] = rx_sy;
-                    tl = tl + 8'd1;
+                  end else begin
+                    cap_b[cap_n[2:0]] = p0_data_q[p];
+                    cap_n = cap_n + 4'd1;
+                  end
+                end
+              end
+            end
+
+            cap_word = {cap_b[7], cap_b[6], cap_b[5], cap_b[4],
+                        cap_b[3], cap_b[2], cap_b[1], cap_b[0]};
+
+            if (saw_sdp) begin
+              rx_body_d    = b;
+              rx_cnt_d     = c;
+              rx_err_pkt_d = err;
+              if (done) begin
+                if (!dll_beat_valid_q || dll_rx_ready_i) begin
+                  dll_beat_d.data     = b;
+                  dll_beat_d.keep     = 8'hFF;
+                  dll_beat_d.sop      = 1'b1;
+                  dll_beat_d.eop      = 1'b1;
+                  dll_beat_d.err      = err | nullified;
+                  dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
+                  dll_beat_valid_d    = 1'b1;
+                  rx_pkt_d            = RX_IDLE;
+                  rx_cnt_d            = 4'd0;
+                end else begin
+                  rx_pkt_d = RX_HOLD;
+                end
+              end else begin
+                rx_pkt_d = RX_BODY;
+              end
+            end else if (saw_stp) begin
+              tlp_len_d     = {4'd0, cap_n};
+              tlp_rem_d     = {4'd0, cap_n};
+              tlp_err_d     = err | nullified | (done && (cap_n == 4'd0));
+              tlp_rd_slot_d = 5'd0;
+              tlp_sop_d     = 1'b1;
+              if (done) begin
+                tlp_ram_we    = 1'b1;
+                tlp_ram_waddr = 5'd0;
+                tlp_ram_wdata = cap_word;
+                tlp_wr_slot_d = 5'd1;
+                tlp_acc_d     = '0;
+                tlp_acc_cnt_d = 3'd0;
+                rx_pkt_d      = RX_TLP_OUT;
+              end else begin
+                tlp_wr_slot_d = 5'd0;
+                tlp_acc_d     = cap_word[55:0];
+                tlp_acc_cnt_d = cap_n[2:0];
+                rx_pkt_d      = RX_TLP;
+              end
+            end
+          end
+        end
+
+        RX_BODY: begin
+          if (p0_lanes_ok_q) begin
+            automatic logic [3:0]  c         = rx_cnt_q;
+            automatic logic [63:0] b         = rx_body_q;
+            automatic logic        err       = rx_err_pkt_q;
+            automatic logic        done      = 1'b0;
+            automatic logic        nullified = 1'b0;
+
+            for (int unsigned p = 0; p < NSYM; p++) begin
+              if (p0_en_q[p] && !done) begin
+                if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
+                  if (p0_k_q[p]) begin
+                    err  = 1'b1;
+                    done = 1'b1;
+                  end else begin
+                    b[8*c +: 8] = p0_data_q[p];
+                    c = c + 4'd1;
+                  end
+                end else begin
+                  if (p0_end_q[p]) begin
+                    done = 1'b1;
+                  end else if (p0_edb_q[p]) begin
+                    nullified = 1'b1;
+                    done      = 1'b1;
+                  end else if (!p0_k_q[p] && (p0_data_q[p] == 8'h00)) begin
                   end else begin
                     err  = 1'b1;
                     done = 1'b1;
@@ -534,12 +675,11 @@ module rivet_mac_os_rx #(
                 end
               end
             end
-          end
 
-          if (saw_sdp) begin
             rx_body_d    = b;
             rx_cnt_d     = c;
             rx_err_pkt_d = err;
+
             if (done) begin
               if (!dll_beat_valid_q || dll_rx_ready_i) begin
                 dll_beat_d.data     = b;
@@ -554,82 +694,10 @@ module rivet_mac_os_rx #(
               end else begin
                 rx_pkt_d = RX_HOLD;
               end
-            end else begin
-              rx_pkt_d = RX_BODY;
-            end
-          end else if (saw_stp) begin
-            tlp_buf_d = '0;
-            for (int unsigned i = 0; i < 8; i++) begin
-              if (8'(i) < tl)
-                tlp_buf_d[8*i +: 8] = cap_b[i];
-            end
-            tlp_len_d = tl;
-            tlp_err_d = err | nullified | (done && (tl == 8'd0));
-            tlp_off_d = 8'd0;
-            if (done) begin
-              rx_pkt_d = RX_TLP_OUT;
-            end else begin
-              rx_pkt_d = RX_TLP;
             end
           end
         end
-        RX_BODY: begin
-          automatic logic [3:0]  c   = rx_cnt_q;
-          automatic logic [63:0] b   = rx_body_q;
-          automatic logic        err = rx_err_pkt_q;
-          automatic logic        done = 1'b0;
-          automatic logic        nullified = 1'b0;
 
-          for (int unsigned s = 0; s < SYMS; s++) begin
-            for (int unsigned l = 0; l < LANES; l++) begin
-              if (!lane_en_i[l] || done) begin
-              end else begin
-                rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-                rx_ky = sym_datak_i[SYMS*l + s];
-                if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
-                  if (rx_ky) begin
-                    err  = 1'b1;
-                    done = 1'b1;
-                  end else begin
-                    b[8*c +: 8] = rx_sy;
-                    c = c + 4'd1;
-                  end
-                end else begin
-                  if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
-                    done = 1'b1;
-                  end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
-                    nullified = 1'b1;
-                    done      = 1'b1;
-                  end else if (!rx_ky && (rx_sy == 8'h00)) begin
-                  end else begin
-                    err  = 1'b1;
-                    done = 1'b1;
-                  end
-                end
-              end
-            end
-          end
-
-          rx_body_d    = b;
-          rx_cnt_d     = c;
-          rx_err_pkt_d = err;
-
-          if (done) begin
-            if (!dll_beat_valid_q || dll_rx_ready_i) begin
-              dll_beat_d.data     = b;
-              dll_beat_d.keep     = 8'hFF;
-              dll_beat_d.sop      = 1'b1;
-              dll_beat_d.eop      = 1'b1;
-              dll_beat_d.err      = err | nullified;
-              dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
-              dll_beat_valid_d    = 1'b1;
-              rx_pkt_d            = RX_IDLE;
-              rx_cnt_d            = 4'd0;
-            end else begin
-              rx_pkt_d = RX_HOLD;
-            end
-          end
-        end
         RX_HOLD: begin
           if (dll_rx_ready_i) begin
             dll_beat_d.data     = rx_body_q;
@@ -643,92 +711,138 @@ module rivet_mac_os_rx #(
             rx_cnt_d            = 4'd0;
           end
         end
+
         RX_TLP: begin
-          automatic logic [7:0] tl = tlp_len_q;
-          automatic logic [7:0] cap_b [0:7];
-          automatic logic [3:0] cap_n = 4'd0;
-          automatic logic err = tlp_err_q;
-          automatic logic done = 1'b0;
-          automatic logic nullified = 1'b0;
+          if (p0_lanes_ok_q) begin
+            automatic logic [7:0]   cap_b [0:7];
+            automatic logic [3:0]   cap_n     = 4'd0;
+            automatic logic [63:0]  cap_word;
+            automatic logic [119:0] comb_bytes;
+            automatic logic [3:0]   comb_cnt;
+            automatic logic [8:0]   new_len;
+            automatic logic         len_ovf;
+            automatic logic         err       = tlp_err_q;
+            automatic logic         done      = 1'b0;
+            automatic logic         nullified = 1'b0;
 
-          for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
+            for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
 
-          for (int unsigned s = 0; s < SYMS; s++) begin
-            for (int unsigned l = 0; l < LANES; l++) begin
-              if (!lane_en_i[l] || done) begin
-              end else begin
-                rx_sy = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-                rx_ky = sym_datak_i[SYMS*l + s];
-                if (rx_ky && (rx_sy == RIVET_SYM_END)) begin
+            for (int unsigned p = 0; p < NSYM; p++) begin
+              if (p0_en_q[p] && !done) begin
+                if (p0_end_q[p]) begin
                   done = 1'b1;
-                end else if (rx_ky && (rx_sy == RIVET_SYM_EDB)) begin
+                end else if (p0_edb_q[p]) begin
                   nullified = 1'b1;
                   done      = 1'b1;
-                end else if (rx_ky) begin
+                end else if (p0_k_q[p]) begin
                   err  = 1'b1;
                   done = 1'b1;
-                end else if ((tl < 8'(TLP_BUF_B)) && (cap_n < 4'd8)) begin
-                  cap_b[int'(cap_n)] = rx_sy;
-                  cap_n = cap_n + 4'd1;
-                  tl = tl + 8'd1;
                 end else begin
-                  err  = 1'b1;
-                  done = 1'b1;
+                  cap_b[cap_n[2:0]] = p0_data_q[p];
+                  cap_n = cap_n + 4'd1;
                 end
               end
             end
-          end
 
-          // Each buffer byte compares against the registered length. A
-          // variable part-select does not close at Gen2 pclk.
-          tlp_buf_d = tlp_buf_q;
-          for (int unsigned b = 0; b < TLP_BUF_B; b++) begin
-            for (int unsigned i = 0; i < 8; i++) begin
-              if ((4'(i) < cap_n) && (8'(b) == (tlp_len_q + 8'(i))))
-                tlp_buf_d[8*b +: 8] = cap_b[i];
+            new_len = {1'b0, tlp_len_q} + {5'd0, cap_n};
+            len_ovf = (new_len > 9'(TLP_BUF_B));
+            if (len_ovf) begin
+              err  = 1'b1;
+              done = 1'b1;
+            end
+
+            cap_word = {cap_b[7], cap_b[6], cap_b[5], cap_b[4],
+                        cap_b[3], cap_b[2], cap_b[1], cap_b[0]};
+            unique case (tlp_acc_cnt_q)
+              3'd0: comb_bytes = {56'd0, cap_word};
+              3'd1: comb_bytes = {48'd0, cap_word, tlp_acc_q[ 7:0]};
+              3'd2: comb_bytes = {40'd0, cap_word, tlp_acc_q[15:0]};
+              3'd3: comb_bytes = {32'd0, cap_word, tlp_acc_q[23:0]};
+              3'd4: comb_bytes = {24'd0, cap_word, tlp_acc_q[31:0]};
+              3'd5: comb_bytes = {16'd0, cap_word, tlp_acc_q[39:0]};
+              3'd6: comb_bytes = { 8'd0, cap_word, tlp_acc_q[47:0]};
+              3'd7: comb_bytes = {       cap_word, tlp_acc_q[55:0]};
+            endcase
+            comb_cnt = {1'b0, tlp_acc_cnt_q} + cap_n;
+
+            tlp_len_d = len_ovf ? 8'(TLP_BUF_B) : new_len[7:0];
+            tlp_err_d = err | nullified | (done && (new_len == 9'd0));
+
+            if (!done) begin
+              if (comb_cnt[3]) begin
+                tlp_ram_we    = 1'b1;
+                tlp_ram_waddr = tlp_wr_slot_q;
+                tlp_ram_wdata = comb_bytes[63:0];
+                tlp_wr_slot_d = tlp_wr_slot_q + 5'd1;
+                tlp_acc_d     = comb_bytes[119:64];
+                tlp_acc_cnt_d = comb_cnt[2:0];
+              end else begin
+                tlp_acc_d     = comb_bytes[55:0];
+                tlp_acc_cnt_d = comb_cnt[2:0];
+              end
+            end else begin
+              tlp_rd_slot_d = 5'd0;
+              tlp_sop_d     = 1'b1;
+              tlp_rem_d     = tlp_len_d;
+              if (!tlp_err_d && (comb_cnt != 4'd0)) begin
+                tlp_ram_we    = 1'b1;
+                tlp_ram_waddr = tlp_wr_slot_q;
+                tlp_ram_wdata = comb_bytes[63:0];
+                tlp_wr_slot_d = tlp_wr_slot_q + 5'd1;
+              end
+              if (!tlp_err_d && comb_cnt[3] && (comb_cnt[2:0] != 3'd0)) begin
+                tlp_acc_d       = comb_bytes[119:64];
+                tlp_acc_cnt_d   = comb_cnt[2:0];
+                tlp_tail_pend_d = 1'b1;
+              end else begin
+                tlp_acc_d     = '0;
+                tlp_acc_cnt_d = 3'd0;
+              end
+              rx_pkt_d = RX_TLP_OUT;
             end
           end
-          tlp_len_d = tl;
-          tlp_err_d = err | nullified | (done && (tl == 8'd0));
-          if (done) begin
-            tlp_off_d = 8'd0;
-            rx_pkt_d  = RX_TLP_OUT;
-          end
         end
+
         RX_TLP_OUT: begin
-          automatic logic [7:0] n;
+          automatic logic [3:0] n;
           automatic logic       slot;
-          n    = tlp_beat_nleft(tlp_len_q, tlp_off_q);
+          n    = (tlp_rem_q >= 8'd8) ? 4'd8 : tlp_rem_q[3:0];
           slot = !dll_beat_valid_q || dll_rx_ready_i;
           if (slot) begin
-            dll_beat_d = '0;
+            dll_beat_d          = '0;
             dll_beat_d.pkt_type = RIVET_MAC_PKT_TLP;
-            dll_beat_d.sop      = (tlp_off_q == 8'd0);
+            dll_beat_d.sop      = tlp_sop_q;
             if (tlp_err_q) begin
               dll_beat_d.eop   = 1'b1;
               dll_beat_d.err   = 1'b1;
               dll_beat_d.keep  = 8'hFF;
               dll_beat_valid_d = 1'b1;
               rx_pkt_d         = RX_IDLE;
-              tlp_off_d        = 8'd0;
-            end else if (n != 8'd0) begin
+              tlp_rem_d        = 8'd0;
+            end else if (n != 4'd0) begin
               for (int unsigned i = 0; i < 8; i++) begin
-                if (8'(i) < n) begin
-                  dll_beat_d.data[8*i +: 8] = tlp_buf_q[8*i +: 8];
+                if (4'(i) < n) begin
+                  dll_beat_d.data[8*i +: 8] = tlp_ram_rdata[8*i +: 8];
                   dll_beat_d.keep[i]        = 1'b1;
                 end
               end
-              dll_beat_d.eop   = ((tlp_off_q + n) >= tlp_len_q);
+              dll_beat_d.eop   = (tlp_rem_q <= 8'd8);
               dll_beat_d.err   = 1'b0;
               dll_beat_valid_d = 1'b1;
-              tlp_off_d        = tlp_off_q + n;
-              if ((tlp_off_q + n) >= tlp_len_q) rx_pkt_d = RX_IDLE;
-              else tlp_buf_d = tlp_buf_q >> 64; // full beat is 8 bytes; tail does not shift
+              tlp_sop_d        = 1'b0;
+              if (tlp_rem_q <= 8'd8) begin
+                tlp_rem_d = 8'd0;
+                rx_pkt_d  = RX_IDLE;
+              end else begin
+                tlp_rem_d     = tlp_rem_q - 8'd8;
+                tlp_rd_slot_d = tlp_rd_slot_q + 5'd1;
+              end
             end else begin
               rx_pkt_d = RX_IDLE;
             end
           end
         end
+
         default: rx_pkt_d = RX_IDLE;
       endcase
     end
@@ -742,9 +856,14 @@ module rivet_mac_os_rx #(
       rx_err_pkt_q     <= 1'b0;
       dll_beat_valid_q <= 1'b0;
       dll_beat_q       <= '0;
-      tlp_buf_q        <= '0;
+      tlp_acc_q        <= '0;
+      tlp_acc_cnt_q    <= '0;
+      tlp_wr_slot_q    <= '0;
+      tlp_rd_slot_q    <= '0;
       tlp_len_q        <= '0;
-      tlp_off_q        <= '0;
+      tlp_rem_q        <= '0;
+      tlp_sop_q        <= 1'b0;
+      tlp_tail_pend_q  <= 1'b0;
       tlp_err_q        <= 1'b0;
     end else begin
       rx_pkt_q         <= rx_pkt_d;
@@ -753,9 +872,14 @@ module rivet_mac_os_rx #(
       rx_err_pkt_q     <= rx_err_pkt_d;
       dll_beat_valid_q <= dll_beat_valid_d;
       dll_beat_q       <= dll_beat_d;
-      tlp_buf_q        <= tlp_buf_d;
+      tlp_acc_q        <= tlp_acc_d;
+      tlp_acc_cnt_q    <= tlp_acc_cnt_d;
+      tlp_wr_slot_q    <= tlp_wr_slot_d;
+      tlp_rd_slot_q    <= tlp_rd_slot_d;
       tlp_len_q        <= tlp_len_d;
-      tlp_off_q        <= tlp_off_d;
+      tlp_rem_q        <= tlp_rem_d;
+      tlp_sop_q        <= tlp_sop_d;
+      tlp_tail_pend_q  <= tlp_tail_pend_d;
       tlp_err_q        <= tlp_err_d;
     end
   end

@@ -213,13 +213,16 @@ module rivet_tl_cfg_space (
   assign msi_addr_o      = sh_msi_addr_q;
   assign msi_data_o      = sh_msi_data_q[15:0];
 
-  // Live Link Status overlay on DW32
+  // Live Link Status overlay on DW32 (inputs registered on pclk to break LTSSM -> BRAM path)
+  logic        link_up_q;
+  logic [3:0]  link_speed_q;
+  logic [5:0]  link_width_q;
   logic [31:0] link_status_overlay;
   always_comb begin
     link_status_overlay = sh_link_q;
-    if (link_up_i) begin
-      link_status_overlay[19:16] = link_speed_i;
-      link_status_overlay[25:20] = link_width_i;
+    if (link_up_q) begin
+      link_status_overlay[19:16] = link_speed_q;
+      link_status_overlay[25:20] = link_width_q;
     end
   end
 
@@ -314,10 +317,16 @@ module rivet_tl_cfg_space (
       sh_msi_data_q <= '0;
       sh_dev_q      <= '0;
       sh_link_q     <= '0;
+      link_up_q     <= 1'b0;
+      link_speed_q  <= 4'h1;
+      link_width_q  <= 6'h1;
     end else begin
       logic [31:0] cur;
       logic [31:0] nxt;
-      sh_dev_q    <= dev_now_c;
+      sh_dev_q     <= dev_now_c;
+      link_up_q    <= link_up_i;
+      link_speed_q <= link_speed_i;
+      link_width_q <= link_width_i;
       fab_ack_q   <= 1'b0;
       mgmt_done_q <= 1'b0;
 

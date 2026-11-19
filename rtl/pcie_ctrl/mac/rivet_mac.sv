@@ -165,8 +165,21 @@ module rivet_mac #(
   logic [LANES-1:0]                 map_rx_valid_q;
   logic [LANES-1:0]                 lane_en_d;
   logic [LANES-1:0]                 lane_en_d2;
+  logic                             lane_rev_d;
+  logic                             lane_rev_d2;
   logic [3*LANES-1:0]               rxstatus_d;
   logic [3*LANES-1:0]               rxstatus_d2;
+
+  // Delay TX PIPE control signals by 2 cycles (os_tx reg + scrambler reg)
+  // so they reach u_pipe_adapter phase-aligned with map_tx_data.
+  logic                             txdetectrx_d1, txdetectrx_d2;
+  logic [LANES-1:0]                 txelecidle_d1, txelecidle_d2;
+  logic [LANES-1:0]                 rxpolarity_d1, rxpolarity_d2;
+  logic [1:0]                       powerdown_d1,  powerdown_d2;
+  logic [2:0]                       rate_d1,       rate_d2;
+  logic                             as_detect_d1,  as_detect_d2;
+  logic                             as_cdr_d1,     as_cdr_d2;
+  logic                             as_l0_d1,      as_l0_d2;
 
   rivet_ltssm #(
     .MODE               (MODE),
@@ -286,7 +299,7 @@ module rivet_mac #(
     .datak_i   (sym_tx_datak),
     .os_d_i    (sym_tx_os_d),
     .valid_i   (sym_tx_valid),
-    .lane_en_i (lane_en),
+    .lane_en_i (lane_en_d),
     .data_o    (scr_tx_data),
     .datak_o   (scr_tx_datak),
     .valid_o   (scr_tx_valid)
@@ -298,8 +311,8 @@ module rivet_mac #(
     .LANES           (LANES),
     .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
   ) u_lane_map (
-    .reverse_i  (lane_reversed),
-    .lane_en_i  (lane_en),
+    .reverse_i  (lane_rev_d2),
+    .lane_en_i  (lane_en_d2),
     .tx_data_i  (scr_tx_data),
     .tx_datak_i (scr_tx_datak),
     .tx_valid_i (scr_tx_valid),
@@ -319,18 +332,54 @@ module rivet_mac #(
       map_rx_data_q  <= '0;
       map_rx_datak_q <= '0;
       map_rx_valid_q <= '0;
-      lane_en_d      <= '0;
-      lane_en_d2     <= '0;
+      lane_en_d      <= {LANES{1'b1}};
+      lane_en_d2     <= {LANES{1'b1}};
+      lane_rev_d     <= 1'b0;
+      lane_rev_d2    <= 1'b0;
       rxstatus_d     <= '0;
       rxstatus_d2    <= '0;
+      txdetectrx_d1  <= 1'b0;
+      txdetectrx_d2  <= 1'b0;
+      txelecidle_d1  <= {LANES{1'b1}};
+      txelecidle_d2  <= {LANES{1'b1}};
+      rxpolarity_d1  <= '0;
+      rxpolarity_d2  <= '0;
+      powerdown_d1   <= RIVET_PIPE_P1;
+      powerdown_d2   <= RIVET_PIPE_P1;
+      rate_d1        <= RIVET_PIPE_RATE_GEN1;
+      rate_d2        <= RIVET_PIPE_RATE_GEN1;
+      as_detect_d1   <= 1'b1;
+      as_detect_d2   <= 1'b1;
+      as_cdr_d1      <= 1'b0;
+      as_cdr_d2      <= 1'b0;
+      as_l0_d1       <= 1'b0;
+      as_l0_d2       <= 1'b0;
     end else begin
       map_rx_data_q  <= map_rx_data;
       map_rx_datak_q <= map_rx_datak;
       map_rx_valid_q <= map_rx_valid;
       lane_en_d      <= lane_en;
       lane_en_d2     <= lane_en_d;
+      lane_rev_d     <= lane_reversed;
+      lane_rev_d2    <= lane_rev_d;
       rxstatus_d     <= rxstatus;
       rxstatus_d2    <= rxstatus_d;
+      txdetectrx_d1  <= txdetectrx;
+      txdetectrx_d2  <= txdetectrx_d1;
+      txelecidle_d1  <= txelecidle;
+      txelecidle_d2  <= txelecidle_d1;
+      rxpolarity_d1  <= rxpolarity;
+      rxpolarity_d2  <= rxpolarity_d1;
+      powerdown_d1   <= powerdown;
+      powerdown_d2   <= powerdown_d1;
+      rate_d1        <= rate;
+      rate_d2        <= rate_d1;
+      as_detect_d1   <= as_mac_in_detect;
+      as_detect_d2   <= as_detect_d1;
+      as_cdr_d1      <= as_cdr_hold_req;
+      as_cdr_d2      <= as_cdr_d1;
+      as_l0_d1       <= as_mac_in_L0;
+      as_l0_d2       <= as_l0_d1;
     end
   end
 
@@ -399,14 +448,14 @@ module rivet_mac #(
     .sym_tx_data_i           (map_tx_data),
     .sym_tx_datak_i          (map_tx_datak),
     .sym_tx_valid_i          (map_tx_valid),
-    .txdetectrx_i            (txdetectrx),
-    .txelecidle_i            (txelecidle),
-    .rxpolarity_i            (rxpolarity),
-    .powerdown_i             (powerdown),
-    .rate_i                  (rate),
-    .as_mac_in_detect_i      (as_mac_in_detect),
-    .as_cdr_hold_req_i       (as_cdr_hold_req),
-    .as_mac_in_L0_i          (as_mac_in_L0),
+    .txdetectrx_i            (txdetectrx_d2),
+    .txelecidle_i            (txelecidle_d2),
+    .rxpolarity_i            (rxpolarity_d2),
+    .powerdown_i             (powerdown_d2),
+    .rate_i                  (rate_d2),
+    .as_mac_in_detect_i      (as_detect_d2),
+    .as_cdr_hold_req_i       (as_cdr_d2),
+    .as_mac_in_L0_i          (as_l0_d2),
     .sym_rx_data_o           (sym_rx_data_raw),
     .sym_rx_datak_o          (sym_rx_datak_raw),
     .sym_rx_valid_o          (sym_rx_valid_raw),
