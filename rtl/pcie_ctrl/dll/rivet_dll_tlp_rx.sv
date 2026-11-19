@@ -86,11 +86,15 @@ module rivet_dll_tlp_rx #(
     buf_next = beat_i.sop ? '0 : buf_q;
     wr_base  = beat_i.sop ? '0 : len_q;
     pack_d   = '0;
-    for (int unsigned i = 0; i < 8; i++) begin
-      if (take_beat && (8'(i) < nbytes) &&
-          ((int'(wr_base) + int'(i)) < SLOT_BYTES)) begin
-        buf_next[8*(int'(wr_base) + int'(i)) +: 8] = beat_i.data[8*i +: 8];
-        pack_d[8*i +: 8] = beat_i.data[8*i +: 8];
+    // Parallel insert. Keep is a low prefix, so byte i lands at wr_base+i.
+    // A variable part-select across the frame does not close at Gen2 pclk.
+    for (int unsigned b = 0; b < SLOT_BYTES; b++) begin
+      for (int unsigned i = 0; i < 8; i++) begin
+        if (take_beat && (8'(i) < nbytes) &&
+            (int'(wr_base) + int'(i) == int'(b))) begin
+          buf_next[8*b +: 8] = beat_i.data[8*i +: 8];
+          pack_d[8*i +: 8]   = beat_i.data[8*i +: 8];
+        end
       end
     end
     len_next = take_beat ? OFF_W'(int'(wr_base) + int'(nbytes)) : len_q;
@@ -157,7 +161,7 @@ module rivet_dll_tlp_rx #(
           pld_q <= '0;
           for (int unsigned j = 0; j < SLOT_BYTES - MIN_FR; j++) begin
             if (16'(j) < pld_len)
-              pld_q[8*j +: 8] <= buf_next[8*(j + RIVET_TLP_SEQ_BYTES) +: 8];
+              pld_q[8*j +: 8] <= buf_next[8*j + 8*RIVET_TLP_SEQ_BYTES +: 8];
           end
           pld_len_q     <= pld_len;
           seq_q         <= rx_seq;

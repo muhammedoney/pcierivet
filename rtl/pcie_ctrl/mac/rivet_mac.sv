@@ -157,6 +157,16 @@ module rivet_mac #(
   logic [PIPE_DATA_WIDTH*LANES-1:0] map_rx_data;
   logic [2*LANES-1:0]               map_rx_datak;
   logic [LANES-1:0]                 map_rx_valid;
+  // One pclk after the lane map, so GT RXDATA and the remap mux are not
+  // in the same cycle as the descrambler. os_rx uses lane_en delayed to
+  // match the descrambler's registered symbol bus.
+  logic [PIPE_DATA_WIDTH*LANES-1:0] map_rx_data_q;
+  logic [2*LANES-1:0]               map_rx_datak_q;
+  logic [LANES-1:0]                 map_rx_valid_q;
+  logic [LANES-1:0]                 lane_en_d;
+  logic [LANES-1:0]                 lane_en_d2;
+  logic [3*LANES-1:0]               rxstatus_d;
+  logic [3*LANES-1:0]               rxstatus_d2;
 
   rivet_ltssm #(
     .MODE               (MODE),
@@ -304,16 +314,36 @@ module rivet_mac #(
     .rx_valid_o (map_rx_valid)
   );
 
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      map_rx_data_q  <= '0;
+      map_rx_datak_q <= '0;
+      map_rx_valid_q <= '0;
+      lane_en_d      <= '0;
+      lane_en_d2     <= '0;
+      rxstatus_d     <= '0;
+      rxstatus_d2    <= '0;
+    end else begin
+      map_rx_data_q  <= map_rx_data;
+      map_rx_datak_q <= map_rx_datak;
+      map_rx_valid_q <= map_rx_valid;
+      lane_en_d      <= lane_en;
+      lane_en_d2     <= lane_en_d;
+      rxstatus_d     <= rxstatus;
+      rxstatus_d2    <= rxstatus_d;
+    end
+  end
+
   rivet_mac_descrambler #(
     .LANES           (LANES),
     .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
   ) u_descrambler (
     .pclk_i    (pclk_i),
     .rst_ni    (rst_ni),
-    .data_i    (map_rx_data),
-    .datak_i   (map_rx_datak),
-    .valid_i   (map_rx_valid),
-    .lane_en_i (lane_en),
+    .data_i    (map_rx_data_q),
+    .datak_i   (map_rx_datak_q),
+    .valid_i   (map_rx_valid_q),
+    .lane_en_i (lane_en_d),
     .data_o    (sym_rx_data),
     .datak_o   (sym_rx_datak),
     .valid_o   (sym_rx_valid)
@@ -328,8 +358,8 @@ module rivet_mac #(
     .sym_data_i            (sym_rx_data),
     .sym_datak_i           (sym_rx_datak),
     .sym_valid_i           (sym_rx_valid),
-    .rxstatus_i            (rxstatus),
-    .lane_en_i             (lane_en),
+    .rxstatus_i            (rxstatus_d2),
+    .lane_en_i             (lane_en_d2),
     .capture_clr_i         (capture_clr),
     .ts1_pad_all_o         (ts1_pad_all),
     .ts1_pad_any_o         (ts1_pad_any),

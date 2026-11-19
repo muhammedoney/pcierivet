@@ -51,7 +51,38 @@ module rivet_tl_cfg_space (
 
   import rivet_pkg::*;
 
-  logic [31:0] mem_q [0:RIVET_CFG_DW_N-1];
+  // Block RAM. A 1024:1 flip-flop mux does not close at Gen2 pclk.
+  // Combo snapshots of the dwords the datapath reads every cycle live in
+  // sh_* so those bits are not a RAM read.
+  (* ram_style = "block" *) logic [31:0] mem_q [0:RIVET_CFG_DW_N-1];
+  logic [31:0] ram_rdata_q;
+  logic [9:0]  ram_raddr;
+  logic [9:0]  init_q;
+  logic        init_done_q;
+  logic [31:0] sh_cmd_q;
+  logic [31:0] sh_bar0_q;
+  logic [31:0] sh_msi_ctrl_q;
+  logic [31:0] sh_msi_addr_q;
+  logic [31:0] sh_msi_data_q;
+  logic [31:0] sh_dev_q;
+  logic [31:0] sh_link_q;
+
+  function automatic logic [31:0] cfg_reset_dw(input logic [9:0] dw);
+    unique case (dw)
+      10'd0:  return {RIVET_CFG_DEVICE_ID, RIVET_CFG_VENDOR_ID};
+      10'd1:  return 32'h0010_0000;
+      10'd2:  return {RIVET_CFG_CLASS, RIVET_CFG_REV_ID};
+      10'd11: return {RIVET_CFG_SUBSYS_ID, RIVET_CFG_SUBSYS_VEN};
+      10'd13: return {24'h0, RIVET_CFG_CAP_PTR};
+      10'd15: return 32'h0000_0100;
+      10'd16: return {16'h0003, RIVET_CFG_MSI_OFF, 8'h01};
+      10'd20: return {16'h0080, RIVET_CFG_PCIE_OFF, 8'h05};
+      10'd28: return {16'h0002, 8'h00, 8'h10};
+      10'd29: return {29'h0, RIVET_CFG_CMPS};
+      10'd31: return {22'h0, RIVET_CFG_LINK_WIDTH_CAP, RIVET_CFG_LINK_SPEED_CAP};
+      default: return 32'h0;
+    endcase
+  endfunction
 
   // -------------------------------------------------------------------------
   // Writable / W1C / BAR masks
@@ -164,96 +195,110 @@ module rivet_tl_cfg_space (
   logic mgmt_pulse;
   assign mgmt_pulse = cfg_mgmt_read_i || cfg_mgmt_write_i;
 
-  assign fab_busy_o = (st_q != ST_IDLE);
+  assign fab_busy_o = (st_q != ST_IDLE) || !init_done_q;
   assign fab_ack_o  = fab_ack_q;
   assign fab_rdata_o = rdata_q;
   assign cfg_mgmt_read_data_o       = rdata_q;
   assign cfg_mgmt_read_write_done_o = mgmt_done_q;
 
-  assign bar0_base_o     = mem_q[4] & RIVET_CFG_BAR0_MASK;
+  assign bar0_base_o     = sh_bar0_q & RIVET_CFG_BAR0_MASK;
   assign bar0_mask_o     = RIVET_CFG_BAR0_MASK;
-  assign bar0_mem_en_o   = mem_q[1][1]; // Command.Memory Space Enable
-  assign bus_master_en_o = mem_q[1][2]; // Command.Bus Master Enable
-  assign msi_enable_o    = mem_q[20][16]; // Message Control.MSI Enable
-  assign msi_addr_o      = mem_q[21];
-  assign msi_data_o      = mem_q[23][15:0];
+  assign bar0_mem_en_o   = sh_cmd_q[1]; // Command.Memory Space Enable
+  assign bus_master_en_o = sh_cmd_q[2]; // Command.Bus Master Enable
+  assign msi_enable_o    = sh_msi_ctrl_q[16]; // Message Control.MSI Enable
+  assign msi_addr_o      = sh_msi_addr_q;
+  assign msi_data_o      = sh_msi_data_q[15:0];
 
   // Live Link Status overlay on DW32
   logic [31:0] link_status_overlay;
   always_comb begin
-    link_status_overlay = mem_q[32];
+    link_status_overlay = sh_link_q;
     if (link_up_i) begin
       link_status_overlay[19:16] = link_speed_i;
       link_status_overlay[25:20] = link_width_i;
     end
   end
 
-  function automatic logic [31:0] rd_dw(input logic [9:0] dw);
+  // Address presented this cycle; ram_rdata_q is that dword on the next.
+  always_comb begin
+    ram_raddr = addr_q;
+    if (!init_done_q)
+      ram_raddr = init_q;
+    else if (st_q == ST_IDLE) begin
+      if (fab_req_i)
+        ram_raddr = fab_addr_i;
+      else if (mgmt_pend_q || mgmt_pulse)
+        ram_raddr = mgmt_pulse ? cfg_mgmt_addr_i : mgmt_addr_q;
+    end
+  end
+
+  function automatic logic [31:0] snap_dw(
+      input logic [9:0]  dw,
+      input logic [31:0] dev_now);
     if (dw == 10'd32)
       return link_status_overlay;
-    return mem_q[dw];
+    else if (dw == 10'd1)
+      return sh_cmd_q;
+    else if (dw == 10'd4)
+      return sh_bar0_q;
+    else if (dw == 10'd20)
+      return sh_msi_ctrl_q;
+    else if (dw == 10'd21)
+      return sh_msi_addr_q;
+    else if (dw == 10'd23)
+      return sh_msi_data_q;
+    else if (dw == 10'd30)
+      return dev_now;
+    else
+      return ram_rdata_q;
   endfunction
-
-  integer ii;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
-      st_q         <= ST_IDLE;
-      addr_q       <= '0;
-      write_q      <= 1'b0;
-      be_q         <= '0;
-      wdata_q      <= '0;
-      rdata_q      <= '0;
-      fab_ack_q    <= 1'b0;
-      mgmt_done_q  <= 1'b0;
-      mgmt_pend_q  <= 1'b0;
-      mgmt_pf0_q   <= 1'b1;
-      mgmt_addr_q  <= '0;
-      mgmt_write_q <= 1'b0;
-      mgmt_be_q    <= '0;
-      mgmt_wdata_q <= '0;
-      for (ii = 0; ii < RIVET_CFG_DW_N; ii++)
-        mem_q[ii] <= '0;
-
-      // Type 0 header
-      mem_q[0]  <= {RIVET_CFG_DEVICE_ID, RIVET_CFG_VENDOR_ID};
-      mem_q[1]  <= 32'h0010_0000; // Status CapList=1
-      mem_q[2]  <= {RIVET_CFG_CLASS, RIVET_CFG_REV_ID};
-      mem_q[3]  <= 32'h0000_0000; // Header type 0
-      mem_q[11] <= {RIVET_CFG_SUBSYS_ID, RIVET_CFG_SUBSYS_VEN};
-      mem_q[13] <= {24'h0, RIVET_CFG_CAP_PTR};
-      mem_q[15] <= 32'h0000_0100; // Int Pin = INTA
-
-      // PM @ 0x40: CapID=01, next=0x50, PMC=0x0003
-      mem_q[16] <= {16'h0003, RIVET_CFG_MSI_OFF, 8'h01};
-      mem_q[17] <= 32'h0000_0000; // PMCSR D0
-
-      // MSI @ 0x50: CapID=05, next=0x70, MsgCtrl=0x0080 (64-bit addr cap clear → 32b)
-      mem_q[20] <= {16'h0080, RIVET_CFG_PCIE_OFF, 8'h05};
-      mem_q[21] <= 32'h0000_0000;
-      mem_q[22] <= 32'h0000_0000;
-      mem_q[23] <= 32'h0000_0000;
-
-      // PCIe @ 0x70: CapID=10, next=00, Capabilities Reg ver=2
-      mem_q[28] <= {16'h0002, 8'h00, 8'h10};
-      // Device Cap: MPS 128B (CMPS=000)
-      mem_q[29] <= {29'h0, RIVET_CFG_CMPS};
-      mem_q[30] <= 32'h0000_0000; // Device Ctrl/Status
-      // Link Cap: max speed + width
-      mem_q[31] <= {22'h0, RIVET_CFG_LINK_WIDTH_CAP, RIVET_CFG_LINK_SPEED_CAP};
-      // Link Ctrl/Status: Status speed/width filled by overlay when link_up
-      mem_q[32] <= 32'h0000_0000;
+      st_q          <= ST_IDLE;
+      addr_q        <= '0;
+      write_q       <= 1'b0;
+      be_q          <= '0;
+      wdata_q       <= '0;
+      rdata_q       <= '0;
+      fab_ack_q     <= 1'b0;
+      mgmt_done_q   <= 1'b0;
+      mgmt_pend_q   <= 1'b0;
+      mgmt_pf0_q    <= 1'b1;
+      mgmt_addr_q   <= '0;
+      mgmt_write_q  <= 1'b0;
+      mgmt_be_q     <= '0;
+      mgmt_wdata_q  <= '0;
+      init_q        <= '0;
+      init_done_q   <= 1'b0;
+      ram_rdata_q   <= '0;
+      sh_cmd_q      <= cfg_reset_dw(10'd1);
+      sh_bar0_q     <= '0;
+      sh_msi_ctrl_q <= cfg_reset_dw(10'd20);
+      sh_msi_addr_q <= '0;
+      sh_msi_data_q <= '0;
+      sh_dev_q      <= '0;
+      sh_link_q     <= '0;
     end else begin
+      logic        wr_do;
+      logic [9:0]  wr_addr;
+      logic [31:0] wr_data;
+      logic [31:0] dev_now;
+      logic [31:0] cur;
+      logic [31:0] nxt;
+      wr_do   = 1'b0;
+      wr_addr = init_q;
+      wr_data = cfg_reset_dw(init_q);
+      dev_now = sh_dev_q;
+      if (init_done_q && aer_set_cor_i)      dev_now[16] = 1'b1;
+      if (init_done_q && aer_set_nonfatal_i) dev_now[17] = 1'b1;
+      sh_dev_q <= dev_now;
+
+      // Synchronous read. The address was presented last cycle.
+      ram_rdata_q <= mem_q[ram_raddr];
       fab_ack_q   <= 1'b0;
       mgmt_done_q <= 1'b0;
 
-      // AER → Device Status sticky (Correctable / NonFatal Detected)
-      if (aer_set_cor_i)
-        mem_q[30][16] <= 1'b1;
-      if (aer_set_nonfatal_i)
-        mem_q[30][17] <= 1'b1;
-
-      // Capture cfg_mgmt pulse; hold while fabric owns the file
       if (mgmt_pulse && !mgmt_pend_q) begin
         mgmt_pend_q  <= 1'b1;
         mgmt_pf0_q   <= (cfg_mgmt_function_number_i == 8'h00);
@@ -263,46 +308,70 @@ module rivet_tl_cfg_space (
         mgmt_wdata_q <= cfg_mgmt_write_data_i;
       end
 
-      unique case (st_q)
-        ST_IDLE: begin
-          if (fab_req_i) begin
-            addr_q  <= fab_addr_i;
-            write_q <= fab_write_i;
-            be_q    <= fab_be_i;
-            wdata_q <= fab_wdata_i;
-            st_q    <= ST_FAB;
-          end else if (mgmt_pend_q || mgmt_pulse) begin
-            addr_q  <= mgmt_pulse ? cfg_mgmt_addr_i : mgmt_addr_q;
-            write_q <= mgmt_pulse ? cfg_mgmt_write_i : mgmt_write_q;
-            be_q    <= mgmt_pulse ? cfg_mgmt_byte_enable_i : mgmt_be_q;
-            wdata_q <= mgmt_pulse ? cfg_mgmt_write_data_i : mgmt_wdata_q;
-            // PF0 from live pulse or latched
-            if (mgmt_pulse)
-              mgmt_pf0_q <= (cfg_mgmt_function_number_i == 8'h00);
-            st_q        <= ST_MGMT;
-            mgmt_pend_q <= 1'b0;
+      if (!init_done_q) begin
+        // One dword per cycle after reset. fab_busy stays high until this ends.
+        wr_do = 1'b1;
+        if (init_q == 10'(RIVET_CFG_DW_N - 1))
+          init_done_q <= 1'b1;
+        else
+          init_q <= init_q + 10'd1;
+      end else begin
+        unique case (st_q)
+          ST_IDLE: begin
+            if (fab_req_i) begin
+              addr_q  <= fab_addr_i;
+              write_q <= fab_write_i;
+              be_q    <= fab_be_i;
+              wdata_q <= fab_wdata_i;
+              st_q    <= ST_FAB;
+            end else if (mgmt_pend_q || mgmt_pulse) begin
+              addr_q  <= mgmt_pulse ? cfg_mgmt_addr_i : mgmt_addr_q;
+              write_q <= mgmt_pulse ? cfg_mgmt_write_i : mgmt_write_q;
+              be_q    <= mgmt_pulse ? cfg_mgmt_byte_enable_i : mgmt_be_q;
+              wdata_q <= mgmt_pulse ? cfg_mgmt_write_data_i : mgmt_wdata_q;
+              if (mgmt_pulse)
+                mgmt_pf0_q <= (cfg_mgmt_function_number_i == 8'h00);
+              st_q        <= ST_MGMT;
+              mgmt_pend_q <= 1'b0;
+            end
           end
-        end
-        ST_FAB: begin
-          if (write_q)
-            mem_q[addr_q] <= apply_write(addr_q, mem_q[addr_q], wdata_q, be_q);
-          rdata_q   <= rd_dw(addr_q);
-          fab_ack_q <= 1'b1;
-          st_q      <= ST_IDLE;
-        end
-        ST_MGMT: begin
-          if (!mgmt_pf0_q) begin
-            rdata_q <= '0;
-          end else begin
-            if (write_q)
-              mem_q[addr_q] <= apply_write(addr_q, mem_q[addr_q], wdata_q, be_q);
-            rdata_q <= rd_dw(addr_q);
+          ST_FAB, ST_MGMT: begin
+            if ((st_q == ST_MGMT) && !mgmt_pf0_q) begin
+              rdata_q <= '0;
+            end else begin
+              cur = (addr_q == 10'd30) ? dev_now : snap_dw(addr_q, sh_dev_q);
+              nxt = apply_write(addr_q, cur, wdata_q, be_q);
+              rdata_q <= snap_dw(addr_q, sh_dev_q);
+              if (write_q) begin
+                wr_do   = 1'b1;
+                wr_addr = addr_q;
+                wr_data = nxt;
+                if (addr_q == 10'd1)  sh_cmd_q      <= nxt;
+                if (addr_q == 10'd4)  sh_bar0_q     <= nxt;
+                if (addr_q == 10'd20) sh_msi_ctrl_q <= nxt;
+                if (addr_q == 10'd21) sh_msi_addr_q <= nxt;
+                if (addr_q == 10'd23) sh_msi_data_q <= nxt;
+                if (addr_q == 10'd30) sh_dev_q      <= nxt;
+                if (addr_q == 10'd32) sh_link_q     <= nxt;
+              end
+            end
+            if (st_q == ST_FAB)
+              fab_ack_q <= 1'b1;
+            else
+              mgmt_done_q <= 1'b1;
+            st_q <= ST_IDLE;
           end
-          mgmt_done_q <= 1'b1;
-          st_q        <= ST_IDLE;
+          default: st_q <= ST_IDLE;
+        endcase
+        if (!wr_do && (dev_now != sh_dev_q)) begin
+          wr_do   = 1'b1;
+          wr_addr = 10'd30;
+          wr_data = dev_now;
         end
-        default: st_q <= ST_IDLE;
-      endcase
+      end
+
+      if (wr_do)
+        mem_q[wr_addr] <= wr_data;
     end
   end
 

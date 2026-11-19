@@ -474,10 +474,14 @@ module rivet_mac_os_rx #(
           automatic logic [3:0]  c   = 4'd0;
           automatic logic [63:0] b   = '0;
           automatic logic [7:0]  tl  = 8'd0;
-          automatic logic [TLP_BUF_B*8-1:0] tb = '0;
+          // At most one PIPE beat of payload. Kept narrow so the 160-byte
+          // buffer is a parallel insert, not a variable-index carry chain.
+          automatic logic [7:0]  cap_b [0:7];
           automatic logic        err = 1'b0;
           automatic logic        done = 1'b0;
           automatic logic        nullified = 1'b0;
+
+          for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
 
           for (int unsigned s = 0; s < SYMS; s++) begin
             for (int unsigned l = 0; l < LANES; l++) begin
@@ -520,8 +524,8 @@ module rivet_mac_os_rx #(
                   end else if (rx_ky) begin
                     err  = 1'b1;
                     done = 1'b1;
-                  end else if (tl < 8'(TLP_BUF_B)) begin
-                    tb[8*tl +: 8] = rx_sy;
+                  end else if (tl < 8'd8) begin
+                    cap_b[int'(tl)] = rx_sy;
                     tl = tl + 8'd1;
                   end else begin
                     err  = 1'b1;
@@ -554,7 +558,11 @@ module rivet_mac_os_rx #(
               rx_pkt_d = RX_BODY;
             end
           end else if (saw_stp) begin
-            tlp_buf_d = tb;
+            tlp_buf_d = '0;
+            for (int unsigned i = 0; i < 8; i++) begin
+              if (8'(i) < tl)
+                tlp_buf_d[8*i +: 8] = cap_b[i];
+            end
             tlp_len_d = tl;
             tlp_err_d = err | nullified | (done && (tl == 8'd0));
             tlp_off_d = 8'd0;
@@ -637,10 +645,13 @@ module rivet_mac_os_rx #(
         end
         RX_TLP: begin
           automatic logic [7:0] tl = tlp_len_q;
-          automatic logic [TLP_BUF_B*8-1:0] tb = tlp_buf_q;
+          automatic logic [7:0] cap_b [0:7];
+          automatic logic [3:0] cap_n = 4'd0;
           automatic logic err = tlp_err_q;
           automatic logic done = 1'b0;
           automatic logic nullified = 1'b0;
+
+          for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
 
           for (int unsigned s = 0; s < SYMS; s++) begin
             for (int unsigned l = 0; l < LANES; l++) begin
@@ -656,8 +667,9 @@ module rivet_mac_os_rx #(
                 end else if (rx_ky) begin
                   err  = 1'b1;
                   done = 1'b1;
-                end else if (tl < 8'(TLP_BUF_B)) begin
-                  tb[8*tl +: 8] = rx_sy;
+                end else if ((tl < 8'(TLP_BUF_B)) && (cap_n < 4'd8)) begin
+                  cap_b[int'(cap_n)] = rx_sy;
+                  cap_n = cap_n + 4'd1;
                   tl = tl + 8'd1;
                 end else begin
                   err  = 1'b1;
@@ -667,7 +679,15 @@ module rivet_mac_os_rx #(
             end
           end
 
-          tlp_buf_d = tb;
+          // Each buffer byte compares against the registered length. A
+          // variable part-select does not close at Gen2 pclk.
+          tlp_buf_d = tlp_buf_q;
+          for (int unsigned b = 0; b < TLP_BUF_B; b++) begin
+            for (int unsigned i = 0; i < 8; i++) begin
+              if ((4'(i) < cap_n) && (8'(b) == (tlp_len_q + 8'(i))))
+                tlp_buf_d[8*b +: 8] = cap_b[i];
+            end
+          end
           tlp_len_d = tl;
           tlp_err_d = err | nullified | (done && (tl == 8'd0));
           if (done) begin
