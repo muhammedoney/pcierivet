@@ -102,17 +102,28 @@ module rivet_tl_pio_app #(
     end
   end
 
-  // Port A: init / low dword / synchronous read. Port B: high dword.
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      pio_rd_q <= '0;
-    end else begin
-      pio_rd_q <= pio_q[pio_raddr];
-      if (!pio_ready)
-        pio_q[pio_init_q] <= '0;
-      else if (pio_we_lo)
-        pio_q[pio_addr_lo] <= pio_data_lo;
+  // Port A has no reset. An async reset on this process blocks block RAM.
+  logic              pio_we_a;
+  logic [PIO_AW-1:0] pio_waddr_a;
+  logic [31:0]       pio_wdata_a;
+
+  always_comb begin
+    pio_we_a    = 1'b0;
+    pio_waddr_a = pio_init_q;
+    pio_wdata_a = '0;
+    if (!pio_ready)
+      pio_we_a = 1'b1;
+    else if (pio_we_lo) begin
+      pio_we_a    = 1'b1;
+      pio_waddr_a = pio_addr_lo;
+      pio_wdata_a = pio_data_lo;
     end
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (pio_we_a)
+      pio_q[pio_waddr_a] <= pio_wdata_a;
+    pio_rd_q <= pio_q[pio_raddr];
   end
 
   always_ff @(posedge clk_i) begin
