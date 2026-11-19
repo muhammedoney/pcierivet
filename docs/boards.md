@@ -68,3 +68,7 @@ Lab project: `fpga/vmk180/create_project.tcl` (part **XCVM1802-VSVA2197-2MP-E-S*
 - Create the VMK180 project with `fpga/vmk180/create_project.tcl` (part **XCVM1802-VSVA2197-2MP-E-S**, PG345 Gen2 ×4 on quad 103). See `fpga/vmk180/README.md`.
 - Generated IP and the vendor projects stay local (`fpga/vcu118/build/`, `fpga/vmk180/build/`, gitignored).
 - Gen2 ×1/×2/×4 soft-controller validation does not require Gen3 ×16; the ×16 edge still helps host bring-up later.
+
+## Agilex compile check (not a PIPE board)
+
+`fpga/agi027/` targets the **DK-DEV-AGI027-RA-B** (device **AGIB027R29A1E1VB**) only to elaborate `rivet_pcie_ctrl`. The kit PCIe edge is R-tile 14C PIPE 5.1 SerDes, not 16-bit Gen2 PIPE, so the project assigns no edge pins. See `fpga/agi027/README.md`. The Quartus project directory is `fpga/agi027/build/` (gitignored).

@@ -24,6 +24,8 @@ VPK180 is the later Premium / GTYP / Gen5 kit. The in-tree Versal project is `fp
 
 Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md). The project for this kit is `fpga/vcu118/`.
 
+`fpga/agi027/` is a Quartus compile check of the soft controller on a DK-DEV-AGI027-RA-B (AGIB027R29A1E1VB). It is not a board PHY: the kit edge is R-tile PIPE SerDes.
+
 ## Sponsorship / lab status
 
 The kit we need first is a **VMK180** (EK-VMK180-G, **XCVM1802**), on loan or as a donation. A **VCU118** (EK-U1-VCU118-G, **XCVU9P**) is the second choice and still covers the UltraScale+ shell.
