@@ -57,7 +57,7 @@ Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac
 | Behavioral stub; serial tied | Real PHY instance; map Rivet PIPE ↔ `phy_*` |
 | 16-bit logical width | Connect full 32/64-bit `phy_txdata`/`phy_rxdata` per family table |
 | US and Versal wrappers share the US+ stub packing | Honor US 1-bit `rxstart_block` vs US+ 2-bit if wrapping real IP |
-| No GT/DRP on the stub | VCU118: PG239 (`gt_gtpowergood`). VMK180: PG345 (`phy_ready`, external GT quad). |
+| No GT/DRP on the behavioral stub | `rivet_pcie_phy_wrap` binds PG239 (`gt_gtpowergood`) or PG345 (`phy_ready`, `phy_phystatus_rst`, external GT quad) from `BOARD`. |
 
 ### `rtl/top/rivet_pcie.sv`
 

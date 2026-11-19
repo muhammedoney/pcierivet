@@ -133,7 +133,7 @@ proc rivet_export {cell port dir aliases expect_w} {
   set w [rivet_width [lindex $pins 0]]
   if {$w != $expect_w} {
     rivet_pin_dump $cell
-    error "PG345 $port width is $w, rivet_vmk180_ep expects $expect_w"
+    error "PG345 $port width is $w, rivet_pcie_phy_wrap expects $expect_w"
   }
   foreach p [lrange $pins 1 end] {
     if {[rivet_width $p] != $w} {
@@ -221,6 +221,7 @@ set regs_svh [file normalize [file join $script_dir include common_cells registe
 rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_dir $regs_svh
 add_files -norecurse [file normalize [file join $script_dir rtl rivet_vmk180_ep.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pipe_pg239_pad.sv]]
+add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pcie_phy_wrap.sv]]
 
 foreach f [get_files -of_objects [current_fileset]] {
   set name [get_property NAME $f]
@@ -285,20 +286,21 @@ rivet_export $phy phy_rxdatak              O {phy_rxdatak} 8
 rivet_export $phy phy_rxdata_valid         O {phy_rxdata_valid} 4
 rivet_export $phy phy_rxstart_block        O {phy_rxstart_block} 8
 rivet_export $phy phy_rxsync_header        O {phy_rxsync_header} 8
-rivet_export $phy phy_txdetectrx_loopback  I {phy_txdetectrx_loopback phy_txdetectrx} 1
+rivet_export $phy phy_txdetectrx_loopback  I {phy_txdetectrx_loopback} 4
 rivet_export $phy phy_txelecidle           I {phy_txelecidle} 4
 rivet_export $phy phy_txcompliance         I {phy_txcompliance} 4
 rivet_export $phy phy_rxpolarity           I {phy_rxpolarity} 4
-rivet_export $phy phy_powerdown            I {phy_powerdown} 2
+rivet_export $phy phy_powerdown            I {phy_powerdown} 8
 rivet_export $phy phy_rate                 I {phy_rate} 3
-rivet_export $phy phy_rxtermination        I {phy_rxtermination} 4
+rivet_export $phy phy_rx_termination       I {phy_rx_termination phy_rxtermination} 4
 rivet_export $phy phy_rxvalid              O {phy_rxvalid} 4
 rivet_export $phy phy_phystatus            O {phy_phystatus} 4
+rivet_export $phy phy_phystatus_rst        O {phy_phystatus_rst} 1
 rivet_export $phy phy_rxelecidle           O {phy_rxelecidle} 4
 rivet_export $phy phy_rxstatus             O {phy_rxstatus} 12
-rivet_export $phy phy_txmargin             I {phy_txmargin} 3
-rivet_export $phy phy_txswing              I {phy_txswing} 1
-rivet_export $phy phy_txdeemph             I {phy_txdeemph} 1
+rivet_export $phy phy_txmargin             I {phy_txmargin} 12
+rivet_export $phy phy_txswing              I {phy_txswing} 4
+rivet_export $phy phy_txdeemph             I {phy_txdeemph} 4
 rivet_export $phy phy_txeq_ctrl            I {phy_txeq_ctrl} 8
 rivet_export $phy phy_txeq_preset          I {phy_txeq_preset} 16
 rivet_export $phy phy_txeq_coeff           I {phy_txeq_coeff} 24

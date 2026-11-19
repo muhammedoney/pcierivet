@@ -12,6 +12,11 @@ package rivet_pkg;
     RIVET_MODE_DSP = 3  // Switch Downstream Port
   } rivet_mode_e;
 
+  // Board select for rivet_pcie_phy_wrap. Same idea as Wupper CARD_TYPE:
+  // one wrapper, the generate picks the vendor PHY for that board.
+  localparam int unsigned RIVET_BOARD_VCU118 = 0; // PG239, XCVU9P
+  localparam int unsigned RIVET_BOARD_VMK180 = 1; // PG345, XCVM1802
+
   typedef enum int unsigned {
     RIVET_GEN1 = 1,
     RIVET_GEN2 = 2,

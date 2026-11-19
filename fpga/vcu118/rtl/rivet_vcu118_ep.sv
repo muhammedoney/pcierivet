@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// VCU118 Endpoint shell: Rivet Gen2 controller + generated PG239 pcie_phy_0.
+// VCU118 Endpoint shell: Rivet Gen2 controller + rivet_pcie_phy_wrap (PG239).
 // Config completions stay inside the controller. BAR0 Mem32 uses rivet_tl_pio_app.
 // Requester (RQ/RC) is idle until a later host-memory step.
 //
@@ -23,7 +23,6 @@ module rivet_vcu118_ep (
 
   localparam int unsigned LANES           = 4;
   localparam int unsigned PIPE_DATA_WIDTH = 16;
-  localparam int unsigned PHY_DATA_WIDTH  = 64;
 
   logic sys_rst_n;
   logic sys_clk;
@@ -31,22 +30,15 @@ module rivet_vcu118_ep (
   logic sys_clk_bufg;
   logic pipe_clk;
   logic user_clk;
-  logic core_clk;
-  logic mcap_clk;
-  logic phy_phystatus_rst;
   logic phy_ready;
   logic link_up;
   logic [5:0] cfg_ltssm_state;
   logic [LANES-1:0] gt_gtpowergood;
   logic [23:0] hb_q;
 
-  logic [PHY_DATA_WIDTH*LANES-1:0] phy_txdata;
-  logic [2*LANES-1:0]              phy_txdatak;
   logic [LANES-1:0]                phy_txdata_valid;
   logic [LANES-1:0]                phy_txstart_block;
   logic [2*LANES-1:0]              phy_txsync_header;
-  logic [PHY_DATA_WIDTH*LANES-1:0] phy_rxdata;
-  logic [2*LANES-1:0]              phy_rxdatak;
   logic [LANES-1:0]                phy_rxdata_valid;
   logic [2*LANES-1:0]              phy_rxstart_block;
   logic [2*LANES-1:0]              phy_rxsync_header;
@@ -114,76 +106,63 @@ module rivet_vcu118_ep (
     .O       (sys_clk_bufg)
   );
 
-  assign phy_ready              = ~phy_phystatus_rst;
-  assign pipe_phystatus_rst_bus = {LANES{phy_phystatus_rst}};
-
-  pcie_phy_0 u_phy (
+  rivet_pcie_phy_wrap #(
+    .BOARD           (rivet_pkg::RIVET_BOARD_VCU118),
+    .LANES           (LANES),
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+  ) u_phy (
     .phy_refclk         (sys_clk_bufg),
     .phy_gtrefclk       (sys_clk_gt),
     .phy_rst_n          (sys_rst_n),
-    .phy_userclk        (user_clk),
-    .phy_mcapclk        (mcap_clk),
-    .phy_pclk           (pipe_clk),
-    .phy_coreclk        (core_clk),
-    .phy_rxp            (pci_exp_rxp),
-    .phy_rxn            (pci_exp_rxn),
-    .phy_txp            (pci_exp_txp),
-    .phy_txn            (pci_exp_txn),
-    .phy_txdata         (phy_txdata),
-    .phy_txdatak        (phy_txdatak),
-    .phy_txdata_valid   (phy_txdata_valid),
-    .phy_txstart_block  (phy_txstart_block),
-    .phy_txsync_header  (phy_txsync_header),
-    .phy_rxdata         (phy_rxdata),
-    .phy_rxdatak        (phy_rxdatak),
-    .phy_rxdata_valid   (phy_rxdata_valid),
-    .phy_rxstart_block  (phy_rxstart_block),
-    .phy_rxsync_header  (phy_rxsync_header),
-    .phy_txdetectrx     (phy_txdetectrx),
-    .phy_txelecidle     (phy_txelecidle),
-    .phy_txcompliance   (phy_txcompliance),
-    .phy_rxpolarity     (phy_rxpolarity),
-    .phy_powerdown      (phy_powerdown),
-    .phy_rate           (phy_rate_mac[1:0]),
-    .phy_rxvalid        (phy_rxvalid),
-    .phy_phystatus      (phy_phystatus),
-    .phy_phystatus_rst  (phy_phystatus_rst),
-    .phy_rxelecidle     (phy_rxelecidle),
-    .phy_rxstatus       (phy_rxstatus),
-    .phy_txmargin       (phy_txmargin),
-    .phy_txswing        (phy_txswing),
-    .phy_txdeemph       (phy_txdeemph),
-    .phy_txeq_ctrl      (phy_txeq_ctrl),
-    .phy_txeq_preset    (phy_txeq_preset),
-    .phy_txeq_coeff     (phy_txeq_coeff),
-    .phy_txeq_fs        (phy_txeq_fs),
-    .phy_txeq_lf        (phy_txeq_lf),
-    .phy_txeq_new_coeff (phy_txeq_new_coeff),
-    .phy_txeq_done      (phy_txeq_done),
-    .phy_rxeq_ctrl        (phy_rxeq_ctrl),
-    .phy_rxeq_txpreset    (phy_rxeq_txpreset),
-    .phy_rxeq_preset_sel  (phy_rxeq_preset_sel),
-    .phy_rxeq_new_txcoeff (phy_rxeq_new_txcoeff),
-    .phy_rxeq_done        (phy_rxeq_done),
-    .phy_rxeq_adapt_done  (phy_rxeq_adapt_done),
+    .pclk               (pipe_clk),
+    .user_clk           (user_clk),
+    .phy_ready          (phy_ready),
     .gt_gtpowergood     (gt_gtpowergood),
-    .as_mac_in_detect   (as_mac_in_detect),
-    .as_cdr_hold_req    (as_cdr_hold_req)
-  );
-
-  rivet_pipe_pg239_pad #(
-    .LANES           (LANES),
-    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH),
-    .PHY_DATA_WIDTH  (PHY_DATA_WIDTH)
-  ) u_pad (
-    .mac_txdata  (mac_txdata),
-    .mac_txdatak (mac_txdatak),
-    .mac_rxdata  (mac_rxdata),
-    .mac_rxdatak (mac_rxdatak),
-    .phy_txdata  (phy_txdata),
-    .phy_txdatak (phy_txdatak),
-    .phy_rxdata  (phy_rxdata),
-    .phy_rxdatak (phy_rxdatak)
+    .pci_exp_txp        (pci_exp_txp),
+    .pci_exp_txn        (pci_exp_txn),
+    .pci_exp_rxp        (pci_exp_rxp),
+    .pci_exp_rxn        (pci_exp_rxn),
+    .pipe_txdata        (mac_txdata),
+    .pipe_txdatak       (mac_txdatak),
+    .pipe_txdata_valid  (phy_txdata_valid),
+    .pipe_txstart_block (phy_txstart_block),
+    .pipe_txsync_header (phy_txsync_header),
+    .pipe_rxdata        (mac_rxdata),
+    .pipe_rxdatak       (mac_rxdatak),
+    .pipe_rxdata_valid  (phy_rxdata_valid),
+    .pipe_rxstart_block (phy_rxstart_block),
+    .pipe_rxsync_header (phy_rxsync_header),
+    .pipe_txdetectrx    (phy_txdetectrx),
+    .pipe_txelecidle    (phy_txelecidle),
+    .pipe_txcompliance  (phy_txcompliance),
+    .pipe_rxpolarity    (phy_rxpolarity),
+    .pipe_powerdown     (phy_powerdown),
+    .pipe_rate          (phy_rate_mac),
+    .pipe_rxvalid       (phy_rxvalid),
+    .pipe_phystatus     (phy_phystatus),
+    .pipe_phystatus_rst (pipe_phystatus_rst_bus),
+    .pipe_rxelecidle    (phy_rxelecidle),
+    .pipe_rxstatus      (phy_rxstatus),
+    .pipe_txmargin      (phy_txmargin),
+    .pipe_txswing       (phy_txswing),
+    .pipe_txdeemph      (phy_txdeemph),
+    .pipe_txeq_ctrl     (phy_txeq_ctrl),
+    .pipe_txeq_preset   (phy_txeq_preset),
+    .pipe_txeq_coeff    (phy_txeq_coeff),
+    .pipe_txeq_fs       (phy_txeq_fs),
+    .pipe_txeq_lf       (phy_txeq_lf),
+    .pipe_txeq_new_coeff (phy_txeq_new_coeff),
+    .pipe_txeq_done     (phy_txeq_done),
+    .pipe_rxeq_ctrl     (phy_rxeq_ctrl),
+    .pipe_rxeq_txpreset (phy_rxeq_txpreset),
+    .pipe_rxeq_preset_sel (phy_rxeq_preset_sel),
+    .pipe_rxeq_new_txcoeff (phy_rxeq_new_txcoeff),
+    .pipe_rxeq_adapt_done (phy_rxeq_adapt_done),
+    .pipe_rxeq_done     (phy_rxeq_done),
+    .pipe_as_mac_in_detect (as_mac_in_detect),
+    .pipe_as_cdr_hold_req  (as_cdr_hold_req),
+    .pcie_ltssm_state      (cfg_ltssm_state),
+    .pcie_link_reach_target (link_up)
   );
 
   rivet_tl_pio_app u_pio (
