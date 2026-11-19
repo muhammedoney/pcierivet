@@ -373,7 +373,7 @@ module board;
     // Class C: EP bus-master MemWr (ensure BME; RQ path). Host addr < 4096 (RP DATA_STORE).
     saw_ep_rq_memwr = 1'b0;
     class_c_pass    = 1'b0;
-    force EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2] = 1'b1; // Command.BME
+    force EP.u_rivet_ep.u_ctrl.u_cfg_space.sh_cmd_q[2] = 1'b1; // Command.BME
     bm_kick(1'b1, 1'b0, 32'h0000_0100, 32'hC0DE_BEEF);
     fork
       begin
@@ -484,7 +484,7 @@ module board;
       release EP.u_rivet_ep.bm_do_rd;
       release EP.u_rivet_ep.bm_host_addr;
       release EP.u_rivet_ep.bm_wr_data;
-      release EP.u_rivet_ep.u_ctrl.u_cfg_space.mem_q[1][2];
+      release EP.u_rivet_ep.u_ctrl.u_cfg_space.sh_cmd_q[2];
 
       $display("[%t] : Class E probe wr=%0b rd=%0b bm_rd=%08h",
                $realtime, ok_wr, ok_rd, rd1);

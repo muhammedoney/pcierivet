@@ -44,7 +44,12 @@ module rivet_dll_replay #(
   logic        valid_q [TLP_SLOTS];
   logic [11:0] seq_q   [TLP_SLOTS];
   logic [15:0] len_q   [TLP_SLOTS];
-  logic [DATA_W-1:0] data_q [TLP_SLOTS];
+  // One slot is 1280 bits. A flip-flop array with a combo read does not
+  // close at Gen2 pclk. The read data is the slot addressed last cycle,
+  // and replay_valid_o is held off for that fetch cycle.
+  (* ram_style = "block" *) logic [DATA_W-1:0] data_q [0:TLP_SLOTS-1];
+  logic [DATA_W-1:0] replay_data_q;
+  logic              replay_valid_q;
 
   function automatic bit seq_acked(input logic [11:0] a, input logic [11:0] s);
     return ((s - a) < 12'd2048);
@@ -75,10 +80,19 @@ module rivet_dll_replay #(
 
   assign replay_active_o = replay_active_q;
   assign replay_done_o   = replay_done_q;
-  assign replay_valid_o  = replay_active_q && valid_q[replay_idx_q];
+  assign replay_valid_o  = replay_valid_q;
   assign replay_seq_o    = seq_q[replay_idx_q];
   assign replay_len_o    = len_q[replay_idx_q];
-  assign replay_data_o   = data_q[replay_idx_q];
+  assign replay_data_o   = replay_data_q;
+
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni)
+      replay_data_q <= '0;
+    else
+      replay_data_q <= data_q[replay_idx_q];
+    if (rst_ni && !clear_i && push_valid_i && push_ready_o)
+      data_q[wr_q] <= push_data_i;
+  end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -88,13 +102,13 @@ module rivet_dll_replay #(
       replay_idx_q    <= '0;
       replay_active_q <= 1'b0;
       replay_done_q   <= 1'b0;
+      replay_valid_q  <= 1'b0;
       ack_hold_q      <= 1'b0;
       ack_seq_q       <= '0;
       for (int unsigned i = 0; i < TLP_SLOTS; i++) begin
         valid_q[i] <= 1'b0;
         seq_q[i]   <= '0;
         len_q[i]   <= '0;
-        data_q[i]  <= '0;
       end
     end else if (clear_i) begin
       wr_q            <= '0;
@@ -103,6 +117,7 @@ module rivet_dll_replay #(
       replay_idx_q    <= '0;
       replay_active_q <= 1'b0;
       replay_done_q   <= 1'b0;
+      replay_valid_q  <= 1'b0;
       ack_hold_q      <= 1'b0;
       ack_seq_q       <= '0;
       for (int unsigned i = 0; i < TLP_SLOTS; i++) valid_q[i] <= 1'b0;
@@ -124,7 +139,6 @@ module rivet_dll_replay #(
         valid_q[wr_q] <= 1'b1;
         seq_q[wr_q]   <= push_seq_i;
         len_q[wr_q]   <= push_len_i;
-        data_q[wr_q]  <= push_data_i;
         wr_q          <= wr_q + 1'b1;
         count_q       <= count_q + 16'd1;
       end else if (purge_d) begin
@@ -143,7 +157,11 @@ module rivet_dll_replay #(
       if (replay_start_i && !replay_active_q && (count_q != 16'd0) && !head_ack) begin
         replay_active_q <= 1'b1;
         replay_idx_q    <= rd_q;
-      end else if (replay_active_q && replay_valid_o && replay_ready_i) begin
+        replay_valid_q  <= 1'b0;
+      end else if (replay_active_q && !replay_valid_q) begin
+        replay_valid_q <= valid_q[replay_idx_q];
+      end else if (replay_active_q && replay_valid_q && replay_ready_i) begin
+        replay_valid_q <= 1'b0;
         if ((replay_idx_q + 1'b1) == wr_q) begin
           replay_active_q <= 1'b0;
           replay_done_q   <= 1'b1;

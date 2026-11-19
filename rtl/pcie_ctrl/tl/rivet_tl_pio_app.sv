@@ -43,10 +43,22 @@ module rivet_tl_pio_app #(
   logic [9:0]   rem_q;
   logic         is_wr_q;
   logic [3:0]   fbe_q;
-  logic [31:0]  data_q;
-  logic [31:0]  pio_q [0:PIO_N-1];
+  // Block RAM. A 256:1 flip-flop read does not close at Gen2 pclk.
+  localparam int unsigned PIO_AW = (PIO_N <= 1) ? 1 : $clog2(PIO_N);
+  (* ram_style = "block" *) logic [31:0] pio_q [0:PIO_N-1];
+  logic [31:0]       pio_rd_q;
+  logic [PIO_AW-1:0] pio_raddr;
+  logic              pio_ready;
+  logic [PIO_AW-1:0] pio_init_q;
+  logic              pio_we_lo;
+  logic              pio_we_hi;
+  logic [PIO_AW-1:0] pio_addr_lo;
+  logic [PIO_AW-1:0] pio_addr_hi;
+  logic [31:0]       pio_data_lo;
+  logic [31:0]       pio_data_hi;
 
-  assign m_axis_cq_tready = (st_q == ST_CQ0) || (st_q == ST_CQ1) || (st_q == ST_CQD);
+  assign m_axis_cq_tready = pio_ready &&
+      ((st_q == ST_CQ0) || (st_q == ST_CQ1) || (st_q == ST_CQD));
   assign s_axis_cc_tuser  = rivet_cc_tuser_pack(1'b0);
   assign s_axis_cc_tkeep  = 2'b11;
   assign s_axis_cc_tvalid = (st_q == ST_CC0) || (st_q == ST_CC1) || (st_q == ST_CCD);
@@ -67,9 +79,45 @@ module rivet_tl_pio_app #(
         s_axis_cc_tdata[31:16] = req_id_q;
         s_axis_cc_tdata[63:48] = 16'h0100; // completer ID
       end
-      ST_CCD: s_axis_cc_tdata = {32'h0, data_q};
+      ST_CCD: s_axis_cc_tdata = {32'h0, pio_rd_q};
       default: ;
     endcase
+  end
+
+  always_comb begin
+    pio_raddr   = addr_q[2 +: PIO_AW];
+    pio_we_lo   = 1'b0;
+    pio_we_hi   = 1'b0;
+    pio_addr_lo = addr_q[2 +: PIO_AW];
+    pio_addr_hi = PIO_AW'(addr_q[2 +: PIO_AW] + 1'b1);
+    pio_data_lo = m_axis_cq_tdata[31:0];
+    pio_data_hi = m_axis_cq_tdata[63:32];
+    if ((st_q == ST_CCD) && (rem_q > 10'd1))
+      pio_raddr = PIO_AW'(addr_q[2 +: PIO_AW] + 1'b1);
+    if (pio_ready && (st_q == ST_CQD) && m_axis_cq_tvalid && m_axis_cq_tready) begin
+      if (rem_q != 10'd0)
+        pio_we_lo = 1'b1;
+      if ((rem_q > 10'd1) && m_axis_cq_tkeep[1])
+        pio_we_hi = 1'b1;
+    end
+  end
+
+  // Port A: init / low dword / synchronous read. Port B: high dword.
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      pio_rd_q <= '0;
+    end else begin
+      pio_rd_q <= pio_q[pio_raddr];
+      if (!pio_ready)
+        pio_q[pio_init_q] <= '0;
+      else if (pio_we_lo)
+        pio_q[pio_addr_lo] <= pio_data_lo;
+    end
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (rst_ni && pio_we_hi)
+      pio_q[pio_addr_hi] <= pio_data_hi;
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -81,9 +129,14 @@ module rivet_tl_pio_app #(
       len_q    <= '0;
       rem_q    <= '0;
       is_wr_q  <= 1'b0;
-      fbe_q    <= '0;
-      data_q   <= '0;
-      for (int unsigned i = 0; i < PIO_N; i++) pio_q[i] <= '0;
+      fbe_q       <= '0;
+      pio_ready   <= 1'b0;
+      pio_init_q  <= '0;
+    end else if (!pio_ready) begin
+      if (pio_init_q == PIO_AW'(PIO_N - 1))
+        pio_ready <= 1'b1;
+      else
+        pio_init_q <= pio_init_q + 1'b1;
     end else begin
       unique case (st_q)
         ST_CQ0: begin
@@ -113,12 +166,10 @@ module rivet_tl_pio_app #(
             automatic logic [9:0]  wrem  = rem_q;
             // 64-bit CQ: up to two DW per beat
             if (wrem != 10'd0) begin
-              pio_q[waddr[9:2]] <= m_axis_cq_tdata[31:0];
               waddr = waddr + 32'd4;
               wrem  = wrem - 10'd1;
             end
             if (wrem != 10'd0 && m_axis_cq_tkeep[1]) begin
-              pio_q[waddr[9:2]] <= m_axis_cq_tdata[63:32];
               waddr = waddr + 32'd4;
               wrem  = wrem - 10'd1;
             end
@@ -131,10 +182,8 @@ module rivet_tl_pio_app #(
           end
         end
         ST_CC0: begin
-          if (s_axis_cc_tvalid && s_axis_cc_tready[0]) begin
-            data_q <= pio_q[addr_q[9:2]];
-            st_q   <= ST_CC1;
-          end
+          if (s_axis_cc_tvalid && s_axis_cc_tready[0])
+            st_q <= ST_CC1;
         end
         ST_CC1: begin
           if (s_axis_cc_tvalid && s_axis_cc_tready[0]) begin
@@ -153,7 +202,6 @@ module rivet_tl_pio_app #(
               automatic logic [31:0] naddr = addr_q + 32'd4;
               addr_q <= naddr;
               rem_q  <= rem_q - 10'd1;
-              data_q <= pio_q[naddr[9:2]];
               st_q   <= ST_CCD;
             end
           end

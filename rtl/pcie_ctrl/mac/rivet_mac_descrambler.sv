@@ -42,6 +42,11 @@ module rivet_mac_descrambler #(
   logic [4:0]  os_left_n  [LANES];
   logic        com_pend_n [LANES];
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_d;
+  // Registered so the LFSR xor is not in the same cycle as the MAC
+  // symbol window and the TLP byte insert (Gen2 pclk is 250 MHz).
+  logic [PIPE_DATA_WIDTH*LANES-1:0] data_q;
+  logic [2*LANES-1:0]               datak_q;
+  logic [LANES-1:0]                 valid_q;
 
   always_comb begin
     data_d = data_i;
@@ -101,12 +106,18 @@ module rivet_mac_descrambler #(
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
+      data_q  <= '0;
+      datak_q <= '0;
+      valid_q <= '0;
       for (int unsigned l = 0; l < LANES; l++) begin
         lfsr_q[l]     <= RIVET_LFSR_SEED;
         os_left_q[l]  <= '0;
         com_pend_q[l] <= 1'b0;
       end
     end else begin
+      data_q  <= data_d;
+      datak_q <= datak_i;
+      valid_q <= valid_i;
       for (int unsigned l = 0; l < LANES; l++) begin
         lfsr_q[l]     <= lfsr_next[l];
         os_left_q[l]  <= os_left_n[l];
@@ -115,8 +126,8 @@ module rivet_mac_descrambler #(
     end
   end
 
-  assign data_o  = data_d;
-  assign datak_o = datak_i;
-  assign valid_o = valid_i;
+  assign data_o  = data_q;
+  assign datak_o = datak_q;
+  assign valid_o = valid_q;
 
 endmodule : rivet_mac_descrambler

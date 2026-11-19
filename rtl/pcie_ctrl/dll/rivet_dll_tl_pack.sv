@@ -31,7 +31,6 @@ module rivet_dll_tl_pack #(
 
   logic              take;
   logic [7:0]        nbytes;
-  logic [OFF_W-1:0]  wr_base;
   int unsigned       filled;
   logic [SLOT_BYTES*8-1:0] buf_next;
   logic [OFF_W-1:0]        len_next;
@@ -44,25 +43,27 @@ module rivet_dll_tl_pack #(
 
   assign take = s_tvalid_i && s_tready_o;
 
+  // Prefix of keep, then a per-byte compare. A running index into the
+  // 160-byte buffer does not close at Gen2 pclk.
+  logic [3:0] keep_pref [0:KEEP_W];
+
   always_comb begin
-    nbytes   = '0;
+    keep_pref[0] = 4'd0;
     for (int unsigned i = 0; i < KEEP_W; i++)
-      if (s_tkeep_i[i]) nbytes++;
-    wr_base  = len_q;
+      keep_pref[i + 1] = keep_pref[i] + 4'(s_tkeep_i[i]);
+    nbytes   = 8'(keep_pref[KEEP_W]);
     buf_next = buf_q;
-    filled   = 0;
-    overflow = 1'b0;
-    for (int unsigned i = 0; i < KEEP_W; i++) begin
-      if (take && s_tkeep_i[i]) begin
-        if (int'(wr_base) + filled >= SLOT_BYTES)
-          overflow = 1'b1;
-        else begin
-          buf_next[8*(int'(wr_base) + filled) +: 8] = s_tdata_i[8*i +: 8];
-          filled++;
+    filled   = int'(nbytes);
+    overflow = take && ((int'(len_q) + int'(nbytes)) > SLOT_BYTES);
+    if (take && !overflow) begin
+      for (int unsigned b = 0; b < SLOT_BYTES; b++) begin
+        for (int unsigned i = 0; i < KEEP_W; i++) begin
+          if (s_tkeep_i[i] && (int'(len_q) + int'(keep_pref[i]) == int'(b)))
+            buf_next[8*b +: 8] = s_tdata_i[8*i +: 8];
         end
       end
     end
-    len_next = take ? OFF_W'(int'(wr_base) + filled) : len_q;
+    len_next = (take && !overflow) ? OFF_W'(int'(len_q) + int'(nbytes)) : len_q;
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
