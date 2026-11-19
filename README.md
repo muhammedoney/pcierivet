@@ -57,7 +57,7 @@ Where each layer, interface, and vendor product sits in the stack:
 - **AXI-ST + `cfg_mgmt` (PG213-style)** — user boundary. Xilinx **PG213** IP is the closest **functional equivalent to the complete Rivet soft IP**; Rivet aligns config access to PG213 Table 26 (`cfg_mgmt_*`), not AXI-Lite. See the [PG213 interface audit](docs/pg213-interface.md).
 - **PIPE** — MAC ↔ PHY boundary (Intel PIPE spec). Rivet's controller talks PIPE; it does not embed the PHY.
 - **`rivet_pcie_ctrl`** covers **TL + DLL + MAC** (incl. Config Space), ending at PIPE — no vendor primitives.
-- **`rivet_pcie_phy_*`** covers **PCS + PMA** by wrapping the family PHY (Xilinx **PG239** / **PG345**, or the Intel Native PHY PIPE).
+- **`rivet_pcie_phy_*`** covers **PCS + PMA** by wrapping the family PHY (Xilinx **PG239** / **PG345**).
 - **`rivet_pcie`** = controller + PHY, the drop-in full IP.
 
 `MODE` selects Endpoint, Root Complex/Port, Switch USP, or Switch DSP. Current focus: **Endpoint**, **Gen2**, lanes **×1 / ×2 / ×4**. Phase 1 priority: **UVM environment**, then Gen2 link RTL.
@@ -69,7 +69,7 @@ Where each layer, interface, and vendor product sits in the stack:
 | Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
 | Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
-| Target FPGA | **VCU118** (US+), **VMK180** (Versal primary), **DK-DEV-10CX220-B** (Intel primary). VPK180 is the later Premium path |
+| Target FPGA | **VCU118** (US+), **VMK180** (Versal primary). VPK180 is the later Premium path |
 | Verification | Phase 1 MVP + Phase 2 Full Gen2 EP (sim) closed; Verilator CI; Vivado BFM side-path |
 
 Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen3 when link proof allows — not Gen3/4 protocol yet.
@@ -79,7 +79,7 @@ Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verificatio
 ```text
 rtl/pcie_ctrl/        Soft controller top + rivet_pkg (to PIPE)
   mac/ dll/ tl/       Layer sources (LTSSM/OS, DLLP/FC, TLP/cfg)
-rtl/phy/              PG239 / PG345 / Cyclone 10 GX family PHY wrappers
+rtl/phy/              PG239 / PG345 family PHY wrappers
 rtl/top/              rivet_pcie = ctrl + phy
 rtl/interfaces/       PIPE, AXI-ST, cfg_mgmt SV interfaces
 tb/uvm/               Primary UVM (DUT = rivet_pcie_ctrl)
@@ -95,9 +95,8 @@ Any of these evaluation kits works for FPGA bring-up; the soft PHY / constraints
 | **AMD Virtex UltraScale+ VCU118** | **XCVU9P** | UltraScale+ GTY; in-tree PG239 US+ path (`fpga/vcu118`) |
 | **AMD Versal Prime VMK180** | **XCVM1802** | Versal primary. PG345 GTY, Gen2 ×4 on quad 103 (`fpga/vmk180`) |
 | **AMD Versal Premium VPK180** | Versal Premium | Later GTYP / Gen5 path. Not the Versal bring-up target |
-| **Altera Cyclone 10 GX dev kit** | **10CX220YF780E5G** | Intel primary. Native PHY PIPE Gen2 ×4 (`fpga/c10gx`). Ordering code DK-DEV-10CX220-B |
 
-Sim / RTL default today still exercises the UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`) path. Versal is `FPGA_FAMILY=2` → `rivet_pcie_phy_versal`. Cyclone 10 GX is `FPGA_FAMILY=3` → `rivet_pcie_phy_c10gx`. Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
+Sim / RTL default today still exercises the UltraScale+ (`FPGA_FAMILY=0` → `rivet_pcie_phy_usplus`) path. Versal is `FPGA_FAMILY=2` → `rivet_pcie_phy_versal`. Details: [Hardware](docs/hardware.md), [Boards](docs/boards.md).
 
 ## Tools
 
@@ -107,7 +106,6 @@ Sim / RTL default today still exercises the UltraScale+ (`FPGA_FAMILY=0` → `ri
 | Verilator | Lint / smoke (CI) |
 | Yosys | Open synth sanity |
 | Vivado | PHY IP + optional BFM export + board flows (US+ / Versal as available) |
-| Quartus Prime Pro | Cyclone 10 GX Native PHY PIPE + `fpga/c10gx` board flow |
 
 ## Quick start (Verilator)
 
@@ -171,7 +169,6 @@ Early-stage open interconnect IP. **Hardware sponsorship is a real blocker** for
 - **AMD Virtex UltraScale+ VCU118** (**XCVU9P**) — UltraScale+ primary
 - **AMD Versal Prime VMK180** (**XCVM1802**) — Versal primary
 - **AMD Versal Premium VPK180** — later GTYP / Gen5 path
-- **Altera Cyclone 10 GX Development Kit** (**DK-DEV-10CX220-B**, **10CX220YF780E5G**) — Intel primary
 
 Also welcome:
 
