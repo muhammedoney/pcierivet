@@ -16,3 +16,6 @@
 [submodule "third_party/ref/litepcie"]
 	path = third_party/ref/litepcie
 	url = https://github.com/enjoy-digital/litepcie.git
+[submodule "third_party/superpowers"]
+	path = third_party/superpowers
+	url = https://github.com/obra/superpowers.git
