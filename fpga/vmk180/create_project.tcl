@@ -76,22 +76,33 @@ proc rivet_add_filelist {repo listfile build regs_svh} {
 }
 
 proc rivet_set_first {cell names values} {
+  # set_property on a missing CONFIG.* prints a critical warning and still
+  # returns success, so a guessed name must not hide the real parameter.
+  set props [list_property $cell]
   foreach n $names {
+    set key CONFIG.$n
+    if {[lsearch -exact $props $key] < 0} {
+      continue
+    }
     foreach v $values {
-      if {![catch {set_property CONFIG.$n $v $cell} err]} {
-        puts "CONFIG.$n=$v"
+      if {[catch {set_property $key $v $cell} err]} {
+        puts "WARN: $key=$v rejected: $err"
+        continue
+      }
+      set got [get_property -quiet $key $cell]
+      if {$got eq $v} {
+        puts "$key=$got"
         return 1
+      }
+      puts "WARN: $key write $v read back {$got}"
+    }
+    if {![catch {set legal [list_property_value $key $cell]} err]} {
+      if {$legal ne ""} {
+        puts "      $key legal: $legal"
       }
     }
   }
   puts "WARN: none of {$names} accepted {$values}"
-  foreach n $names {
-    if {![catch {set legal [list_property_value CONFIG.$n $cell]} err]} {
-      if {$legal ne ""} {
-        puts "      CONFIG.$n legal: $legal"
-      }
-    }
-  }
   return 0
 }
 
@@ -247,22 +258,25 @@ puts "PG345 VLNV: [lindex $vlnv 0]"
 create_bd_design pcie_phy_bd
 set phy [create_bd_cell -type ip -vlnv [lindex $vlnv 0] pcie_phy_0]
 
-set need_width [rivet_set_first $phy {phy_lane PL_LINK_CAP_MAX_LINK_WIDTH link_width} {X4 x4 4}]
-set need_speed [rivet_set_first $phy {phy_max_speed PL_LINK_CAP_MAX_LINK_SPEED max_link_speed} {5.0_GT/s 5.0_Gb/s Gen2}]
-set need_ref   [rivet_set_first $phy {phy_refclk_freq REF_CLK_FREQ ref_clk_freq} {100_MHz 100}]
-set need_usr   [rivet_set_first $phy {phy_userclk_freq user_clk_freq axisten_freq} {250_MHz 250}]
-set need_mac   [rivet_set_first $phy {phy_use_xilinx_mac use_xilinx_mac} {false FALSE 0}]
+# Names are the PG345 user parameters (component.xml), not the US+ aliases.
+# XCVM1802 is GTY. Width X4 and Gen2 must stick before the PIPE ports are exported.
+rivet_set_first $phy {gt_type} {GTY}
+set need_width [rivet_set_first $phy {PL_LINK_CAP_MAX_LINK_WIDTH} {X4}]
+set need_speed [rivet_set_first $phy {PL_LINK_CAP_MAX_LINK_SPEED} {5.0_GT/s}]
+set need_ref   [rivet_set_first $phy {phy_refclk_freq} {100_MHz}]
+set need_usr   [rivet_set_first $phy {phy_userclk_freq} {250_MHz}]
+rivet_set_first $phy {phy_userclk2_freq} {250_MHz}
+set need_mac   [rivet_set_first $phy {phy_use_xilinx_mac} {false}]
 if {!$need_width || !$need_speed || !$need_ref || !$need_usr || !$need_mac} {
   rivet_pin_dump $phy
   error "PG345 basic config was rejected. See CONFIG warnings above."
 }
-rivet_set_first $phy {pll_type plltype} {LCPLL}
+rivet_set_first $phy {pll_type} {LCPLL}
 rivet_set_first $phy {ins_loss_profile} {Add-in_Card}
-rivet_set_first $phy {aspm ASPM_SUPPORT aspm_support} {No_ASPM}
-rivet_set_first $phy {tx_preset TX_PRESET} {4}
-rivet_set_first $phy {en_slot_clk_config enable_slot_clock_config slot_clock_config} {true TRUE 1}
-rivet_set_first $phy {phy_async_en async_en} {false FALSE 0}
-rivet_set_first $phy {gt_wizard_implementation GT_WIZARD_IMPLEMENTATION} {GT_Wizard_Subsystem}
+rivet_set_first $phy {aspm} {No_ASPM}
+rivet_set_first $phy {tx_preset} {4}
+rivet_set_first $phy {phy_async_en} {false}
+rivet_set_first $phy {enable_gtwizard} {true}
 
 # Export the PIPE contract before block automation so the refclk stays on
 # the ports rivet_vmk180_ep drives (IBUFDS_GTE5 is in that top).
