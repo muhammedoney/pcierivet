@@ -105,7 +105,10 @@ module rivet_vmk180_ep (
 
   // Slot refclk is free-running from the host. GT powergood stays inside
   // the Versal quad, so this buffer is held enabled.
-  BUFG_GT u_bufg_ref (
+  // SIM_DEVICE must be VERSAL_PRIME or write_device_image raises ADEF-911.
+  BUFG_GT #(
+    .SIM_DEVICE ("VERSAL_PRIME")
+  ) u_bufg_ref (
     .CE      (1'b1),
     .CEMASK  (1'b0),
     .CLR     (1'b0),
@@ -116,6 +119,10 @@ module rivet_vmk180_ep (
   );
 
   assign phy_gtrefclk = sys_clk_gt;
+
+  // write_device_image refuses a Versal netlist with no CIPS (DRC CIPS-2).
+  // This is the PL-subsystem preset: no fabric clocks, PCIe refclk stays here.
+  cips_bd_wrapper u_cips ();
 
   rivet_pcie_phy_wrap #(
     .BOARD           (rivet_pkg::RIVET_BOARD_VMK180),
