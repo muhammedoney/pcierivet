@@ -196,20 +196,57 @@ proc rivet_tie_open_inputs {cell} {
   puts "Tied $i open PG345 inputs to 0"
 }
 
+proc rivet_delete_port {name} {
+  set p [get_bd_intf_ports -quiet $name]
+  if {$p ne ""} {
+    delete_bd_objs $p
+  }
+  set p [get_bd_ports -quiet $name]
+  if {$p ne ""} {
+    delete_bd_objs $p
+  }
+}
+
 proc rivet_automate {cell} {
-  set rules {
-    xilinx.com:bd_rule:pcie_phy_versal
-    xilinx.com:bd_rule:versal_pcie_phy
-    xilinx.com:bd_rule:pcie_phy
-  }
-  foreach rule $rules {
-    if {![catch {apply_bd_automation -rule $rule $cell} err]} {
-      puts "Block automation: $rule"
-      return 1
+  # hier false keeps gtwiz_versal_0 at the BD root. link_speed 2 is Gen2.
+  # phy_refclk and phy_gtrefclk must still be open: the rule drives them
+  # from the IBUF it inserts, and a pre-connected sink aborts the rule.
+  set cmd {apply_bd_automation -rule xilinx.com:bd_rule:pcie_phy_versal -config {link_speed 2 link_width 4 hier false}}
+  if {[catch {eval $cmd $cell} err]} {
+    puts "WARN: automation with explicit config failed: $err"
+    if {[catch {apply_bd_automation -rule xilinx.com:bd_rule:pcie_phy_versal $cell} err2]} {
+      puts "WARN: $err2"
+      return 0
     }
-    puts "WARN: $rule failed: $err"
   }
-  return 0
+  puts "Block automation: xilinx.com:bd_rule:pcie_phy_versal"
+  return 1
+}
+
+# The shell already has IBUFDS_GTE5 and BUFG_GT. Drop the copies the
+# automation inserted and export the two clock pins it was driving.
+proc rivet_shell_owns_refclk {phy} {
+  rivet_delete_port pcie_refclk
+  rivet_delete_port CLK_IN_D
+  rivet_delete_port BUFG_GT_CE
+  rivet_delete_port gtwiz_freerun_clk
+
+  foreach c {refclk_ibuf bufg_gt_sysclk} {
+    set cell [get_bd_cells -quiet $c]
+    if {$cell ne ""} {
+      delete_bd_objs $cell
+      puts "Removed automation cell $c"
+    }
+  }
+
+  rivet_export $phy phy_refclk   I {phy_refclk} 1
+  rivet_export $phy phy_gtrefclk I {phy_gtrefclk} 1
+
+  set free [get_bd_pins -quiet gtwiz_versal_0/gtwiz_freerun_clk]
+  if {$free ne "" && [get_bd_nets -quiet -of_objects $free] eq ""} {
+    connect_bd_net [get_bd_ports phy_refclk] $free
+    puts "gtwiz_freerun_clk tied to phy_refclk"
+  }
 }
 
 file mkdir $build_dir
@@ -278,18 +315,12 @@ rivet_set_first $phy {tx_preset} {4}
 rivet_set_first $phy {phy_async_en} {false}
 rivet_set_first $phy {enable_gtwizard} {true}
 
-# Export the PIPE contract before block automation so the refclk stays on
-# the ports rivet_vmk180_ep drives (IBUFDS_GTE5 is in that top).
-rivet_export $phy phy_refclk               I {phy_refclk} 1
-rivet_export $phy phy_gtrefclk             I {phy_gtrefclk} 1
-rivet_export $phy sys_reset                I {sys_reset phy_rst_n} 1
+# Leave phy_refclk, phy_gtrefclk, phy_rst_n, and the pcie_mgt serial pins
+# for block automation. It inserts the GT wizard and names reset sys_reset.
+# MAC pins are exported first so the wrapper keeps the PIPE contract.
 rivet_export $phy phy_pclk                 O {phy_pclk} 1
 rivet_export $phy phy_userclk              O {phy_userclk} 1
 rivet_export $phy phy_ready                O {phy_ready} 1
-rivet_export $phy phy_txp                  O {phy_txp} 4
-rivet_export $phy phy_txn                  O {phy_txn} 4
-rivet_export $phy phy_rxp                  I {phy_rxp} 4
-rivet_export $phy phy_rxn                  I {phy_rxn} 4
 rivet_export $phy phy_txdata               I {phy_txdata} 256
 rivet_export $phy phy_txdatak              I {phy_txdatak} 8
 rivet_export $phy phy_txdata_valid         I {phy_txdata_valid} 4
@@ -339,7 +370,20 @@ if {![rivet_automate $phy]} {
   }
   error "PG345 block automation did not connect the GT quad"
 }
+puts "BD cells after automation:"
+foreach c [get_bd_cells -quiet] {
+  puts "  $c"
+}
+rivet_shell_owns_refclk $phy
 rivet_tie_open_inputs $phy
+puts "BD ports:"
+foreach p [lsort [get_bd_ports -quiet]] {
+  puts "  [get_property DIR $p] [rivet_width $p] [get_property NAME $p]"
+}
+puts "BD interface ports:"
+foreach p [lsort [get_bd_intf_ports -quiet]] {
+  puts "  [get_property NAME $p]"
+}
 
 validate_bd_design
 save_bd_design
