@@ -40,7 +40,9 @@ set st   [get_property STATUS   $impl]
 set prog [get_property PROGRESS $impl]
 puts "impl_1 status=$st progress=$prog"
 if {$prog ne "100%"} {
-  error "impl_1 failed ($st). See [file join $script_dir build]"
+  puts "ERROR: impl_1 failed ($st). See [file join $script_dir build]"
+  catch {close_project}
+  exit 1
 }
 
 set wns [get_property STATS.WNS $impl]

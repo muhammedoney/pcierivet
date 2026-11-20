@@ -397,6 +397,39 @@ generate_target {synthesis instantiation_template} $bd
 set wrapper [make_wrapper -files $bd -top -force]
 add_files -norecurse $wrapper
 
+# DRC CIPS-2: a Versal PDI needs a CIPS so the PMC has a PLM.
+# PL Subsystem keeps DDR and fabric clocks out of this shell.
+create_bd_design cips_bd
+set cips_vlnv [get_ipdefs -filter {NAME == versal_cips}]
+if {$cips_vlnv eq ""} {
+  error "versal_cips is not in this Vivado catalog"
+}
+puts "CIPS VLNV: [lindex $cips_vlnv 0]"
+set cips [create_bd_cell -type ip -vlnv [lindex $cips_vlnv 0] cips_0]
+if {[catch {
+  apply_bd_automation -rule xilinx.com:bd_rule:cips -config {
+    board_preset {Yes}
+    boot_config {Custom}
+    configure_noc {Add new AXI NoC}
+    debug_config {JTAG}
+    design_flow {PL Subsystem}
+    mc_type {None}
+    num_mc_ddr {None}
+    num_mc_lpddr {None}
+    pl_clocks {None}
+    pl_resets {None}
+  } $cips
+} err]} {
+  error "CIPS block automation failed: $err"
+}
+validate_bd_design
+save_bd_design
+set cips_bd [get_files cips_bd.bd]
+generate_target synthesis $cips_bd
+set cips_wrapper [make_wrapper -files $cips_bd -top -force]
+add_files -norecurse $cips_wrapper
+puts "CIPS wrapper: $cips_wrapper"
+
 set_property top rivet_vmk180_ep [current_fileset]
 update_compile_order -fileset sources_1
 
