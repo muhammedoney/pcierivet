@@ -9,26 +9,10 @@
 # Lane 2 TX V41/V42    RX Y46/Y47
 # Lane 3 TX U43/U44    RX W44/W45
 
-# Prefer the PG345 support hierarchy. Fall back to a single quad_inst.
-set gt_quads [get_cells -quiet -hierarchical -filter {NAME =~ *gt_quad_base_0_inst/inst/quad_inst}]
-if {[llength $gt_quads] == 0} {
-  set gt_quads [get_cells -quiet -hierarchical -filter {NAME =~ *gt_quad_0/inst/quad_inst}]
-}
-if {[llength $gt_quads] == 0} {
-  set gt_quads [get_cells -quiet -hierarchical -filter {NAME =~ *quad_inst}]
-}
-if {[llength $gt_quads] == 1} {
-  set_property LOC GTY_QUAD_X0Y3 [lindex $gt_quads 0]
-} else {
-  puts "WARN: expected one GT quad for GTY_QUAD_X0Y3, found [llength $gt_quads]: $gt_quads"
-}
-
-set ref_bufs [get_cells -quiet -hierarchical -filter {REF_NAME == IBUFDS_GTE5}]
-if {[llength $ref_bufs] == 1} {
-  set_property LOC GTY_REFCLK_X0Y6 $ref_bufs
-} else {
-  puts "WARN: expected one IBUFDS_GTE5 for GTY_REFCLK_X0Y6, found [llength $ref_bufs]: $ref_bufs"
-}
+# Vivado rejects Tcl "if" in this XDC (Designutils 20-1307) and then
+# skips the LOC. One GTY quad and one IBUFDS_GTE5 are required.
+set_property LOC GTY_QUAD_X0Y3 [get_cells -hierarchical -filter {NAME =~ *gt_quad_base_0_inst/inst/quad_inst}]
+set_property LOC GTY_REFCLK_X0Y6 [get_cells -hierarchical -filter {REF_NAME == IBUFDS_GTE5}]
 
 create_clock -period 10.000 -name sys_clk [get_ports sys_clk_p]
 
