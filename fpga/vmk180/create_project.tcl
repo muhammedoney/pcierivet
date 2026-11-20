@@ -16,7 +16,7 @@
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir .. ..]]
 set build_dir  [file join $script_dir build]
-set part       xcvm1802-vsva2197-2MP-e-s
+set part       xcvm1802-vsva2197-2MP-e-S
 set boards {
   xilinx.com:vmk180:part0:3.4
   xilinx.com:vmk180:part0:3.3

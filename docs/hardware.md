@@ -6,7 +6,7 @@ Preferred bring-up kit:
 |------|-------|
 | Kit | AMD Versal Prime Series **VMK180** Evaluation Kit (EK-VMK180-G) |
 | FPGA | **XCVM1802** (Versal Prime, GTY) |
-| Example Vivado part | `xcvm1802-vsva2197-2MP-e-s` |
+| Example Vivado part | `xcvm1802-vsva2197-2MP-e-S` |
 | PHY IP | **PG345** generated for XCVM1802 GTY, Gen2 ×4 |
 | Edge | ×8 PCIe, lanes 0–3 on quad 103 (`GTY_QUAD_X0Y3`) |
 

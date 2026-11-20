@@ -4,7 +4,7 @@ rem Implement the existing VMK180 project and write the bitstream.
 rem   fpga\vmk180\impl.cmd
 rem Run fpga\vmk180\create_project.cmd first.
 rem Finds vivado.bat via VIVADO_PATH, XILINX_VIVADO, PATH, then
-rem C:\Xilinx\Vivado\<version> and Program Files\Xilinx\Vivado\<version>.
+rem C:\Xilinx\Vivado\<version>, D:\Xilinx\Vivado\<version>, and Program Files.
 rem Quartus-style note: this script does not redirect Vivado stdout.
 rem Messages print in this console. Vivado also writes fpga\vmk180\impl.log.
 
@@ -34,6 +34,7 @@ if not defined VIVADO_BAT if defined XILINX_VIVADO if exist "%XILINX_VIVADO%\bin
 if not defined VIVADO_BAT call :pick_where vivado.bat
 if not defined VIVADO_BAT call :pick_where vivado
 if not defined VIVADO_BAT call :pick_tree "C:\Xilinx\Vivado"
+if not defined VIVADO_BAT call :pick_tree "D:\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles%\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles(x86)%\Xilinx\Vivado"
 if not defined VIVADO_BAT (

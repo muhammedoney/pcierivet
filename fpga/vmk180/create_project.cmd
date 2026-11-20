@@ -4,7 +4,7 @@ rem Create the local VMK180 Vivado project by running create_project.tcl.
 rem   fpga\vmk180\create_project.cmd
 rem   fpga\vmk180\create_project.cmd synth
 rem Finds vivado.bat via VIVADO_PATH, XILINX_VIVADO, PATH, then
-rem C:\Xilinx\Vivado\<version> and Program Files\Xilinx\Vivado\<version>.
+rem C:\Xilinx\Vivado\<version>, D:\Xilinx\Vivado\<version>, and Program Files.
 
 set "SELF=%~nx0"
 cd /d "%~dp0..\.."
@@ -30,6 +30,7 @@ if not defined VIVADO_BAT if defined XILINX_VIVADO if exist "%XILINX_VIVADO%\bin
 if not defined VIVADO_BAT call :pick_where vivado.bat
 if not defined VIVADO_BAT call :pick_where vivado
 if not defined VIVADO_BAT call :pick_tree "C:\Xilinx\Vivado"
+if not defined VIVADO_BAT call :pick_tree "D:\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles%\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles(x86)%\Xilinx\Vivado"
 if not defined VIVADO_BAT (
