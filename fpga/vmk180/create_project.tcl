@@ -183,7 +183,9 @@ proc rivet_tie_open_inputs {cell} {
     error "xlconstant is not in this Vivado catalog"
   }
   set i 0
-  foreach pin [get_bd_pins -quiet -of_objects $cell -filter {DIR == I}] {
+  # INTF pins are members of GT_RX/GT_TX. A scalar net on those pins
+  # replaces the wizard connection (BD 41-1306).
+  foreach pin [get_bd_pins -quiet -of_objects $cell -filter {DIR == I && INTF == false}] {
     if {[get_bd_nets -quiet -of_objects $pin] ne ""} {
       continue
     }
@@ -211,8 +213,10 @@ proc rivet_automate {cell} {
   # hier false keeps gtwiz_versal_0 at the BD root. link_speed 2 is Gen2.
   # phy_refclk and phy_gtrefclk must still be open: the rule drives them
   # from the IBUF it inserts, and a pre-connected sink aborts the rule.
-  set cmd {apply_bd_automation -rule xilinx.com:bd_rule:pcie_phy_versal -config {link_speed 2 link_width 4 hier false}}
-  if {[catch {eval $cmd $cell} err]} {
+  if {[catch {
+    apply_bd_automation -rule xilinx.com:bd_rule:pcie_phy_versal \
+      -config {link_speed 2 link_width 4 hier false} $cell
+  } err]} {
     puts "WARN: automation with explicit config failed: $err"
     if {[catch {apply_bd_automation -rule xilinx.com:bd_rule:pcie_phy_versal $cell} err2]} {
       puts "WARN: $err2"
@@ -229,7 +233,6 @@ proc rivet_shell_owns_refclk {phy} {
   rivet_delete_port pcie_refclk
   rivet_delete_port CLK_IN_D
   rivet_delete_port BUFG_GT_CE
-  rivet_delete_port gtwiz_freerun_clk
 
   foreach c {refclk_ibuf bufg_gt_sysclk} {
     set cell [get_bd_cells -quiet $c]
@@ -242,11 +245,13 @@ proc rivet_shell_owns_refclk {phy} {
   rivet_export $phy phy_refclk   I {phy_refclk} 1
   rivet_export $phy phy_gtrefclk I {phy_gtrefclk} 1
 
-  set free [get_bd_pins -quiet gtwiz_versal_0/gtwiz_freerun_clk]
-  if {$free ne "" && [get_bd_nets -quiet -of_objects $free] eq ""} {
-    connect_bd_net [get_bd_ports phy_refclk] $free
-    puts "gtwiz_freerun_clk tied to phy_refclk"
+  # gtwiz_freerun_clk stays a clock port. The shell drives it with the
+  # same BUFG_GT output as phy_refclk. A plain data port is not a clock.
+  set free [get_bd_ports -quiet gtwiz_freerun_clk]
+  if {$free eq ""} {
+    error "PG345 automation did not export gtwiz_freerun_clk"
   }
+  puts "Keeping clock port gtwiz_freerun_clk"
 }
 
 file mkdir $build_dir
