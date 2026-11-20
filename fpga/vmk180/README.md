@@ -31,7 +31,7 @@ vivado -mode batch -source fpga/vmk180/create_project.tcl -tclargs synth
 
 Project file: `fpga/vmk180/build/rivet_vmk180.xpr` (gitignored).
 
-Part: `xcvm1802-vsva2197-2MP-e-s` (kit marking XCVM1802-2MSEVSVA2197). The script tries VMK180 board parts `3.4` down to `1.2`. If none are installed it keeps the part and prints a warning.
+Part: `xcvm1802-vsva2197-2MP-e-S` (kit marking XCVM1802-2MSEVSVA2197). The script tries VMK180 board parts `3.4` down to `1.2`. If none are installed it keeps the part and prints a warning.
 
 ## What the shell does
 

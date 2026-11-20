@@ -44,7 +44,7 @@ Default `FPGA_FAMILY` on `rivet_pcie` remains UltraScale+ (0) → US+ / VCU118.
 | Item | Choice |
 |------|--------|
 | **Primary board** | AMD **VMK180** (EK-VMK180-G) |
-| **Primary FPGA** | **XCVM1802** (Versal Prime), Vivado part `xcvm1802-vsva2197-2MP-e-s` |
+| **Primary FPGA** | **XCVM1802** (Versal Prime), Vivado part `xcvm1802-vsva2197-2MP-e-S` |
 | **Transceivers** | **GTY** (44 on VMK180, 11 quads) |
 | **PCIe on board** | Edge connector ×8 (Gen1–Gen4). Gen2 ×4 uses quad 103, lanes 0–3 |
 | **PHY IP** | **PG345** (`pcie_phy_versal`). The GT quad sits outside the PHY |

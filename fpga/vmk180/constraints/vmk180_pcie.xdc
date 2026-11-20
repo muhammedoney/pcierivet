@@ -1,4 +1,4 @@
-# VMK180 PCIe edge, lanes 0-3. Part xcvm1802-vsva2197-2MP-e-s.
+# VMK180 PCIe edge, lanes 0-3. Part xcvm1802-vsva2197-2MP-e-S.
 # Quad 103 is GTY_QUAD_X0Y3 (PG346 CPM0 x4 site on XCVM1802). Lane 0 is
 # channel 0 of that quad. REFCLK0 is the buffered slot clock, package
 # W39/W40, site GTY_REFCLK_X0Y6 (quad Y * 2).

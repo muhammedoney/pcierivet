@@ -32,6 +32,7 @@ if not defined VIVADO_BAT if defined XILINX_VIVADO if exist "%XILINX_VIVADO%\bin
 if not defined VIVADO_BAT call :pick_where vivado.bat
 if not defined VIVADO_BAT call :pick_where vivado
 if not defined VIVADO_BAT call :pick_tree "C:\Xilinx\Vivado"
+if not defined VIVADO_BAT call :pick_tree "D:\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles%\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles(x86)%\Xilinx\Vivado"
 if not defined VIVADO_BAT (
