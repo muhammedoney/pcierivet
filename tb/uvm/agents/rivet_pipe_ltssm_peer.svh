@@ -385,11 +385,15 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           uvm_config_db#(bit)::set(null, "*", "peer_cpld_rearm", 1'b0);
           uvm_config_db#(bit)::set(null, "*", "peer_cpld_go", 1'b0);
           uvm_config_db#(bit)::set(null, "*", "peer_tlp_cpld_done", 1'b0);
-        end else if (tlp_memrd_enable && !tlp_memrd_done) begin
+        end else if (tlp_memrd_enable) begin
           bit go_m;
           go_m = 1'b0;
           void'(uvm_config_db#(bit)::get(null, "*", "peer_memrd_go", go_m));
-          if (go_m) begin
+          // Dropping go lets a later rising go inject another MemRd.
+          if (!go_m) begin
+            tlp_memrd_done = 1'b0;
+            uvm_config_db#(bit)::set(null, "*", "peer_tlp_memrd_done", 1'b0);
+          end else if (!tlp_memrd_done) begin
             void'(uvm_config_db#(bit [7:0])::get(null, "*", "peer_memrd_tag", tlp_memrd_tag));
             if (tlp_memrd64_enable)
               rivet_axi_tlp_util::pack_memrd64_tl_beats(

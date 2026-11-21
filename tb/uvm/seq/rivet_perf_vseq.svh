@@ -92,7 +92,8 @@ endclass : rivet_perf_vseq
 class rivet_perf_rq_memwr_vseq extends rivet_perf_vseq;
   `uvm_object_utils(rivet_perf_rq_memwr_vseq)
 
-  int unsigned n_tlp = 64;
+  // Peer InitFC advertises 32 posted header credits and does not raise that limit.
+  int unsigned n_tlp = 16;
 
   function new(string name = "rivet_perf_rq_memwr_vseq");
     super.new(name);
@@ -114,10 +115,10 @@ class rivet_perf_rq_memwr_vseq extends rivet_perf_vseq;
       wr.tag  = i[7:0];
       wr.start(p_sequencer.rq_sqr);
     end
+    perf.disarm();
     repeat (200) @(posedge status_vif.pclk);
     if (status_vif.cfg_ltssm_state != 6'h10)
       `uvm_fatal(get_type_name(), "Left L0 during posted-write burst")
-    perf.disarm();
     if (perf.rq_tlast != n_tlp)
       `uvm_error(get_type_name(),
         $sformatf("Expected %0d RQ tlast, saw %0d", n_tlp, perf.rq_tlast))
@@ -213,26 +214,29 @@ class rivet_perf_cq_cc_vseq extends rivet_perf_vseq;
       bit peer_done;
       int unsigned cyc;
       int unsigned cc_before;
-      uvm_config_db#(bit)::set(null, "*", "peer_memrd_rearm", 1'b1);
+      int unsigned cq_before;
+      uvm_config_db#(bit)::set(null, "*", "peer_memrd_go", 1'b0);
       uvm_config_db#(bit [7:0])::set(null, "*", "peer_memrd_tag", i[7:0] + 8'h30);
       peer_done = 1'b1;
-      for (cyc = 0; cyc < 2_000; cyc++) begin
+      for (cyc = 0; cyc < 4_000; cyc++) begin
         @(posedge status_vif.pclk);
-        void'(uvm_config_db#(bit)::get(null, "*", "peer_memrd_rearm", peer_done));
+        void'(uvm_config_db#(bit)::get(null, "*", "peer_tlp_memrd_done", peer_done));
         if (!peer_done)
           break;
       end
+      if (peer_done)
+        `uvm_fatal(get_type_name(), $sformatf("Peer MemRd %0d did not rearm", i))
+      cq_before = perf.cq_tlast;
       uvm_config_db#(bit)::set(null, "*", "peer_memrd_go", 1'b1);
       peer_done = 1'b0;
       for (cyc = 0; cyc < 80_000; cyc++) begin
         @(posedge status_vif.pclk);
         void'(uvm_config_db#(bit)::get(null, "*", "peer_tlp_memrd_done", peer_done));
-        if (peer_done)
+        if (peer_done && (perf.cq_tlast > cq_before))
           break;
       end
-      if (!peer_done)
-        `uvm_fatal(get_type_name(), $sformatf("Peer MemRd %0d was not injected", i))
-      repeat (64) @(posedge status_vif.pclk);
+      if (!(peer_done && (perf.cq_tlast > cq_before)))
+        `uvm_fatal(get_type_name(), $sformatf("Peer MemRd %0d did not reach CQ", i))
       cc_before = perf.cc_tlast;
       cc = rivet_axi_cc_cpld_seq::type_id::create($sformatf("cc_%0d", i));
       cc.tag = i[7:0] + 8'h30;
@@ -264,7 +268,9 @@ endclass : rivet_perf_cq_cc_vseq
 class rivet_perf_credit_stall_vseq extends rivet_perf_vseq;
   `uvm_object_utils(rivet_perf_credit_stall_vseq)
 
-  int unsigned n_tlp = 24;
+  // Peer InitFC advertises 16 non-posted header credits. Stay under that
+  // so the last beat is accepted and the test can report tfc_nph_min.
+  int unsigned n_tlp = 12;
 
   function new(string name = "rivet_perf_credit_stall_vseq");
     super.new(name);

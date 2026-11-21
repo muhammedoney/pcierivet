@@ -34,6 +34,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "Running vsim $TestName..."
 & vsim -c work.rivet_tb_top `
   -L mtiUvm `
+  -suppress 7061 `
   "+UVM_TESTNAME=$TestName" `
   -do "run -all; quit -f"
 exit $LASTEXITCODE

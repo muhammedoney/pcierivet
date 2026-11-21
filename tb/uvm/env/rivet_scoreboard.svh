@@ -89,7 +89,7 @@ class rivet_scoreboard extends uvm_scoreboard;
 
     accepted = t.tvalid && ((t.tready & 4'hF) != 4'h0);
 
-    if (tlp_mode || cfg_mgmt_mode || dllp_fc_mode) begin
+    if (tlp_mode || cfg_mgmt_mode || dllp_fc_mode || ltssm_l0_mode || companion_mode) begin
       axi_checked = 1;
       if (accepted) begin
         axi_xfer_count++;

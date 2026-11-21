@@ -1,17 +1,14 @@
 # Rivet Gen2 x4 — measured results
 
-Endpoint, `rivet_pcie_ctrl` at PIPE, 4 lanes. Throughput rows stay blank until a Questa run prints a `PERF` line. Timing is from the VMK180 route, not from the simulator.
+Endpoint `rivet_pcie_ctrl` at PIPE, 4 lanes. QuestaSim 2024.1, 21 Nov 2026. `user_clk` in `rivet_tb_top` is 8.0 ns. Each row is one printed `PERF` line. UVM reported 0 errors on these four runs.
 
-| What | Result |
+| Test | Printed result |
 |---|---|
-| Posted-write payload | not measured — `vsim` license checkout failed (21 Nov 2026) |
-| RQ `tready` stall cycles | not measured |
-| RQ MemRd → RC CplD latency | not measured |
-| Inbound CC CplD payload | not measured |
-| Cycles stalled with `pcie_tfc_nph_av = 0` | not measured |
-| VMK180 routed setup | WNS +0.143 ns, TNS 0 |
-| VMK180 routed hold | WHS +0.019 ns, THS 0 |
+| Posted write, 16× 1DW | 64 payload bytes, 96 `user_clk` cycles, 48 RQ beats accepted, 0 cycles stalled on `tready`. **83.333 MB/s**, 4.167% of the 2000 MB/s Gen2 x4 symbol rate |
+| Read latency, 8× RQ MemRd → RC CplD | min 363, avg 458, max 714 `user_clk` cycles. Includes the PIPE peer |
+| Inbound, 8× CQ MemRd → CC CplD | 8 CQ packets and 8 CC completions, 32 payload bytes in 2876 `user_clk` cycles. **1.391 MB/s**. The window includes the wait for each peer MemRd |
+| Credit stall, 12× RQ MemRd | 0 RQ stall cycles, 0 cycles with `pcie_tfc_nph_av = 0`. Lowest NPH credit scale observed: 4 |
 
-Source for the timing row: `fpga/vmk180/impl.log` post-route summary `WNS=0.143` and the property print `WNS=0.142599 ns  TNS=0.000000 ns  WHS=0.018743 ns`.
+VMK180 routed timing, from `fpga/vmk180/impl.log`, is a separate fact: WNS +0.143 ns, TNS 0, WHS +0.019 ns, THS 0. That is slack, not a data rate.
 
-Gen2 x4 symbol data rate is 2.000 GB/s per direction. That figure is the line rate, not a measured payload rate.
+Gen2 x4 after 8b/10b is 2.000 GB/s of symbol data per direction. The MB/s figures above are payload bytes on the 8 ns user bus, not that line rate.

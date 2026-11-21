@@ -36,5 +36,6 @@ vlog -sv -work work \
 echo "Running vsim ${TESTNAME}..."
 vsim -c work.rivet_tb_top \
   -L mtiUvm \
+  -suppress 7061 \
   "+UVM_TESTNAME=${TESTNAME}" \
   -do "run -all; quit -f"
