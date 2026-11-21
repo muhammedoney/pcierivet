@@ -6,15 +6,22 @@ Rivet is a soft PCIe endpoint. The controller is `rivet_pcie_ctrl`. The figures 
 
 Gen2 x4 endpoint, DUT at the PIPE. The UVM bench clock `user_clk` is 8.0 ns, so one 64-bit beat every cycle is 1.000 GB/s on that bus. The PIPE clock in the same bench is 4 ns. Gen2 x4 symbol data after 8b/10b is 2.000 GB/s per direction. Payload is a fraction of that once headers, LCRC, and DLLPs are counted. The tests do not claim that fraction beyond the `pct_gen2x4` field they print.
 
-## Posted writes
+## Posted writes versus payload size
 
-`perf_rq_memwr_gen2_x4` sent 16 memory writes of 1 dword. The monitor counted 4 payload bytes on each RQ `tlast`.
+`perf_rq_sweep_gen2_x4` sends 32 MemWr32 TLPs at each payload size that fits the 154-byte TLP limit: 1, 2, 4, 8, 16, and 32 DW. The PIPE peer is in performance mode. InitFC advertises infinite posted, non-posted, and completion credits, and the peer ACKs each TLP so the 16-deep replay buffer is not the limit. Eight thousand `pclk` cycles separate the sizes. The monitor counts payload bytes from RQ `tlast` to the next size's disarm.
 
 ```
-PERF tag=rq_memwr bytes=64 cycles=96 rq_accept=48 rq_stall=0 rq_tlast=16 mb_s=83.333 pct_gen2x4=4.167 credit_stall_pct=0.000 user_clk_ns=8.0
+PERF tag=rq_dw1  bytes=128  cycles=127 rq_stall=0  rq_tlast=32 mb_s=125.984 pct_gen2x4=6.299
+PERF tag=rq_dw2  bytes=256  cycles=129 rq_stall=2  rq_tlast=32 mb_s=248.062 pct_gen2x4=12.403
+PERF tag=rq_dw4  bytes=512  cycles=173 rq_stall=14 rq_tlast=32 mb_s=369.942 pct_gen2x4=18.497
+PERF tag=rq_dw8  bytes=1024 cycles=231 rq_stall=8  rq_tlast=32 mb_s=554.113 pct_gen2x4=27.706
+PERF tag=rq_dw16 bytes=2048 cycles=361 rq_stall=10 rq_tlast=32 mb_s=709.141 pct_gen2x4=35.457
+PERF tag=rq_dw32 bytes=4096 cycles=620 rq_stall=13 rq_tlast=32 mb_s=825.806 pct_gen2x4=41.290
 ```
 
-64 bytes in 96 user clocks is 83.333 MB/s. No beat waited on `tready`. 83.333 / 2000 is the printed 4.167% of the Gen2 x4 symbol rate. The peer advertises 32 posted header credits, so the burst stops at 16 writes, inside that budget.
+UVM reported 0 errors and 0 fatals. 32 DW is 825.806 MB/s, which is the printed 41.290% of the 2000 MB/s Gen2 x4 symbol rate. The user bus itself cannot exceed 1000 MB/s.
+
+An earlier `perf_rq_memwr_gen2_x4` run (16× 1DW, finite credits, one idle user clock between beats) printed 83.333 MB/s. That run is not the payload curve.
 
 ## Read latency
 

@@ -11,6 +11,12 @@ class rivet_axi_st_item extends uvm_sequence_item;
   rand bit [3:0]  tready;
   rand bit [87:0] tuser;   // max PG213 CQ width; narrower channels use LSBs
   string          channel; // "cq","cc","rq","rc"
+  // One item, many beats, valid held across accepts. Default path is unchanged.
+  bit             use_burst;
+  bit [63:0]      burst_data[$];
+  bit [1:0]       burst_keep[$];
+  bit             burst_last[$];
+  bit [87:0]      burst_user;
 
   function new(string name = "rivet_axi_st_item");
     super.new(name);

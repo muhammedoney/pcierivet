@@ -154,12 +154,28 @@ module rivet_dll_replay #(
       ack_hold_q <= ack_hold_d;
       ack_seq_q  <= ack_seq_d;
 
-      if (replay_start_i && !replay_active_q && (count_q != 16'd0) && !head_ack) begin
+      if (replay_active_q && (count_q == 16'd0)) begin
+        // ACKs retired every slot before the walk finished. A cleared
+        // valid bit must not leave replay_active stuck.
+        replay_active_q <= 1'b0;
+        replay_done_q   <= 1'b1;
+        replay_valid_q  <= 1'b0;
+      end else if (replay_start_i && !replay_active_q && (count_q != 16'd0) && !head_ack) begin
         replay_active_q <= 1'b1;
         replay_idx_q    <= rd_q;
         replay_valid_q  <= 1'b0;
-      end else if (replay_active_q && !replay_valid_q) begin
-        replay_valid_q <= valid_q[replay_idx_q];
+      end else if (replay_active_q && (!replay_valid_q || !valid_q[replay_idx_q])) begin
+        if (!valid_q[replay_idx_q]) begin
+          if ((replay_idx_q + 1'b1) == wr_q) begin
+            replay_active_q <= 1'b0;
+            replay_done_q   <= 1'b1;
+          end else begin
+            replay_idx_q <= replay_idx_q + 1'b1;
+          end
+          replay_valid_q <= 1'b0;
+        end else begin
+          replay_valid_q <= 1'b1;
+        end
       end else if (replay_active_q && replay_valid_q && replay_ready_i) begin
         replay_valid_q <= 1'b0;
         if ((replay_idx_q + 1'b1) == wr_q) begin

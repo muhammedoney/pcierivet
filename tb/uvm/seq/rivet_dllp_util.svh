@@ -76,6 +76,15 @@ class rivet_dllp_util;
     return crc_ok;
   endfunction
 
+  // ACK DLLP. Seq layout matches rivet_dllp_tx: byte2 = {0, seq[11:8]}, byte3 = seq[7:0].
+  static function logic [47:0] pack_ack_wire(input logic [11:0] seq);
+    logic [31:0] info;
+    logic [15:0] c;
+    info = {seq[7:0], 4'h0, seq[11:8], 8'h00, rivet_pkg::RIVET_DLLP_TYPE_ACK};
+    c    = crc16(info);
+    return {c[15:8], c[7:0], info[31:24], info[23:16], info[15:8], info[7:0]};
+  endfunction
+
   static function bit is_ack_nak(input logic [7:0] type_b);
     return (type_b == rivet_pkg::RIVET_DLLP_TYPE_ACK) ||
            (type_b == rivet_pkg::RIVET_DLLP_TYPE_NAK);

@@ -29,6 +29,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit [7:0]  tlp_cpld_tag   = 8'h11;
   bit [15:0] tlp_cpld_rid   = 16'h0100;
   bit [31:0] tlp_cpld_data  = 32'hCAFE_BABE;
+  // Set before link-up. InitFC credit 0 means infinite.
+  bit            perf_rc;
 
   localparam logic [7:0] SYM_COM    = 8'hBC;
   localparam logic [7:0] SYM_PAD    = 8'hF7;
@@ -117,6 +119,67 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     return din;
   endfunction
 
+  // Match rivet_mac_scrambler: COM reloads the seed, SKP holds it, every
+  // other symbol advances. Ordered-set data is not visible on PIPE, so this
+  // is exact once L0 has no TS symbols.
+  function automatic logic [7:0] dut_unscramble(
+      input logic [7:0]  din,
+      input logic        is_k,
+      inout logic [15:0] lfsr
+  );
+    logic [23:0] step;
+    if (is_k && (din == SYM_COM)) begin
+      lfsr = 16'hFFFF;
+      return din;
+    end
+    if (is_k && (din == 8'h1C))
+      return din;
+    step = peer_lfsr_step(lfsr);
+    lfsr = step[23:8];
+    if (!is_k)
+      return din ^ step[7:0];
+    return din;
+  endfunction
+
+  // st: 0 hunt, 1 TLP, 2 DLLP. First two TLP bytes are the sequence number.
+  function automatic void dut_note_sym(
+      input logic [7:0] sym,
+      input logic       is_k,
+      inout int unsigned st,
+      inout int unsigned n,
+      inout logic [7:0]  b0,
+      inout logic [7:0]  b1,
+      inout bit          pending,
+      inout logic [11:0] seq
+  );
+    if (is_k && (sym == rivet_pkg::RIVET_SYM_STP)) begin
+      st = 1;
+      n  = 0;
+    end else if (is_k && (sym == rivet_pkg::RIVET_SYM_SDP)) begin
+      st = 2;
+      n  = 0;
+    end else if (st == 1) begin
+      if (is_k && (sym == rivet_pkg::RIVET_SYM_END)) begin
+        seq     = {b0[3:0], b1};
+        pending = 1'b1;
+        st      = 0;
+      end else if (!is_k) begin
+        if (n == 0) b0 = sym;
+        else if (n == 1) b1 = sym;
+        n++;
+      end else begin
+        st = 0;
+      end
+    end else if (st == 2) begin
+      if ((is_k && (sym == rivet_pkg::RIVET_SYM_END)) || !is_k) begin
+        if (!is_k) n++;
+        if (is_k || (n > 6)) st = 0;
+      end else begin
+        st = 0;
+      end
+    end
+  endfunction
+
 
   function automatic rivet_pkg::rivet_dllp_fc_kind_e fc_kind_at(input int unsigned idx);
     case (idx)
@@ -136,6 +199,11 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       input  rivet_pkg::rivet_dllp_fc_kind_e kind,
       output logic [7:0]  hdr,
       output logic [11:0] data);
+    if (perf_rc) begin
+      hdr  = 8'h00;
+      data = 12'h000;
+      return;
+    end
     unique case (kind)
       rivet_pkg::RIVET_DLLP_FC_INIT1_P,
       rivet_pkg::RIVET_DLLP_FC_INIT2_P,
@@ -185,6 +253,14 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     bit          fc_sending;
     logic [8:0]  fc_sym9;
     bit          tlp_sending;
+    bit          ack_inflight;
+    bit          ack_pending;
+    logic [11:0] ack_seq;
+    logic [15:0] dut_lfsr[];
+    int unsigned parse_st;
+    int unsigned parse_n;
+    logic [7:0]  seq_b0, seq_b1;
+    int unsigned ack_n;
     bit          tlp_memrd_done;
     bit          tlp_cpld_done;
     int unsigned tlp_seq;
@@ -207,7 +283,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
 
     if (!enable) return;
 
+    perf_rc = 1'b0;
+    void'(uvm_config_db#(bit)::get(null, "*", "peer_perf_rc", perf_rc));
     peer_lfsr = new[lanes];
+    dut_lfsr  = new[lanes];
     wait (vif.preset_n === 1'b1);
 
     phase_q      = P_TS1_PAD;
@@ -227,7 +306,12 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
     rxstatus_err_go = 1'b0; rxstatus_err_left = 0;
-    for (l = 0; l < lanes; l++) peer_lfsr[l] = 16'hFFFF;
+    for (l = 0; l < lanes; l++) begin
+      peer_lfsr[l] = 16'hFFFF;
+      dut_lfsr[l]  = 16'hFFFF;
+    end
+    parse_st = 0; parse_n = 0; seq_b0 = '0; seq_b1 = '0;
+    ack_pending = 1'b0; ack_inflight = 1'b0; ack_seq = '0; ack_n = 0;
 
     vif.rxdata        <= '0;
     vif.rxdatak       <= '0;
@@ -349,8 +433,41 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       end
 
 
+      // Descramble DUT TX (same LFSR rules as rivet_mac_scrambler) and ACK each
+      // finished TLP. Cumulative: the latest seq retires every earlier one.
+      if (perf_rc && peer_active && (vif.txelecidle != '1)) begin
+        for (s = 0; s < 2; s++) begin
+          for (l = 0; l < peer_lanes; l++) begin
+            automatic logic [7:0] raw, sym;
+            automatic logic        is_k;
+            automatic logic [15:0] lfsr;
+            raw  = vif.txdata[16*l + 8*s +: 8];
+            is_k = vif.txdatak[2*l + s];
+            lfsr = dut_lfsr[l];
+            sym  = dut_unscramble(raw, is_k, lfsr);
+            dut_lfsr[l] = lfsr;
+            if (phase_q == P_IDLE)
+              dut_note_sym(sym, is_k, parse_st, parse_n, seq_b0, seq_b1,
+                           ack_pending, ack_seq);
+          end
+        end
+      end
+      if (phase_q != P_IDLE)
+        parse_st = 0;
+
       // FC DLLP inject in L0: stripe SDP+6+END across peer_lanes (enabled width).
-      if (dllp_fc_enable && peer_active && (phase_q == P_IDLE) && !fc_sending) begin
+      // A performance RC answers TLPs before it spends the link on UpdateFC,
+      // and it does not send UpdateFC after infinite InitFC.
+      if (perf_rc && ack_pending && peer_active && (phase_q == P_IDLE) &&
+          !fc_sending && !tlp_sending) begin
+        fc_wire      = rivet_dllp_util::pack_ack_wire(ack_seq);
+        fc_sym       = 0;
+        fc_sending   = 1'b1;
+        ack_inflight = 1'b1;
+        ack_pending  = 1'b0;
+        ack_n++;
+      end else if (dllp_fc_enable && peer_active && (phase_q == P_IDLE) &&
+                   !fc_sending && !(perf_rc && (fc_idx >= 6))) begin
         if (fc_gap_left != 0) begin
           fc_gap_left--;
         end else begin
@@ -474,7 +591,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           fc_sym += peer_lanes * 2;
           if (fc_sym >= 8) begin
             fc_sending = 1'b0;
-            if (fc_idx < 5) begin
+            if (ack_inflight) begin
+              ack_inflight = 1'b0;
+            end else if (fc_idx < 5) begin
               fc_idx++; fc_gap_left = 8;
             end else if (fc_idx == 5) begin
               fc_idx = 6; fc_gap_left = 16;
@@ -521,7 +640,11 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         peer_ptr   = '0;
         idle_seen  = '0;
         tc_inject_active = 1'b0;
-        for (l = 0; l < lanes; l++) peer_lfsr[l] = 16'hFFFF;
+        for (l = 0; l < lanes; l++) begin
+          peer_lfsr[l] = 16'hFFFF;
+          dut_lfsr[l]  = 16'hFFFF;
+        end
+        parse_st = 0; ack_pending = 1'b0;
       end else begin
         case (phase_q)
           P_TS1_PAD: if (dut_tx_ts2) begin

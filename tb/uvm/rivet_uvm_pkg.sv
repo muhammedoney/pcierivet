@@ -37,6 +37,7 @@ package rivet_uvm_pkg;
   `include "seq/rivet_cfg_mgmt_rw_seq.svh"
   `include "seq/rivet_companion_grant_seq.svh"
   `include "seq/rivet_axi_rq_memwr32_seq.svh"
+  `include "seq/rivet_axi_rq_memwr_seq.svh"
   `include "seq/rivet_axi_rq_memrd32_seq.svh"
   `include "seq/rivet_axi_cc_cpld_seq.svh"
   `include "agents/rivet_pipe_sequencer.svh"

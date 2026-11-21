@@ -305,3 +305,57 @@ class rivet_perf_credit_stall_vseq extends rivet_perf_vseq;
     wait fork;
   endtask
 endclass : rivet_perf_credit_stall_vseq
+
+
+// Posted-write throughput versus payload size. The PIPE peer is in
+// performance mode: infinite credits and an ACK per TLP, so the replay
+// buffer does not cap the burst. Each PERF line is one payload size.
+class rivet_perf_rq_sweep_vseq extends rivet_perf_vseq;
+  `uvm_object_utils(rivet_perf_rq_sweep_vseq)
+
+  // Past the 16-deep replay buffer and the finite credit pool, so the
+  // peer must ACK and advertise infinite credits for the burst to finish.
+  int unsigned n_tlp = 32;
+
+  function new(string name = "rivet_perf_rq_sweep_vseq");
+    super.new(name);
+  endfunction
+
+  task body();
+    rivet_cfg_mgmt_rw_seq cfg_rw;
+    int unsigned sizes[$];
+    int unsigned s;
+    sizes = {1, 2, 4, 8, 16, 32};
+    wait_l0();
+    start_sidebands(200_000, 1'b0, 1'b1);
+    cfg_rw = rivet_cfg_mgmt_rw_seq::type_id::create("cfg_rw");
+    cfg_rw.start(p_sequencer.cfg_sqr);
+    for (s = 0; s < sizes.size(); s++) begin
+      int unsigned dw, i;
+      dw = sizes[s];
+      // Let the previous size's replay and ACKs finish so this PERF
+      // line is the payload size, not leftover backpressure.
+      repeat (8_000) @(posedge status_vif.pclk);
+      perf.arm(dw * 4, 0);
+      for (i = 0; i < n_tlp; i++) begin
+        rivet_axi_rq_memwr_seq wr;
+        wr = rivet_axi_rq_memwr_seq::type_id::create(
+          $sformatf("wr_dw%0d_%0d", dw, i));
+        wr.payload_dw = dw;
+        wr.addr = 32'h0000_1000 + (i << 6);
+        wr.tag  = i[7:0];
+        wr.start(p_sequencer.rq_sqr);
+      end
+      perf.disarm();
+      if (status_vif.cfg_ltssm_state != 6'h10)
+        `uvm_fatal(get_type_name(),
+          $sformatf("Left L0 during %0dDW burst", dw))
+      if (perf.rq_tlast != n_tlp)
+        `uvm_error(get_type_name(),
+          $sformatf("%0dDW: expected %0d RQ tlast, saw %0d",
+                    dw, n_tlp, perf.rq_tlast))
+      perf.report_perf($sformatf("rq_dw%0d", dw));
+    end
+    wait fork;
+  endtask
+endclass : rivet_perf_rq_sweep_vseq

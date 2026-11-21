@@ -39,6 +39,7 @@ module rivet_dll_tlp_tx #(
   output logic                              beat_valid_o,
   input  logic                              beat_ready_i,
 
+  output logic                              idle_o,
   output logic [11:0] next_tx_seq_o
 );
 
@@ -138,8 +139,13 @@ module rivet_dll_tlp_tx #(
   assign crc_nxt  = rivet_crc32_fold(crc_q, crc_sh_q[BEAT_B*8-1:0], crc_n);
   assign crc_last = (crc_left_q != 16'd0) && (crc_left_q <= 16'(BEAT_B));
 
+  assign idle_o         = (state_q == ST_IDLE);
   assign next_tx_seq_o  = next_seq_q;
+  // A frame is accepted only when a replay slot is free. Replay is held off
+  // until this machine is idle, so a full buffer can drain instead of sitting
+  // in ST_PUSH behind replay_active.
   assign tl_ready_o     = enable_i && (state_q == ST_IDLE) && !replay_en_i &&
+                          push_ready_i &&
                           (tl_len_i != 16'd0) && (tl_len_i <= MAX_PLD[15:0]);
   assign replay_ready_o = replay_en_i && (state_q == ST_IDLE);
   assign push_valid_o   = (state_q == ST_PUSH);

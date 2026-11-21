@@ -106,6 +106,8 @@ module rivet_dll #(
   logic        timer_en_q;
   logic        nak_storm_q;
   logic        timer_exp_q;
+  logic        replay_pend_q;
+  logic        tx_idle;
 
   rivet_dll_mac_tx_beat_t dllp_beat, tlp_beat, mux_tx_beat;
   logic                   dllp_v, tlp_v, dllp_r, tlp_r;
@@ -154,17 +156,19 @@ module rivet_dll #(
       timer_en_q   <= 1'b0;
       replay_num_q <= '0;
       nak_storm_q  <= 1'b0;
-      timer_exp_q  <= 1'b0;
-      rx_enable_q  <= 1'b0;
+      timer_exp_q    <= 1'b0;
+      replay_pend_q  <= 1'b0;
+      rx_enable_q    <= 1'b0;
     end else begin
       rx_enable_q <= mac_to_dll_sb_i.accept_dll_tlp && (dl_state == RIVET_DL_ACTIVE);
 
       if (clear_replay) begin
-        timer_q      <= '0;
-        timer_en_q   <= 1'b0;
-        replay_num_q <= '0;
-        nak_storm_q  <= 1'b0;
-        timer_exp_q  <= 1'b0;
+        timer_q       <= '0;
+        timer_en_q    <= 1'b0;
+        replay_num_q  <= '0;
+        nak_storm_q   <= 1'b0;
+        timer_exp_q   <= 1'b0;
+        replay_pend_q <= 1'b0;
       end else begin
         timer_exp_q <= 1'b0;
 
@@ -197,14 +201,26 @@ module rivet_dll #(
           if ((replay_num_q + 4'd1) >= REPLAY_NUM_LIMIT[3:0])
             nak_storm_q <= 1'b1;
         end
+
+        // Latch across the transmitter's CRC/emit. Cleared once replay runs.
+        if ((timer_exp_q || nak_pulse) && !rep_empty)
+          replay_pend_q <= 1'b1;
+        else if (replay_en || rep_empty)
+          replay_pend_q <= 1'b0;
       end
     end
   end
 
   assign timer_fire = timer_exp_q;
-  assign replay_req = ((nak_pulse || timer_fire) && !rep_empty && !rep_active &&
-                       (dl_state == RIVET_DL_ACTIVE) && !replay_en);
-  assign rep_start  = replay_en && !rep_active && !rep_empty;
+  // Hold the request until the transmitter is idle. A one-cycle timer pulse
+  // that lands during CRC or emit used to be dropped, and a replay that
+  // started while a frame sat in ST_PUSH could never finish: push_ready
+  // falls during replay, and replay_ready needs ST_IDLE.
+  assign replay_req = replay_pend_q && !rep_empty && !rep_active &&
+                      tx_idle && (dl_state == RIVET_DL_ACTIVE) && !replay_en;
+  // replay_done is still high the cycle replay_active falls. Starting
+  // again on that cycle re-enters replay after the SM has already left it.
+  assign rep_start  = replay_en && !replay_done && !rep_active && !rep_empty;
 
   assign dll_to_mac_sb_o.dl_up                = dl_up;
   assign dll_to_mac_sb_o.replay_timer_expired = timer_fire;
@@ -501,6 +517,7 @@ module rivet_dll #(
     .beat_o          (tlp_beat),
     .beat_valid_o    (tlp_v),
     .beat_ready_i    (tlp_r),
+    .idle_o          (tx_idle),
     .next_tx_seq_o   (next_tx_seq)
   );
 

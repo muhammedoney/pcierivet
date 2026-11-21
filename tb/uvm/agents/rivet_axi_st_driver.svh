@@ -47,7 +47,37 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
   endtask
 
   task drive_item(rivet_axi_st_item req);
-    if (is_master) begin
+    if (is_master && req.use_burst) begin
+      int unsigned i;
+      if (req.burst_data.size() == 0)
+        return;
+      @(posedge vif.aclk);
+      vif.tdata  <= req.burst_data[0];
+      vif.tkeep  <= req.burst_keep[0];
+      vif.tlast  <= req.burst_last[0];
+      vif.tuser  <= req.burst_user;
+      vif.tvalid <= 1'b1;
+      for (i = 1; i < req.burst_data.size(); i++) begin
+        int unsigned guard;
+        guard = 0;
+        do begin
+          @(posedge vif.aclk);
+          guard++;
+          if (guard > 100_000)
+            `uvm_fatal(get_type_name(),
+              $sformatf("RQ burst beat %0d waited 100000 cycles", i))
+        end while ((vif.tready & 4'hF) == 4'h0);
+        // Same edge that accepts the previous beat. NBA publishes the next one.
+        vif.tdata <= req.burst_data[i];
+        vif.tkeep <= req.burst_keep[i];
+        vif.tlast <= req.burst_last[i];
+      end
+      do
+        @(posedge vif.aclk);
+      while ((vif.tready & 4'hF) == 4'h0);
+      vif.tvalid <= 1'b0;
+      vif.tlast  <= 1'b0;
+    end else if (is_master) begin
       @(posedge vif.aclk);
       vif.tdata  <= req.tdata;
       vif.tkeep  <= req.tkeep;

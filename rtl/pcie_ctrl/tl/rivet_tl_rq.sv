@@ -1,7 +1,10 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pack PG213-style 64-bit AXI-ST Requester Request (RQ) into wire Mem32 TLP.
+// Pack PG213-style 64-bit AXI-ST Requester Request (RQ) into a wire Mem32 TLP.
+// A 1DW write is still two TX beats. Longer writes keep that 16-byte head
+// (header + DW0) and then stream the rest, 8 bytes per beat, so the DLL
+// packer sees a single TLP up to its 154-byte payload limit.
 
 module rivet_tl_rq (
   input  logic        clk_i,
@@ -39,11 +42,12 @@ module rivet_tl_rq (
   import rivet_pkg::*;
 
   typedef enum logic [2:0] {
-    ST_D0  = 3'd0,
-    ST_D1  = 3'd1,
-    ST_DAT = 3'd2,
-    ST_TX0 = 3'd3,
-    ST_TX1 = 3'd4
+    ST_D0   = 3'd0,
+    ST_D1   = 3'd1,
+    ST_DAT  = 3'd2,
+    ST_TX0  = 3'd3,
+    ST_TX1  = 3'd4,
+    ST_MORE = 3'd5
   } st_e;
 
   st_e          st_q;
@@ -56,14 +60,50 @@ module rivet_tl_rq (
   logic [31:0]  data_q;
   logic [5:0]   seq_q;
   logic [3:0]   tag_av_q;
+  // Bytes still to send after the 16-byte head. sh_q[7:0] is the oldest byte.
+  logic [95:0]  sh_q;
+  logic [3:0]   sh_n_q;
+  logic [9:0]   dw_left_q;
+  logic         more_q;
+  logic         stash_v_q;
+  logic [31:0]  stash_q;
+
+  logic         more_beat;
+  logic [3:0]   more_take;
+  logic [7:0]   more_keep;
+  logic         more_last;
+  // Room in the shifter after this cycle consumes a beat. Pull AXI only then,
+  // so a stalled TX beat is not overwritten and a ready beat can be replaced
+  // in the same cycle.
+  logic         more_fire;
+  logic [3:0]   more_room;
+
+  assign more_beat = (sh_n_q >= 4'd8) || ((dw_left_q == 10'd0) && (sh_n_q != 4'd0));
+  assign more_take = (sh_n_q >= 4'd8) ? 4'd8 : sh_n_q;
+  assign more_last = (dw_left_q == 10'd0) && (sh_n_q <= 4'd8);
+  always_comb begin
+    more_keep = '0;
+    for (int unsigned i = 0; i < 8; i++)
+      if (i < more_take)
+        more_keep[i] = 1'b1;
+  end
+
+  assign tx_tvalid_o = (st_q == ST_TX0) || (st_q == ST_TX1) ||
+                       ((st_q == ST_MORE) && more_beat);
+  assign more_fire = (st_q == ST_MORE) && more_beat && tx_tready_i;
+  assign more_room = more_fire ? (sh_n_q - more_take) : sh_n_q;
 
   assign s_axis_rq_tready = bus_master_en_i &&
-                            ((st_q == ST_D0) || (st_q == ST_D1) || (st_q == ST_DAT));
+                            ((st_q == ST_D0) || (st_q == ST_D1) || (st_q == ST_DAT) ||
+                             ((st_q == ST_MORE) && (dw_left_q != 10'd0) &&
+                              (more_room <= 4'd4)));
 
-  assign tx_tdata_o  = (st_q == ST_TX1) ? tx_q[127:64] : tx_q[63:0];
-  assign tx_tkeep_o  = (st_q == ST_TX1) ? (is_wr_q ? 8'hFF : 8'h0F) : 8'hFF;
-  assign tx_tlast_o  = (st_q == ST_TX1);
-  assign tx_tvalid_o = (st_q == ST_TX0) || (st_q == ST_TX1);
+  assign tx_tdata_o  = (st_q == ST_TX1) ? tx_q[127:64] :
+                       (st_q == ST_MORE) ? sh_q[63:0] : tx_q[63:0];
+  assign tx_tkeep_o  = (st_q == ST_MORE) ? more_keep :
+                       (st_q == ST_TX1) ? (is_wr_q ? 8'hFF : 8'h0F) : 8'hFF;
+  assign tx_tlast_o  = ((st_q == ST_TX1) && !more_q) ||
+                       ((st_q == ST_MORE) && more_beat && more_last);
   assign tx_hdr0_o   = tx_q[7:0];
   assign tx_len_dw_o = is_wr_q ? ((len_q == 10'd0) ? 10'd1 : len_q) : 10'd0;
   assign tx_accept_o = tx_tvalid_o && tx_tready_i && tx_tlast_o;
@@ -87,6 +127,12 @@ module rivet_tl_rq (
       data_q <= '0;
       seq_q  <= '0;
       tag_av_q <= 4'd8;
+      sh_q     <= '0;
+      sh_n_q   <= '0;
+      dw_left_q <= '0;
+      more_q   <= 1'b0;
+      stash_v_q <= 1'b0;
+      stash_q  <= '0;
     end else begin
       if (tx_accept_o) begin
         seq_q <= seq_q + 6'd1;
@@ -112,6 +158,7 @@ module rivet_tl_rq (
             tag_q   <= s_axis_rq_tdata[55:48];
             if (s_axis_rq_tlast) begin
               // MemRd — build header only
+              more_q      <= 1'b0;
               tx_q[7:0]   <= RIVET_TLP_B0_MEMRD32;
               tx_q[15:8]  <= 8'h00;
               tx_q[23:16] <= {6'h0, s_axis_rq_tdata[9:8]};
@@ -132,6 +179,7 @@ module rivet_tl_rq (
         end
         ST_DAT: begin
           if (s_axis_rq_tvalid && s_axis_rq_tready) begin
+            logic [9:0] left;
             data_q <= s_axis_rq_tdata[31:0];
             tx_q[7:0]   <= RIVET_TLP_B0_MEMWR32;
             tx_q[15:8]  <= 8'h00;
@@ -150,6 +198,17 @@ module rivet_tl_rq (
             tx_q[111:104] <= s_axis_rq_tdata[15:8];
             tx_q[119:112] <= s_axis_rq_tdata[23:16];
             tx_q[127:120] <= s_axis_rq_tdata[31:24];
+            // DW0 rides in the 16-byte head. A second DW in this beat is stashed.
+            left = (len_q > 10'd1) ? (len_q - 10'd1) : 10'd0;
+            if ((len_q > 10'd1) && s_axis_rq_tkeep[1]) begin
+              stash_q   <= s_axis_rq_tdata[63:32];
+              stash_v_q <= 1'b1;
+              left      = left - 10'd1;
+            end else begin
+              stash_v_q <= 1'b0;
+            end
+            dw_left_q <= left;
+            more_q    <= (len_q > 10'd1);
             st_q <= ST_TX0;
           end
         end
@@ -157,7 +216,57 @@ module rivet_tl_rq (
           if (tx_tvalid_o && tx_tready_i) st_q <= ST_TX1;
         end
         ST_TX1: begin
-          if (tx_tvalid_o && tx_tready_i) st_q <= ST_D0;
+          if (tx_tvalid_o && tx_tready_i) begin
+            if (more_q) begin
+              if (stash_v_q) begin
+                sh_q   <= {64'd0, stash_q};
+                sh_n_q <= 4'd4;
+              end else begin
+                sh_q   <= '0;
+                sh_n_q <= '0;
+              end
+              st_q <= ST_MORE;
+            end else begin
+              more_q <= 1'b0;
+              st_q   <= ST_D0;
+            end
+          end
+        end
+        ST_MORE: begin
+          logic [95:0] cat;
+          logic [3:0]  cn;
+          logic [9:0]  dl;
+          cat = sh_q;
+          cn  = sh_n_q;
+          dl  = dw_left_q;
+          if (more_fire) begin
+            for (int unsigned b = 0; b < 12; b++) begin
+              if ((b + 32'(more_take)) < 12)
+                cat[8*b +: 8] = sh_q[8*(b + 32'(more_take)) +: 8];
+              else
+                cat[8*b +: 8] = 8'h00;
+            end
+            cn = sh_n_q - more_take;
+          end
+          if (s_axis_rq_tvalid && s_axis_rq_tready && (dw_left_q != 10'd0)) begin
+            logic [3:0] nb;
+            logic [3:0] step;
+            nb   = s_axis_rq_tkeep[1] ? 4'd8 : 4'd4;
+            step = s_axis_rq_tkeep[1] ? 4'd2 : 4'd1;
+            for (int unsigned b = 0; b < 8; b++) begin
+              if (b < nb)
+                cat[8*(32'(cn) + b) +: 8] = s_axis_rq_tdata[8*b +: 8];
+            end
+            cn = cn + nb;
+            dl = (dl >= {6'd0, step}) ? (dl - {6'd0, step}) : 10'd0;
+          end
+          sh_q      <= cat;
+          sh_n_q    <= cn;
+          dw_left_q <= dl;
+          if ((cn == 4'd0) && (dl == 10'd0)) begin
+            more_q <= 1'b0;
+            st_q   <= ST_D0;
+          end
         end
         default: st_q <= ST_D0;
       endcase

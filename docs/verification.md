@@ -75,19 +75,21 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | MSI-X | `.\scripts\sim_questa.ps1 smoke_msix_gen2_x4 4` | External-table `cfg_interrupt_msix_*` |
 | AER | `.\scripts\sim_questa.ps1 smoke_aer_gen2_x4 4` | `cfg_err_*` → outs + Device Status sticky |
 | Companion | `.\scripts\sim_questa.ps1 smoke_companion_gen2_x4 4` | CQ NP + RQ tag/seq + `pcie_tfc_*` |
-| Perf posted write | `.\scripts\sim_questa.ps1 perf_rq_memwr_gen2_x4 4` | 64× RQ MemWr32; PERF line is payload bytes, `tready` stalls, MB/s |
+| Perf posted write | `.\scripts\sim_questa.ps1 perf_rq_memwr_gen2_x4 4` | 16× RQ MemWr32, finite-credit peer |
+| Perf payload sweep | `.\scripts\sim_questa.ps1 perf_rq_sweep_gen2_x4 4` | 32× MemWr32 at 1/2/4/8/16/32 DW; infinite credits and ACK |
 | Perf read latency | `.\scripts\sim_questa.ps1 perf_rq_rc_lat_gen2_x4 4` | 8× RQ MemRd32 → peer CplD → RC; min/avg/max `user_clk` cycles |
 | Perf inbound read | `.\scripts\sim_questa.ps1 perf_cq_cc_gen2_x4 4` | 8× peer MemRd32 → CC CplD; 4 payload bytes per completion |
 | Perf credit stall | `.\scripts\sim_questa.ps1 perf_credit_stall_gen2_x4 4` | RQ MemRd while sampling `pcie_tfc_nph_av` |
 
 The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top` is 8 ns, so a full 64-bit beat is 1000 MB/s. The Gen2 x4 symbol data rate used as `pct_gen2x4` is 2000 MB/s. Read latency includes the PIPE peer. Questa 2024.1 on 21 Nov 2026, with `MGLS_LICENSE_FILE` pointed at the Mentor node-locked license and `vsim -suppress 7061`, printed:
 
-- `rq_memwr`: 64 bytes, 96 cycles, `rq_stall=0`, `mb_s=83.333`, `pct_gen2x4=4.167`
+- `rq_memwr`: 64 bytes, 96 cycles, `rq_stall=0`, `mb_s=83.333`, `pct_gen2x4=4.167` (finite-credit peer, not the payload curve)
+- `rq_dw1` .. `rq_dw32` (`perf_rq_sweep_gen2_x4`, 32 TLPs, infinite credits and ACK): `mb_s` 125.984, 248.062, 369.942, 554.113, 709.141, 825.806. `rq_stall` 0, 2, 14, 8, 10, 13. `pct_gen2x4` 6.299, 12.403, 18.497, 27.706, 35.457, 41.290. 0 errors
 - `rq_rc_lat`: `lat_n=8`, `lat_min=363`, `lat_avg=458`, `lat_max=714`
 - `cq_cc`: 8 CQ and 8 CC, 32 bytes, 2876 cycles, `mb_s=1.391`
 - `credit_stall`: `rq_stall=0`, `credit_stall=0`, `tfc_nph_min=4`
 
-`vsim` without `-suppress 7061` stops in vopt (`vopt-7061` on the sim-only `tlp_ram` initial, then `vopt-2064`). The posted-write burst is 16 TLPs so it stays inside the peer's 32 posted header credits.
+`vsim` without `-suppress 7061` stops in vopt (`vopt-7061` on the sim-only `tlp_ram` initial, then `vopt-2064`). The finite-credit posted-write burst is 16 TLPs so it stays inside the peer's 32 posted header credits. The payload sweep uses a peer that advertises infinite credits and ACKs every TLP.
 
 ASPM requests are tied to 0 in `rivet_mac`; the ASPM smokes drive `rivet_link_status_if.aspm_l0s_req` / `aspm_l1_req`, and `rivet_tb_top` `force`s them onto `dut.u_mac.aspm_*_req`.
 
