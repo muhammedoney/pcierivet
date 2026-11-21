@@ -80,6 +80,8 @@ package rivet_uvm_pkg;
   `include "seq/rivet_msix_vseq.svh"
   `include "seq/rivet_aer_vseq.svh"
   `include "seq/rivet_companion_vseq.svh"
+  `include "env/rivet_perf_mon.svh"
+  `include "seq/rivet_perf_vseq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
   `include "env/rivet_env.svh"
@@ -114,5 +116,6 @@ package rivet_uvm_pkg;
   `include "tests/smoke_msix_gen2_x4.svh"
   `include "tests/smoke_aer_gen2_x4.svh"
   `include "tests/smoke_companion_gen2_x4.svh"
+  `include "tests/rivet_perf_gen2_x4.svh"
 endpackage : rivet_uvm_pkg
 

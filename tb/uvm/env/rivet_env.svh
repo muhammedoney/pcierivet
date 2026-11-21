@@ -13,6 +13,7 @@ class rivet_env extends uvm_env;
   rivet_virtual_sequencer  vsqr;
   rivet_scoreboard         scoreboard;
   rivet_coverage           coverage;
+  rivet_perf_mon           perf_mon;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -42,6 +43,7 @@ class rivet_env extends uvm_env;
     vsqr             = rivet_virtual_sequencer::type_id::create("vsqr", this);
     scoreboard       = rivet_scoreboard::type_id::create("scoreboard", this);
     coverage         = rivet_coverage::type_id::create("coverage", this);
+    perf_mon         = rivet_perf_mon::type_id::create("perf_mon", this);
   endfunction
 
   function void connect_phase(uvm_phase phase);
@@ -71,5 +73,7 @@ class rivet_env extends uvm_env;
     dllp_mon.ap.connect(coverage.dllp_imp);
     ltssm_peer.dllp_ap.connect(scoreboard.dllp_imp);
     ltssm_peer.dllp_ap.connect(coverage.dllp_imp);
+
+    uvm_config_db#(rivet_perf_mon)::set(null, "uvm_test_top", "perf_mon", perf_mon);
   endfunction
 endclass : rivet_env

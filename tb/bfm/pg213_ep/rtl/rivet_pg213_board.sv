@@ -84,6 +84,8 @@ module board;
   logic        saw_ep_rq_memwr, class_c_pass, saw_ep_rc_done;
   logic        class_e_pass, width_ok;
   int unsigned tlp_n, cpl_n;
+  int unsigned perf_rq_accept, perf_rq_stall, perf_rc_accept;
+  int unsigned perf_cq_accept, perf_cc_accept;
   logic [2:0]  neg_width;
   logic [31:0] bm_expect;
 
@@ -510,6 +512,9 @@ module board;
     else if (saw_pio && stay_l0 && RP.user_lnk_up)
       $display("[%t] : Test Completed Successfully (PG213 RP + Rivet EP Class A)",
                $realtime);
+    // Beat counts of the TLPs this bench already moves. Not a sustained-rate run.
+    $display("PERF bfm=pg213 rq_accept=%0d rq_stall=%0d rc_accept=%0d cq_accept=%0d cc_accept=%0d note=existing_class_traffic",
+             perf_rq_accept, perf_rq_stall, perf_rc_accept, perf_cq_accept, perf_cc_accept);
     $finish;
   end
 
@@ -545,6 +550,24 @@ module board;
     bm_expect       = '0;
     tlp_n     = 0;
     cpl_n     = 0;
+    perf_rq_accept = 0;
+    perf_rq_stall  = 0;
+    perf_rc_accept = 0;
+    perf_cq_accept = 0;
+    perf_cc_accept = 0;
+  end
+  // Accepted beats on the EP app that already issues the Class C/D TLPs.
+  always @(posedge EP.u_rivet_ep.user_clk) begin
+    if (EP.u_rivet_ep.u_app.s_axis_rq_tvalid && EP.u_rivet_ep.u_app.s_axis_rq_tready[0])
+      perf_rq_accept <= perf_rq_accept + 1;
+    else if (EP.u_rivet_ep.u_app.s_axis_rq_tvalid)
+      perf_rq_stall <= perf_rq_stall + 1;
+    if (EP.u_rivet_ep.u_app.m_axis_rc_tvalid && EP.u_rivet_ep.u_app.m_axis_rc_tready)
+      perf_rc_accept <= perf_rc_accept + 1;
+    if (EP.u_rivet_ep.u_app.m_axis_cq_tvalid && EP.u_rivet_ep.u_app.m_axis_cq_tready)
+      perf_cq_accept <= perf_cq_accept + 1;
+    if (EP.u_rivet_ep.u_app.s_axis_cc_tvalid && EP.u_rivet_ep.u_app.s_axis_cc_tready[0])
+      perf_cc_accept <= perf_cc_accept + 1;
   end
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
     if (RP.user_lnk_up && ep_link_up && (ep_ltssm != 6'h10))

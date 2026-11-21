@@ -21,6 +21,8 @@ module rivet_pg239_board;
 
   logic ep_phy_ready, rp_phy_ready;
   logic ep_link_up, rp_link_up;
+  int unsigned perf_rq_accept, perf_rq_stall, perf_rc_accept;
+  int unsigned perf_cq_accept, perf_cc_accept;
   logic [5:0] ep_ltssm, rp_ltssm;
 
   // Serial cross-connect
@@ -169,6 +171,8 @@ module rivet_pg239_board;
               $display("[%t] : UPDATEFC   PASS — periodic UpdateFC seen RC→EP", $realtime);
           end
         end
+        $display("PERF bfm=pg239 rq_accept=%0d rq_stall=%0d rc_accept=%0d cq_accept=%0d cc_accept=%0d note=link_up_window",
+                 perf_rq_accept, perf_rq_stall, perf_rc_accept, perf_cq_accept, perf_cc_accept);
         $finish;
       end
       begin
@@ -179,6 +183,20 @@ module rivet_pg239_board;
         $fatal(1, "Rivet+PG239 link training timeout");
       end
     join
+  end
+
+  // Beats the idle bus-master actually accepts. Link-up alone is not a rate.
+  always @(posedge u_ep.user_clk) begin
+    if (u_ep.u_app.s_axis_rq_tvalid && u_ep.u_app.s_axis_rq_tready[0])
+      perf_rq_accept <= perf_rq_accept + 1;
+    else if (u_ep.u_app.s_axis_rq_tvalid)
+      perf_rq_stall <= perf_rq_stall + 1;
+    if (u_ep.u_app.m_axis_rc_tvalid && u_ep.u_app.m_axis_rc_tready)
+      perf_rc_accept <= perf_rc_accept + 1;
+    if (u_ep.u_app.m_axis_cq_tvalid && u_ep.u_app.m_axis_cq_tready)
+      perf_cq_accept <= perf_cq_accept + 1;
+    if (u_ep.u_app.s_axis_cc_tvalid && u_ep.u_app.s_axis_cc_tready[0])
+      perf_cc_accept <= perf_cc_accept + 1;
   end
 
   always @(ep_ltssm or rp_ltssm) begin
