@@ -76,7 +76,7 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | AER | `.\scripts\sim_questa.ps1 smoke_aer_gen2_x4 4` | `cfg_err_*` → outs + Device Status sticky |
 | Companion | `.\scripts\sim_questa.ps1 smoke_companion_gen2_x4 4` | CQ NP + RQ tag/seq + `pcie_tfc_*` |
 | Perf posted write | `.\scripts\sim_questa.ps1 perf_rq_memwr_gen2_x4 4` | 16× RQ MemWr32, finite-credit peer |
-| Perf payload sweep | `.\scripts\sim_questa.ps1 perf_rq_sweep_gen2_x4 4` | 32× MemWr32 at 1/2/4/8/16/32 DW; infinite credits and ACK |
+| Perf payload sweep | `.\scripts\sim_questa.ps1 perf_rq_sweep_gen2_x4 4` | 8× MemWr32 at 1..1024 DW (4 B..4096 B); infinite credits and ACK |
 | Perf read latency | `.\scripts\sim_questa.ps1 perf_rq_rc_lat_gen2_x4 4` | 8× RQ MemRd32 → peer CplD → RC; min/avg/max `user_clk` cycles |
 | Perf inbound read | `.\scripts\sim_questa.ps1 perf_cq_cc_gen2_x4 4` | 8× peer MemRd32 → CC CplD; 4 payload bytes per completion |
 | Perf credit stall | `.\scripts\sim_questa.ps1 perf_credit_stall_gen2_x4 4` | RQ MemRd while sampling `pcie_tfc_nph_av` |
@@ -84,7 +84,7 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top` is 8 ns, so a full 64-bit beat is 1000 MB/s. The Gen2 x4 symbol data rate used as `pct_gen2x4` is 2000 MB/s. Read latency includes the PIPE peer. Questa 2024.1 on 21 Nov 2026, with `MGLS_LICENSE_FILE` pointed at the Mentor node-locked license and `vsim -suppress 7061`, printed:
 
 - `rq_memwr`: 64 bytes, 96 cycles, `rq_stall=0`, `mb_s=83.333`, `pct_gen2x4=4.167` (finite-credit peer, not the payload curve)
-- `rq_dw1` .. `rq_dw32` (`perf_rq_sweep_gen2_x4`, 32 TLPs, infinite credits and ACK): `mb_s` 125.984, 248.062, 369.942, 554.113, 709.141, 825.806. `rq_stall` 0, 2, 14, 8, 10, 13. `pct_gen2x4` 6.299, 12.403, 18.497, 27.706, 35.457, 41.290. 0 errors
+- `rq_dw1` .. `rq_dw1024` (`perf_rq_sweep_gen2_x4`, 8 TLPs, infinite credits and ACK): `mb_s` 129.032, 258.065, 410.256, 581.818, 735.632, 847.682, 917.563, 957.009, 978.032, 988.894, 994.416. `rq_stall` 0 on every size. `pct_gen2x4` 6.452, 12.903, 20.513, 29.091, 36.782, 42.384, 45.878, 47.850, 48.902, 49.445, 49.721. 0 errors
 - `rq_rc_lat`: `lat_n=8`, `lat_min=363`, `lat_avg=458`, `lat_max=714`
 - `cq_cc`: 8 CQ and 8 CC, 32 bytes, 2876 cycles, `mb_s=1.391`
 - `credit_stall`: `rq_stall=0`, `credit_stall=0`, `tfc_nph_min=4`

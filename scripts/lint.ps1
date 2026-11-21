@@ -9,11 +9,12 @@ $Warn = "-Wall -Wno-DECLFILENAME -Wno-UNUSED -Wno-PINCONNECTEMPTY -Wno-UNOPTFLAT
 $Inc = "+incdir+rtl/pcie_ctrl +incdir+third_party/ref/common_cells/include"
 
 if (Get-Command verilator -ErrorAction SilentlyContinue) {
-  & verilator --lint-only $Warn.Split(" ") $Inc -f rtl/filelist_core.f --top-module rivet_pcie_ctrl
+  # 4 KB TLP slots are 33024 bits. The default replication limit is 8192.
+  & verilator --lint-only --replication-limit 65536 $Warn.Split(" ") $Inc -f rtl/filelist_core.f --top-module rivet_pcie_ctrl
   if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: lint" }
 } else {
   $WslRoot = (wsl wslpath -a ($Root -replace '\\', '/'))
-  wsl -e bash -lc "cd '$WslRoot' && verilator --lint-only $Warn $Inc -f rtl/filelist_core.f --top-module rivet_pcie_ctrl"
+  wsl -e bash -lc "cd '$WslRoot' && verilator --lint-only --replication-limit 65536 $Warn $Inc -f rtl/filelist_core.f --top-module rivet_pcie_ctrl"
   if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: lint" }
 }
 Write-Host "PASS: Verilator lint (controller)"

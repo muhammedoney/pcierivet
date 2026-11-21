@@ -8,18 +8,23 @@ Gen2 x4 endpoint, DUT at the PIPE. The UVM bench clock `user_clk` is 8.0 ns, so 
 
 ## Posted writes versus payload size
 
-`perf_rq_sweep_gen2_x4` sends 32 MemWr32 TLPs at each payload size that fits the 154-byte TLP limit: 1, 2, 4, 8, 16, and 32 DW. The PIPE peer is in performance mode. InitFC advertises infinite posted, non-posted, and completion credits, and the peer ACKs each TLP so the 16-deep replay buffer is not the limit. Eight thousand `pclk` cycles separate the sizes. The monitor counts payload bytes from RQ `tlast` to the next size's disarm.
+`perf_rq_sweep_gen2_x4` sends 8 MemWr32 TLPs at each size from 1 DW (4 bytes) through the Max Payload Size steps to 1024 DW (4096 bytes). The PIPE peer is in performance mode. InitFC advertises infinite posted, non-posted, and completion credits, and the peer ACKs each TLP so the 16-deep replay buffer is not the limit. Eight thousand `pclk` cycles separate the sizes. The monitor counts payload bytes from RQ `tlast` to the next size's disarm.
 
 ```
-PERF tag=rq_dw1  bytes=128  cycles=127 rq_stall=0  rq_tlast=32 mb_s=125.984 pct_gen2x4=6.299
-PERF tag=rq_dw2  bytes=256  cycles=129 rq_stall=2  rq_tlast=32 mb_s=248.062 pct_gen2x4=12.403
-PERF tag=rq_dw4  bytes=512  cycles=173 rq_stall=14 rq_tlast=32 mb_s=369.942 pct_gen2x4=18.497
-PERF tag=rq_dw8  bytes=1024 cycles=231 rq_stall=8  rq_tlast=32 mb_s=554.113 pct_gen2x4=27.706
-PERF tag=rq_dw16 bytes=2048 cycles=361 rq_stall=10 rq_tlast=32 mb_s=709.141 pct_gen2x4=35.457
-PERF tag=rq_dw32 bytes=4096 cycles=620 rq_stall=13 rq_tlast=32 mb_s=825.806 pct_gen2x4=41.290
+PERF tag=rq_dw1    bytes=32    cycles=31   rq_stall=0 rq_tlast=8 mb_s=129.032 pct_gen2x4=6.452
+PERF tag=rq_dw2    bytes=64    cycles=31   rq_stall=0 rq_tlast=8 mb_s=258.065 pct_gen2x4=12.903
+PERF tag=rq_dw4    bytes=128   cycles=39   rq_stall=0 rq_tlast=8 mb_s=410.256 pct_gen2x4=20.513
+PERF tag=rq_dw8    bytes=256   cycles=55   rq_stall=0 rq_tlast=8 mb_s=581.818 pct_gen2x4=29.091
+PERF tag=rq_dw16   bytes=512   cycles=87   rq_stall=0 rq_tlast=8 mb_s=735.632 pct_gen2x4=36.782
+PERF tag=rq_dw32   bytes=1024  cycles=151  rq_stall=0 rq_tlast=8 mb_s=847.682 pct_gen2x4=42.384
+PERF tag=rq_dw64   bytes=2048  cycles=279  rq_stall=0 rq_tlast=8 mb_s=917.563 pct_gen2x4=45.878
+PERF tag=rq_dw128  bytes=4096  cycles=535  rq_stall=0 rq_tlast=8 mb_s=957.009 pct_gen2x4=47.850
+PERF tag=rq_dw256  bytes=8192  cycles=1047 rq_stall=0 rq_tlast=8 mb_s=978.032 pct_gen2x4=48.902
+PERF tag=rq_dw512  bytes=16384 cycles=2071 rq_stall=0 rq_tlast=8 mb_s=988.894 pct_gen2x4=49.445
+PERF tag=rq_dw1024 bytes=32768 cycles=4119 rq_stall=0 rq_tlast=8 mb_s=994.416 pct_gen2x4=49.721
 ```
 
-UVM reported 0 errors and 0 fatals. 32 DW is 825.806 MB/s, which is the printed 41.290% of the 2000 MB/s Gen2 x4 symbol rate. The user bus itself cannot exceed 1000 MB/s.
+UVM reported 0 errors and 0 fatals. 1024 DW is 4096 bytes per TLP; `bytes=32768` is 8 of those packets. That point is 994.416 MB/s, the printed 49.721% of the 2000 MB/s Gen2 x4 symbol rate. The user bus itself cannot exceed 1000 MB/s. Every size printed `rq_stall=0`.
 
 An earlier `perf_rq_memwr_gen2_x4` run (16× 1DW, finite credits, one idle user clock between beats) printed 83.333 MB/s. That run is not the payload curve.
 
@@ -62,7 +67,7 @@ VMK180 (XCVM1802, PG345 GTY) Gen2 x4, post-route in `fpga/vmk180/impl.log`:
 - WHS +0.019 ns (property 0.018743 ns)
 - THS 0
 
-That is setup and hold slack. It is not a throughput result.
+That is setup and hold slack from the netlist before the 4 KB transmit slot. It is not a throughput result, and it does not apply to this RTL.
 
 ## Not in these numbers
 

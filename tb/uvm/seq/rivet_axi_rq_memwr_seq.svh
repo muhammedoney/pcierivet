@@ -19,9 +19,9 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
     logic [63:0] b0, b1;
     int unsigned sent;
 
-    if (payload_dw == 0 || payload_dw > 32)
+    if (payload_dw == 0 || payload_dw > 1024)
       `uvm_fatal(get_type_name(),
-        $sformatf("payload_dw %0d is outside 1..32", payload_dw))
+        $sformatf("payload_dw %0d is outside 1..1024", payload_dw))
 
     item = rivet_axi_st_item::type_id::create("rq_burst");
     start_item(item);

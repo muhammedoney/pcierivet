@@ -55,7 +55,9 @@ module rivet_mac_os_tx #(
   localparam int unsigned SYMS        = PIPE_DATA_WIDTH / 8;
   localparam int unsigned CNT_W       = 12;
   localparam int unsigned PTR_W       = 7;
-  localparam int unsigned TLP_RAM_N   = 32;
+  // One framed TLP, 8 bytes per word. 516 covers a 4096-byte payload.
+  localparam int unsigned TLP_RAM_N   = RIVET_TLP_SLOT_BYTES / 8;
+  localparam int unsigned TLP_AW      = $clog2(TLP_RAM_N);
 
   localparam logic [CNT_W-1:0] SYMS_C  = CNT_W'(SYMS);
   localparam logic [CNT_W-1:0] CNT_MAX = {CNT_W{1'b1}};
@@ -189,19 +191,19 @@ module rivet_mac_os_tx #(
   logic [PTR_W-1:0]       stream_idx;
   logic [SKP_CNT_W-1:0]   skp_sym_q;
 
-  // 32x64b distributed LUTRAM + 16-byte head shift register for TLP emit
-  (* ram_style = "distributed" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
+  // Block RAM: a 4 KB frame does not belong in the old 32-deep LUTRAM.
+  (* ram_style = "block" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
   logic                   tlp_ram_we;
-  logic [4:0]             tlp_ram_waddr;
+  logic [TLP_AW-1:0]      tlp_ram_waddr;
   logic [63:0]            tlp_ram_wdata;
   logic [63:0]            tlp_ram_rdata;
 
   logic [127:0]           emit_buf_q, emit_buf_d;
   logic [4:0]             emit_cnt_q, emit_cnt_d;
-  logic [4:0]             tlp_wr_slot_q, tlp_wr_slot_d;
-  logic [4:0]             tlp_rd_slot_q, tlp_rd_slot_d;
-  logic [7:0]             tlp_len_q, tlp_len_d;
-  logic [7:0]             tlp_pos_q, tlp_pos_d;
+  logic [TLP_AW-1:0]      tlp_wr_slot_q, tlp_wr_slot_d;
+  logic [TLP_AW-1:0]      tlp_rd_slot_q, tlp_rd_slot_d;
+  logic [15:0]            tlp_len_q, tlp_len_d;
+  logic [15:0]            tlp_pos_q, tlp_pos_d;
   logic                   tlp_em_done;
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_data_d, sym_data_q;
@@ -263,7 +265,7 @@ module rivet_mac_os_tx #(
   end
 
   assign pkt_done    = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
-  assign tlp_em_done = (tlp_pos_q + 8'(sym_step)) >= (tlp_len_q + 8'd2);
+  assign tlp_em_done = (tlp_pos_q + 16'(sym_step)) >= (tlp_len_q + 16'd2);
   assign in_pkt_emit = take_dllp || (mode_q == ST_PKT) || (mode_q == ST_TLP_EM);
   assign skp_finishing =
       (mode_q == ST_OS) && !in_pkt_emit && set_done && (cur == RIVET_MAC_OS_SKP);
@@ -296,28 +298,28 @@ module rivet_mac_os_tx #(
 
     if (take_tlp_start) begin
       tlp_ram_we    = 1'b1;
-      tlp_ram_waddr = 5'd0;
+      tlp_ram_waddr = '0;
       emit_buf_d    = {64'd0, masked_beat};
       emit_cnt_d    = 5'd8;
-      tlp_wr_slot_d = 5'd1;
-      tlp_rd_slot_d = 5'd1;
+      tlp_wr_slot_d = TLP_AW'(1);
+      tlp_rd_slot_d = TLP_AW'(1);
       tlp_len_d     = beat_n;
     end else if (take_tlp_col) begin
       tlp_ram_we    = 1'b1;
       tlp_ram_waddr = tlp_wr_slot_q;
-      tlp_wr_slot_d = tlp_wr_slot_q + 5'd1;
-      tlp_len_d     = tlp_len_q + beat_n;
-      if (tlp_wr_slot_q == 5'd1) begin
+      tlp_wr_slot_d = tlp_wr_slot_q + TLP_AW'(1);
+      tlp_len_d     = tlp_len_q + 16'(beat_n);
+      if (tlp_wr_slot_q == TLP_AW'(1)) begin
         emit_buf_d[127:64] = masked_beat;
       end
       if (dll_tx_beat_i.eop) begin
         emit_cnt_d    = 5'd16;
-        tlp_rd_slot_d = 5'd2;
+        tlp_rd_slot_d = TLP_AW'(2);
       end
     end else if ((mode_q == ST_TLP_EM) && !tlp_em_done) begin
       // Every non-final emit cycle consumes sym_step-1 bytes on the STP beat
       // and sym_step bytes thereafter ({1,2,3,4,7,8} only).
-      take_b = (tlp_pos_q == 8'd0) ? (sym_step[3:0] - 4'd1) : sym_step[3:0];
+      take_b = (tlp_pos_q == 16'd0) ? (sym_step[3:0] - 4'd1) : sym_step[3:0];
       unique case (take_b)
         4'd1:    shifted = { 8'd0, emit_buf_q[127: 8]};
         4'd2:    shifted = {16'd0, emit_buf_q[127:16]};
@@ -340,7 +342,7 @@ module rivet_mac_os_tx #(
           default: emit_buf_d = {       tlp_ram_rdata, shifted[63:0]};
         endcase
         emit_cnt_d    = rem_cnt + 5'd8;
-        tlp_rd_slot_d = tlp_rd_slot_q + 5'd1;
+        tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(1);
       end else begin
         emit_buf_d = shifted;
         emit_cnt_d = rem_cnt;
@@ -393,7 +395,7 @@ module rivet_mac_os_tx #(
           tlp_pos_d = '0;
           pkt_ptr_d = '0;
         end else begin
-          tlp_pos_d = tlp_pos_q + 8'(sym_step);
+          tlp_pos_d = tlp_pos_q + 16'(sym_step);
         end
       end
       default: mode_d = ST_OS;
@@ -431,17 +433,17 @@ module rivet_mac_os_tx #(
         automatic int unsigned ord = 0;
         for (int unsigned l = 0; l < LANES; l++) begin
           if (lane_en_i[l]) begin
-            automatic logic [7:0] idx;
+            automatic logic [15:0] idx;
             automatic logic [2:0] boff;
             automatic int unsigned sym_i;
             sym_i = s * int'(n_en) + ord;
-            idx   = tlp_pos_q + 8'(sym_i);
-            if (idx == 8'd0) begin
+            idx   = tlp_pos_q + 16'(sym_i);
+            if (idx == 16'd0) begin
               sym_tmp = {1'b1, RIVET_SYM_STP};
-            end else if (idx == (tlp_len_q + 8'd1)) begin
+            end else if (idx == (tlp_len_q + 16'd1)) begin
               sym_tmp = {1'b1, RIVET_SYM_END};
-            end else if ((idx != 8'd0) && (idx <= tlp_len_q)) begin
-              boff = (tlp_pos_q == 8'd0) ? (3'(sym_i) - 3'd1) : 3'(sym_i);
+            end else if ((idx != 16'd0) && (idx <= tlp_len_q)) begin
+              boff = (tlp_pos_q == 16'd0) ? (3'(sym_i) - 3'd1) : 3'(sym_i);
               sym_tmp = {1'b0, head_byte(emit_buf_q[63:0], boff)};
             end else begin
               sym_tmp = {1'b0, 8'h00};

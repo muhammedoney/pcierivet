@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 430" role="img" aria-labelledby="title desc">
+  <title id="title">Posted-write throughput versus payload size</title>
+  <desc id="desc">Gen2 x4, 8 MemWr32 TLPs per size, from 4 bytes to 4096 bytes. Measured rates are 129.032, 258.065, 410.256, 581.818, 735.632, 847.682, 917.563, 957.009, 978.032, 988.894, and 994.416 MB/s.</desc>
+  <rect width="1120" height="430" fill="#ffffff"/>
+  <text x="72" y="32" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Posted-write throughput vs payload</text>
+  <text x="72" y="52" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 x4, 8 TLPs per size. 1024 DW = 4096 bytes per TLP. User bus ceiling is 1000 MB/s.</text>
+  <g fill="none" stroke="#d0d7de" stroke-width="1">
+    <line x1="72" y1="88" x2="1096" y2="88"/>
+    <line x1="72" y1="144" x2="1096" y2="144"/>
+    <line x1="72" y1="200" x2="1096" y2="200"/>
+    <line x1="72" y1="256" x2="1096" y2="256"/>
+    <line x1="72" y1="312" x2="1096" y2="312"/>
+    <line x1="72" y1="368" x2="1096" y2="368"/>
+  </g>
+  <g fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">
+    <text x="64" y="92">1000</text>
+    <text x="64" y="148">800</text>
+    <text x="64" y="204">600</text>
+    <text x="64" y="260">400</text>
+    <text x="64" y="316">200</text>
+    <text x="64" y="372">0</text>
+  </g>
+  <text x="18" y="228" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle" transform="rotate(-90 18 228)">MB/s</text>
+  <text x="900" y="80" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">1000 MB/s user bus</text>
+  <g fill="#1f6feb">
+    <rect x="88" y="331.87" width="52" height="36.13"/>
+    <rect x="182.8" y="295.74" width="52" height="72.26"/>
+    <rect x="277.6" y="253.13" width="52" height="114.87"/>
+    <rect x="372.4" y="205.09" width="52" height="162.91"/>
+    <rect x="467.2" y="162.02" width="52" height="205.98"/>
+    <rect x="562" y="130.65" width="52" height="237.35"/>
+    <rect x="656.8" y="111.08" width="52" height="256.92"/>
+    <rect x="751.6" y="100.04" width="52" height="267.96"/>
+    <rect x="846.4" y="94.15" width="52" height="273.85"/>
+    <rect x="941.2" y="91.11" width="52" height="276.89"/>
+    <rect x="1036" y="89.56" width="52" height="278.44"/>
+  </g>
+  <g fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" text-anchor="middle">
+    <text x="114" y="324">129.0</text>
+    <text x="208.8" y="288">258.1</text>
+    <text x="303.6" y="245">410.3</text>
+    <text x="398.4" y="197">581.8</text>
+    <text x="493.2" y="154">735.6</text>
+    <text x="588" y="122">847.7</text>
+  </g>
+  <g fill="#ffffff" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" text-anchor="middle">
+    <text x="682.8" y="124">917.6</text>
+    <text x="777.6" y="114">957.0</text>
+    <text x="872.4" y="108">978.0</text>
+    <text x="967.2" y="105">988.9</text>
+    <text x="1062" y="103">994.4</text>
+  </g>
+  <g fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle">
+    <text x="114" y="388">1 DW</text>
+    <text x="208.8" y="388">2 DW</text>
+    <text x="303.6" y="388">4 DW</text>
+    <text x="398.4" y="388">8 DW</text>
+    <text x="493.2" y="388">16 DW</text>
+    <text x="588" y="388">32 DW</text>
+    <text x="682.8" y="388">64 DW</text>
+    <text x="777.6" y="388">128 DW</text>
+    <text x="872.4" y="388">256 DW</text>
+    <text x="967.2" y="388">512 DW</text>
+    <text x="1062" y="388">1024 DW</text>
+    <text x="114" y="406" fill="#57606a">4 B</text>
+    <text x="208.8" y="406" fill="#57606a">8 B</text>
+    <text x="303.6" y="406" fill="#57606a">16 B</text>
+    <text x="398.4" y="406" fill="#57606a">32 B</text>
+    <text x="493.2" y="406" fill="#57606a">64 B</text>
+    <text x="588" y="406" fill="#57606a">128 B</text>
+    <text x="682.8" y="406" fill="#57606a">256 B</text>
+    <text x="777.6" y="406" fill="#57606a">512 B</text>
+    <text x="872.4" y="406" fill="#57606a">1024 B</text>
+    <text x="967.2" y="406" fill="#57606a">2048 B</text>
+    <text x="1062" y="406" fill="#57606a">4096 B</text>
+  </g>
+</svg>

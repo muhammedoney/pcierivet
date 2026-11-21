@@ -69,17 +69,17 @@ module rivet_dll_tlp_tx #(
   logic [DATA_W-1:0] crc_sh_q;
   logic [15:0]       frame_len_q;
   logic [15:0]       crc_left_q;
-  logic [7:0]        lcrc_idx0_q, lcrc_idx1_q, lcrc_idx2_q, lcrc_idx3_q;
+  logic [15:0]       lcrc_idx0_q, lcrc_idx1_q, lcrc_idx2_q, lcrc_idx3_q;
   logic [31:0]       crc_q;
   logic [11:0]       seq_q;
   logic [11:0]       next_seq_q;
 
-  logic [8:0]        rem_q;
+  logic [15:0]       rem_q;
   logic              emit_sop_q;
   logic              emit_eop_q;
   logic [7:0]        emit_keep_q;
 
-  function automatic logic [7:0] len_to_keep8(input logic [8:0] rem);
+  function automatic logic [7:0] len_to_keep8(input logic [15:0] rem);
     if (rem >= 9'd8) return 8'hFF;
     unique case (rem[2:0])
       3'd0: return 8'h00;
@@ -108,21 +108,21 @@ module rivet_dll_tlp_tx #(
 
   function automatic logic [DATA_W-1:0] insert_lcrc(
       input logic [DATA_W-1:0] bytes,
-      input logic [7:0]        idx0,
-      input logic [7:0]        idx1,
-      input logic [7:0]        idx2,
-      input logic [7:0]        idx3,
+      input logic [15:0]       idx0,
+      input logic [15:0]       idx1,
+      input logic [15:0]       idx2,
+      input logic [15:0]       idx3,
       input logic [31:0]       lcrc);
     logic [DATA_W-1:0] b;
     b = bytes;
     for (int unsigned i = 0; i < SLOT_BYTES; i++) begin
-      if (8'(i) == idx0)
+      if (16'(i) == idx0)
         b[8*i +: 8] = lcrc[7:0];
-      else if (8'(i) == idx1)
+      else if (16'(i) == idx1)
         b[8*i +: 8] = lcrc[15:8];
-      else if (8'(i) == idx2)
+      else if (16'(i) == idx2)
         b[8*i +: 8] = lcrc[23:16];
-      else if (8'(i) == idx3)
+      else if (16'(i) == idx3)
         b[8*i +: 8] = lcrc[31:24];
     end
     return b;
@@ -188,7 +188,7 @@ module rivet_dll_tlp_tx #(
       unique case (state_q)
         ST_IDLE: begin
           if (replay_en_i && replay_valid_i && replay_ready_o) begin
-            automatic logic [8:0] rlen = replay_len_i[8:0];
+            automatic logic [15:0] rlen = replay_len_i;
             frame_q     <= replay_data_i;
             frame_len_q <= replay_len_i;
             seq_q       <= replay_seq_i;
@@ -198,7 +198,7 @@ module rivet_dll_tlp_tx #(
             emit_keep_q <= len_to_keep8(rlen);
             state_q     <= ST_EMIT;
           end else if (enable_i && tl_valid_i && tl_ready_o) begin
-            automatic logic [7:0] base8 = tl_len_i[7:0] + 8'(RIVET_TLP_SEQ_BYTES);
+            automatic logic [15:0] base8 = tl_len_i + 16'(RIVET_TLP_SEQ_BYTES);
             frame_q     <= built_bytes;
             crc_sh_q    <= built_bytes;
             frame_len_q <= tl_len_i + 16'(RIVET_TLP_SEQ_BYTES + RIVET_TLP_LCRC_BYTES);
@@ -230,7 +230,7 @@ module rivet_dll_tlp_tx #(
         end
         ST_PUSH: begin
           if (push_ready_i) begin
-            automatic logic [8:0] flen = frame_len_q[8:0];
+            automatic logic [15:0] flen = frame_len_q;
             rem_q       <= flen;
             emit_sop_q  <= 1'b1;
             emit_eop_q  <= (flen <= 9'(BEAT_B));
@@ -243,7 +243,7 @@ module rivet_dll_tlp_tx #(
             if (emit_eop_q) begin
               state_q <= ST_IDLE;
             end else begin
-              automatic logic [8:0] nrem = rem_q - 9'(BEAT_B);
+              automatic logic [15:0] nrem = rem_q - 16'(BEAT_B);
               rem_q       <= nrem;
               emit_sop_q  <= 1'b0;
               emit_eop_q  <= (nrem <= 9'(BEAT_B));

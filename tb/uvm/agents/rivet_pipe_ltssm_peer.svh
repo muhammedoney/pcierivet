@@ -240,7 +240,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     logic        txdetectrx_d;
     logic        peer_active;
     logic [15:0] peer_lfsr[];
-    logic        dut_tx_ts1, dut_tx_ts2, dut_tx_k, dut_tx_data_only;
+    logic        dut_tx_ts1, dut_tx_ts2, dut_tx_k, dut_tx_com, dut_tx_data_only;
     logic        send_ts2, send_link_pad, send_lane_pad, send_os;
     logic [8:0]  peer_tmp;
     logic [7:0]  peer_out;
@@ -330,12 +330,17 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       dut_tx_ts1 = 1'b0;
       dut_tx_ts2 = 1'b0;
       dut_tx_k   = 1'b0;
+      dut_tx_com = 1'b0;
       // Only wire-live peer lanes; DUT EI on unused lanes after width narrow.
+      // A scrambled TLP byte can equal the TS identifier. Recovery is COM
+      // plus that identifier in the same cycle; a bare identifier is not.
       for (l = 0; l < peer_lanes; l++) begin
         if (vif.txelecidle[l]) continue;
         for (s = 0; s < 2; s++) begin
-          if (vif.txdatak[2*l + s]) dut_tx_k = 1'b1;
-          else begin
+          if (vif.txdatak[2*l + s]) begin
+            dut_tx_k = 1'b1;
+            if (vif.txdata[16*l + 8*s +: 8] == SYM_COM) dut_tx_com = 1'b1;
+          end else begin
             if (vif.txdata[16*l + 8*s +: 8] == SYM_TS1_ID) dut_tx_ts1 = 1'b1;
             if (vif.txdata[16*l + 8*s +: 8] == SYM_TS2_ID) dut_tx_ts2 = 1'b1;
           end
@@ -666,7 +671,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           end
           P_IDLE: begin
             // DUT entered Recovery (TS1/TS2 again) — rejoin numbered training.
-            if (dut_tx_ts1 || dut_tx_ts2) begin
+            // COM in the same cycle rejects a scrambled payload alias of 0x4A.
+            if (dut_tx_com && (dut_tx_ts1 || dut_tx_ts2)) begin
               phase_q    = dut_tx_ts2 ? P_TS2_CFG : P_TS1_LANE;
               phase_sets = '0;
               peer_ptr   = '0;

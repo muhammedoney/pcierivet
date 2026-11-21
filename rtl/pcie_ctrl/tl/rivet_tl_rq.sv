@@ -3,8 +3,8 @@
 //
 // Pack PG213-style 64-bit AXI-ST Requester Request (RQ) into a wire Mem32 TLP.
 // A 1DW write is still two TX beats. Longer writes keep that 16-byte head
-// (header + DW0) and then stream the rest, 8 bytes per beat, so the DLL
-// packer sees a single TLP up to its 154-byte payload limit.
+// (header + DW0) and then stream the rest, 8 bytes per beat. A descriptor
+// length of 0 is 1024 DW (4096-byte Max Payload).
 
 module rivet_tl_rq (
   input  logic        clk_i,
@@ -54,6 +54,9 @@ module rivet_tl_rq (
   logic [127:0] tx_q;
   logic         is_wr_q;
   logic [9:0]   len_q;
+  // PCIe length 0 means 1024 DW. dw_left never holds that full count:
+  // the head beat consumes the first one or two DWs first.
+  logic [10:0]  dw_n;
   logic [31:0]  addr_q;
   logic [7:0]   tag_q;
   logic [3:0]   fbe_q, lbe_q;
@@ -105,7 +108,9 @@ module rivet_tl_rq (
   assign tx_tlast_o  = ((st_q == ST_TX1) && !more_q) ||
                        ((st_q == ST_MORE) && more_beat && more_last);
   assign tx_hdr0_o   = tx_q[7:0];
-  assign tx_len_dw_o = is_wr_q ? ((len_q == 10'd0) ? 10'd1 : len_q) : 10'd0;
+  assign dw_n = (len_q == 10'd0) ? 11'd1024 : {1'b0, len_q};
+  // Length 0 is the 1024 DW encoding. rivet_tlp_data_credits maps 0 to 256.
+  assign tx_len_dw_o = is_wr_q ? len_q : 10'd0;
   assign tx_accept_o = tx_tvalid_o && tx_tready_i && tx_tlast_o;
 
   assign rq_seq_num_o     = seq_q;
@@ -179,7 +184,8 @@ module rivet_tl_rq (
         end
         ST_DAT: begin
           if (s_axis_rq_tvalid && s_axis_rq_tready) begin
-            logic [9:0] left;
+            logic [10:0] left;
+            logic [10:0] full;
             data_q <= s_axis_rq_tdata[31:0];
             tx_q[7:0]   <= RIVET_TLP_B0_MEMWR32;
             tx_q[15:8]  <= 8'h00;
@@ -199,16 +205,18 @@ module rivet_tl_rq (
             tx_q[119:112] <= s_axis_rq_tdata[23:16];
             tx_q[127:120] <= s_axis_rq_tdata[31:24];
             // DW0 rides in the 16-byte head. A second DW in this beat is stashed.
-            left = (len_q > 10'd1) ? (len_q - 10'd1) : 10'd0;
-            if ((len_q > 10'd1) && s_axis_rq_tkeep[1]) begin
+            // full==0 is not used; a captured length of 0 is 1024 DW.
+            full = (s_axis_rq_tvalid) ? dw_n : 11'd0;
+            left = (full > 11'd1) ? (full - 11'd1) : 11'd0;
+            if ((full > 11'd1) && s_axis_rq_tkeep[1]) begin
               stash_q   <= s_axis_rq_tdata[63:32];
               stash_v_q <= 1'b1;
-              left      = left - 10'd1;
+              left      = left - 11'd1;
             end else begin
               stash_v_q <= 1'b0;
             end
-            dw_left_q <= left;
-            more_q    <= (len_q > 10'd1);
+            dw_left_q <= left[9:0];
+            more_q    <= (full > 11'd1);
             st_q <= ST_TX0;
           end
         end

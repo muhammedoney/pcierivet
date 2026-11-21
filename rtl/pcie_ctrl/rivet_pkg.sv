@@ -364,7 +364,10 @@ package rivet_pkg;
   // DLL TLP framing sizes (seq + LCRC around TL payload).
   localparam int unsigned RIVET_TLP_SEQ_BYTES  = 2;
   localparam int unsigned RIVET_TLP_LCRC_BYTES = 4;
-  // MAC assemble buffer — sized to DLL REPLAY_SLOT_BYTES (multi-DW Class B).
+  // One framed TLP: seq + header + payload + LCRC.
+  // 4096-byte Max Payload, 16-byte header, 2-byte seq, 4-byte LCRC = 4118,
+  // rounded up to a multiple of 8. RX reassembly keeps its own smaller RAM.
+  localparam int unsigned RIVET_TLP_SLOT_BYTES    = 4128;
   localparam int unsigned RIVET_MAC_TLP_BUF_BYTES = 160;
 
   // Type 0 config space (PF0 Gen2 EP)
@@ -388,7 +391,7 @@ package rivet_pkg;
   localparam logic [7:0]  RIVET_CFG_PM_OFF    = 8'h40;
   localparam logic [7:0]  RIVET_CFG_MSI_OFF   = 8'h50;
   localparam logic [7:0]  RIVET_CFG_PCIE_OFF  = 8'h70;
-  localparam logic [2:0]  RIVET_CFG_CMPS      = 3'b000; // Device Cap MPS = 128 B
+  localparam logic [2:0]  RIVET_CFG_CMPS      = 3'b101; // Device Cap MPS = 4096 B
   localparam logic [3:0]  RIVET_CFG_LINK_SPEED_CAP = 4'h2; // Gen2 capable
   localparam logic [5:0]  RIVET_CFG_LINK_WIDTH_CAP = 6'h4; // x4
 
@@ -520,6 +523,9 @@ package rivet_pkg;
   endfunction
 
   function automatic logic [11:0] rivet_tlp_data_credits(input logic [9:0] len_dw);
+    // A 10-bit length of 0 is 1024 DW (4096 bytes), which is 256 data credits.
+    if (len_dw == 10'd0)
+      return 12'd256;
     return 12'((32'(len_dw) + 32'd3) / 32'd4);
   endfunction
 

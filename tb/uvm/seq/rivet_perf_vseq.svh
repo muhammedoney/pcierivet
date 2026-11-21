@@ -313,9 +313,8 @@ endclass : rivet_perf_credit_stall_vseq
 class rivet_perf_rq_sweep_vseq extends rivet_perf_vseq;
   `uvm_object_utils(rivet_perf_rq_sweep_vseq)
 
-  // Past the 16-deep replay buffer and the finite credit pool, so the
-  // peer must ACK and advertise infinite credits for the burst to finish.
-  int unsigned n_tlp = 32;
+  // PCIe Max Payload Size steps, 128 B through 4096 B.
+  int unsigned n_tlp = 8;
 
   function new(string name = "rivet_perf_rq_sweep_vseq");
     super.new(name);
@@ -325,9 +324,11 @@ class rivet_perf_rq_sweep_vseq extends rivet_perf_vseq;
     rivet_cfg_mgmt_rw_seq cfg_rw;
     int unsigned sizes[$];
     int unsigned s;
-    sizes = {1, 2, 4, 8, 16, 32};
+    // 1 DW = 4 B. Max Payload Size steps start at 32 DW (128 B) and
+    // end at 1024 DW (4096 B). Length 1024 is the PCIe wire encoding 0.
+    sizes = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     wait_l0();
-    start_sidebands(200_000, 1'b0, 1'b1);
+    start_sidebands(800_000, 1'b0, 1'b1);
     cfg_rw = rivet_cfg_mgmt_rw_seq::type_id::create("cfg_rw");
     cfg_rw.start(p_sequencer.cfg_sqr);
     for (s = 0; s < sizes.size(); s++) begin

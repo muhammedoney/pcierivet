@@ -74,6 +74,12 @@ Where each layer, interface, and vendor product sits in the stack:
 
 Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen3 when link proof allows — not Gen3/4 protocol yet.
 
+## Measured throughput
+
+Gen2 x4 posted writes on the endpoint. Each bar is 8 MemWr32 TLPs. 1 DW is 4 bytes and 1024 DW is 4096 bytes per TLP. The peer advertises infinite credits and ACKs every TLP. Numbers are the printed `mb_s` values (payload bytes on the 8 ns user clock). The user bus tops out at 1000 MB/s, and the 4096-byte point printed 994.416 MB/s. Detail is in the [performance poster](docs/perf-poster.md).
+
+![Posted-write throughput versus payload size, 4 bytes through 4096 bytes per TLP. Measured rates are 129.032, 258.065, 410.256, 581.818, 735.632, 847.682, 917.563, 957.009, 978.032, 988.894, and 994.416 MB/s.](docs/perf-rq-sweep.svg)
+
 ## Repository layout
 
 ```text

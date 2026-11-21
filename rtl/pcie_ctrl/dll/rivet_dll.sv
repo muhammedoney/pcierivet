@@ -13,8 +13,16 @@ module rivet_dll #(
   parameter int unsigned INITFC_GAP_CYC    = 8,
   parameter int unsigned UPDATEFC_GAP_CYC  = 32,
   parameter int unsigned REPLAY_TLP_SLOTS  = 16,
-  parameter int unsigned REPLAY_SLOT_BYTES = 160,
-  parameter int unsigned REPLAY_TIMER_CYC  = 256,
+  parameter int unsigned REPLAY_SLOT_BYTES = 4128,
+  // RX reassembly stays on the small slot. Only TX and replay hold 4 KB.
+  parameter int unsigned RX_SLOT_BYTES     = 160,
+  // Starts at push, and a new push reloads it, so it must cover a max
+  // frame already in the MAC plus the one just pushed. Collect is one
+  // 8-byte beat per pclk. Gen2 16-bit PIPE then shifts LANES*2 bytes
+  // per pclk. The pad is the ACK turnaround.
+  parameter int unsigned REPLAY_TIMER_CYC  =
+      2 * (((REPLAY_SLOT_BYTES + 7) / 8) +
+           ((REPLAY_SLOT_BYTES + (LANES * 2) - 1) / (LANES * 2))) + 256,
   parameter int unsigned REPLAY_NUM_LIMIT  = 3,
   parameter int unsigned TL_DATA_W         = rivet_pkg::RIVET_TL_DLL_DATA_W
 ) (
@@ -129,7 +137,7 @@ module rivet_dll #(
   logic [REPLAY_SLOT_BYTES*8-1:0] whole_tx_d;
   logic [15:0]                    whole_tx_len;
   logic                           whole_rx_v, whole_rx_r;
-  logic [REPLAY_SLOT_BYTES*8-1:0] whole_rx_d;
+  logic [RX_SLOT_BYTES*8-1:0]     whole_rx_d;
   logic [15:0]                    whole_rx_len;
   logic [11:0]                    whole_rx_seq;
 
@@ -337,7 +345,7 @@ module rivet_dll #(
 
   rivet_dll_tl_unpack #(
     .DATA_W     (TL_DATA_W),
-    .SLOT_BYTES (REPLAY_SLOT_BYTES)
+    .SLOT_BYTES (RX_SLOT_BYTES)
   ) u_tl_unpack (
     .clk_i      (pclk_i),
     .rst_ni     (rst_ni),
@@ -640,7 +648,7 @@ module rivet_dll #(
     .dec_ready_i  (dec_ready)
   );
 
-  rivet_dll_tlp_rx #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_rx (
+  rivet_dll_tlp_rx #(.SLOT_BYTES(RX_SLOT_BYTES)) u_tlp_rx (
     .clk_i           (pclk_i),
     .rst_ni          (rst_ni),
     .enable_i        (rx_enable_q),
