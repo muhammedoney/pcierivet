@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 460" role="img" aria-labelledby="title desc">
   <title id="title">Posted-write throughput versus payload size</title>
-  <desc id="desc">Three lines for Gen2 x4. Rivet measured rates, 8 MemWr32 TLPs per size, are 129.032, 258.065, 410.256, 581.818, 735.632, 847.682, 917.563, 957.009, 978.032, 988.894, and 994.416 MB/s. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The middle line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
+  <desc id="desc">Three lines for Gen2 x4. Rivet measured rates, 8 MemWr32 TLPs per size on a 4 ns user clock, are 250.000, 500.000, 800.000, 1122.807, 1347.368, 1590.062, 1747.440, 1865.209, 1930.254, 1964.508, and 1982.095 MB/s. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The middle line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
   <rect width="1120" height="460" fill="#ffffff"/>
   <text x="78" y="28" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Posted-write throughput vs payload</text>
-  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 x4. Rivet is measured. The other lines are the symbol rate and the WP350 / AN 456 posted-write formula.</text>
+  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 x4. Rivet is measured at 64 bits, 4 ns. The other lines are the symbol rate and the WP350 / AN 456 formula.</text>
   <g fill="none" stroke="#d0d7de" stroke-width="1">
     <line x1="78" y1="72" x2="1040" y2="72"/>
     <line x1="78" y1="147" x2="1040" y2="147"/>
@@ -21,22 +21,21 @@
   <text x="18" y="230" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle" transform="rotate(-90 18 230)">MB/s</text>
   <line x1="96" y1="72" x2="996" y2="72" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="5 4"/>
   <polyline fill="none" stroke="#bf8700" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,322 186,286.29 276,238.67 366,187.38 456,143.43 546,112.54 636,93.74 726,83.28 816,77.75 906,74.9 996,73.46"/>
-  <polyline fill="none" stroke="#1f6feb" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,352.65 186,333.29 276,310.46 366,284.73 456,261.66 546,244.85 636,234.37 726,228.45 816,225.3 906,223.67 996,222.84"/>
-  <g fill="#1f6feb">
-    <circle cx="96" cy="352.65" r="3.5"/>
-    <circle cx="186" cy="333.29" r="3.5"/>
-    <circle cx="276" cy="310.46" r="3.5"/>
-    <circle cx="366" cy="284.73" r="3.5"/>
-    <circle cx="456" cy="261.66" r="3.5"/>
-    <circle cx="546" cy="244.85" r="3.5"/>
-    <circle cx="636" cy="234.37" r="3.5"/>
-    <circle cx="726" cy="228.45" r="3.5"/>
-    <circle cx="816" cy="225.3" r="3.5"/>
-    <circle cx="906" cy="223.67" r="3.5"/>
-    <circle cx="996" cy="222.84" r="3.5"/>
-  </g>
   <rect x="630" y="98.55" width="12" height="12" fill="#8250df"/>
-  <text x="648" y="109" fill="#8250df" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">Quartus hard IP, 1783</text>
+  <polyline fill="none" stroke="#1f6feb" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,334.50 186,297.00 276,252.00 366,203.58 456,169.89 546,133.49 636,109.88 726,92.22 816,82.46 906,77.32 996,74.69"/>
+  <g fill="#1f6feb">
+    <circle cx="96" cy="334.50" r="3.5"/>
+    <circle cx="186" cy="297.00" r="3.5"/>
+    <circle cx="276" cy="252.00" r="3.5"/>
+    <circle cx="366" cy="203.58" r="3.5"/>
+    <circle cx="456" cy="169.89" r="3.5"/>
+    <circle cx="546" cy="133.49" r="3.5"/>
+    <circle cx="636" cy="109.88" r="3.5"/>
+    <circle cx="726" cy="92.22" r="3.5"/>
+    <circle cx="816" cy="82.46" r="3.5"/>
+    <circle cx="906" cy="77.32" r="3.5"/>
+    <circle cx="996" cy="74.69" r="3.5"/>
+  </g>
   <g fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" text-anchor="middle">
     <text x="96" y="390">4</text>
     <text x="186" y="390">8</text>

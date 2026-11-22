@@ -81,13 +81,13 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | Perf inbound read | `.\scripts\sim_questa.ps1 perf_cq_cc_gen2_x4 4` | 8× peer MemRd32 → CC CplD; 4 payload bytes per completion |
 | Perf credit stall | `.\scripts\sim_questa.ps1 perf_credit_stall_gen2_x4 4` | RQ MemRd while sampling `pcie_tfc_nph_av` |
 
-The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top` is 8 ns, so a full 64-bit beat is 1000 MB/s. The Gen2 x4 symbol data rate used as `pct_gen2x4` is 2000 MB/s. Read latency includes the PIPE peer. Questa 2024.1 on 21 Nov 2026, with `MGLS_LICENSE_FILE` pointed at the Mentor node-locked license and `vsim -suppress 7061`, printed:
+The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top` is 4 ns, so a full 64-bit beat is 2000 MB/s. The Gen2 x4 symbol data rate used as `pct_gen2x4` is 2000 MB/s. Read latency includes the PIPE peer. The payload sweep is Questa 2024.1 on 22 Nov 2026. The other four lines are the 21 Nov 2026 run, when `user_clk` was 8 ns, and were not re-run. Both used `vsim -suppress 7061`.
 
-- `rq_memwr`: 64 bytes, 96 cycles, `rq_stall=0`, `mb_s=83.333`, `pct_gen2x4=4.167` (finite-credit peer, not the payload curve)
-- `rq_dw1` .. `rq_dw1024` (`perf_rq_sweep_gen2_x4`, 8 TLPs, infinite credits and ACK): `mb_s` 129.032, 258.065, 410.256, 581.818, 735.632, 847.682, 917.563, 957.009, 978.032, 988.894, 994.416. `rq_stall` 0 on every size. `pct_gen2x4` 6.452, 12.903, 20.513, 29.091, 36.782, 42.384, 45.878, 47.850, 48.902, 49.445, 49.721. 0 errors
-- `rq_rc_lat`: `lat_n=8`, `lat_min=363`, `lat_avg=458`, `lat_max=714`
-- `cq_cc`: 8 CQ and 8 CC, 32 bytes, 2876 cycles, `mb_s=1.391`
-- `credit_stall`: `rq_stall=0`, `credit_stall=0`, `tfc_nph_min=4`
+- `rq_memwr`: 64 bytes, 96 cycles, `rq_stall=0`, `mb_s=83.333`, `pct_gen2x4=4.167` (finite-credit peer, 8 ns user clock, not the payload curve)
+- `rq_dw1` .. `rq_dw1024` (`perf_rq_sweep_gen2_x4`, 8 TLPs, infinite credits and ACK, 4 ns user clock): `mb_s` 250.000, 500.000, 800.000, 1122.807, 1347.368, 1590.062, 1747.440, 1865.209, 1930.254, 1964.508, 1982.095. `rq_stall` 0, 0, 0, 1, 7, 9, 13, 13, 13, 13, 13. `pct_gen2x4` 12.500, 25.000, 40.000, 56.140, 67.368, 79.503, 87.372, 93.260, 96.513, 98.225, 99.105. 0 errors
+- `rq_rc_lat`: `lat_n=8`, `lat_min=363`, `lat_avg=458`, `lat_max=714` at `user_clk_ns=8.0`
+- `cq_cc`: 8 CQ and 8 CC, 32 bytes, 2876 cycles, `mb_s=1.391` at `user_clk_ns=8.0`
+- `credit_stall`: `rq_stall=0`, `credit_stall=0`, `tfc_nph_min=4` at `user_clk_ns=8.0`
 
 `vsim` without `-suppress 7061` stops in vopt (`vopt-7061` on the sim-only `tlp_ram` initial, then `vopt-2064`). The finite-credit posted-write burst is 16 TLPs so it stays inside the peer's 32 posted header credits. The payload sweep uses a peer that advertises infinite credits and ACKs every TLP.
 
