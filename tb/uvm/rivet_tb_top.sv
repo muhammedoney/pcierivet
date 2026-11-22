@@ -30,8 +30,9 @@ module rivet_tb_top;
   localparam int unsigned N_TS1_POLLING     = 32;
 
   initial begin
+    // 250 MHz, same rate as pclk. 64 bits is 4 Gbit/s per lane on Gen2 x4.
     user_clk = 0;
-    forever #4 user_clk = ~user_clk;
+    forever #2 user_clk = ~user_clk;
   end
 
   initial begin

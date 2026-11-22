@@ -205,6 +205,12 @@ module rivet_mac_os_tx #(
   logic [15:0]            tlp_len_q, tlp_len_d;
   logic [15:0]            tlp_pos_q, tlp_pos_d;
   logic                   tlp_em_done;
+  // Flow: STP is already on the wire while later beats of this TLP are accepted.
+  logic                   tlp_flow_q, tlp_flow_d;
+  // Closed: the EOP beat has been accepted, so END is at tlp_len+1.
+  logic                   tlp_closed_q, tlp_closed_d;
+  logic                   emit_fire;
+  logic [3:0]             take_b_c;
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_data_d, sym_data_q;
   logic [2*LANES-1:0]               sym_datak_d, sym_datak_q;
@@ -265,8 +271,14 @@ module rivet_mac_os_tx #(
   end
 
   assign pkt_done    = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
-  assign tlp_em_done = (tlp_pos_q + 16'(sym_step)) >= (tlp_len_q + 16'd2);
-  assign in_pkt_emit = take_dllp || (mode_q == ST_PKT) || (mode_q == ST_TLP_EM);
+  assign take_b_c    = (tlp_pos_q == 16'd0) ? (sym_step[3:0] - 4'd1) : sym_step[3:0];
+  // END exists only after EOP. Until then the length is still growing.
+  assign tlp_em_done = tlp_closed_q &&
+                       ((tlp_pos_q + 16'(sym_step)) >= (tlp_len_q + 16'd2));
+  assign emit_fire   = (tlp_flow_q || (mode_q == ST_TLP_EM)) && !tlp_em_done &&
+                       ({1'b0, take_b_c} <= emit_cnt_q);
+  assign in_pkt_emit = take_dllp || (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) ||
+                       tlp_flow_q;
   assign skp_finishing =
       (mode_q == ST_OS) && !in_pkt_emit && set_done && (cur == RIVET_MAC_OS_SKP);
 
@@ -312,14 +324,19 @@ module rivet_mac_os_tx #(
       if (tlp_wr_slot_q == TLP_AW'(1)) begin
         emit_buf_d[127:64] = masked_beat;
       end
-      if (dll_tx_beat_i.eop) begin
+      if (dll_tx_beat_i.eop && !tlp_flow_q) begin
+        emit_cnt_d    = 5'd16;
+        tlp_rd_slot_d = TLP_AW'(2);
+      end else if ((tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop) begin
+        // 16-byte head is full and more beats follow. Emit starts next cycle.
         emit_cnt_d    = 5'd16;
         tlp_rd_slot_d = TLP_AW'(2);
       end
-    end else if ((mode_q == ST_TLP_EM) && !tlp_em_done) begin
+    end
+    if (emit_fire && !take_tlp_start) begin
       // Every non-final emit cycle consumes sym_step-1 bytes on the STP beat
       // and sym_step bytes thereafter ({1,2,3,4,7,8} only).
-      take_b = (tlp_pos_q == 16'd0) ? (sym_step[3:0] - 4'd1) : sym_step[3:0];
+      take_b = take_b_c;
       unique case (take_b)
         4'd1:    shifted = { 8'd0, emit_buf_q[127: 8]};
         4'd2:    shifted = {16'd0, emit_buf_q[127:16]};
@@ -351,12 +368,16 @@ module rivet_mac_os_tx #(
   end
 
   always_comb begin
-    mode_d    = mode_q;
-    pkt_d     = pkt_q;
-    pkt_ptr_d = pkt_ptr_q;
-    tlp_pos_d = tlp_pos_q;
+    mode_d       = mode_q;
+    pkt_d        = pkt_q;
+    pkt_ptr_d    = pkt_ptr_q;
+    tlp_pos_d    = tlp_pos_q;
+    tlp_flow_d   = tlp_flow_q;
+    tlp_closed_d = tlp_closed_q;
     unique case (mode_q)
       ST_OS: begin
+        tlp_flow_d   = 1'b0;
+        tlp_closed_d = 1'b0;
         if (take_dllp) begin
           pkt_d = dll_tx_beat_i.data;
           // First cycle already emits symbols 0..sym_step-1.
@@ -369,9 +390,10 @@ module rivet_mac_os_tx #(
           end
         end else if (take_tlp_start) begin
           // Buffer updates this cycle; STP goes out on the next pclk.
-          tlp_pos_d = '0;
-          pkt_ptr_d = '0;
-          mode_d    = dll_tx_beat_i.eop ? ST_TLP_EM : ST_TLP_COL;
+          tlp_pos_d    = '0;
+          pkt_ptr_d    = '0;
+          tlp_closed_d = dll_tx_beat_i.eop;
+          mode_d       = dll_tx_beat_i.eop ? ST_TLP_EM : ST_TLP_COL;
         end
       end
       ST_PKT: begin
@@ -383,18 +405,27 @@ module rivet_mac_os_tx #(
         end
       end
       ST_TLP_COL: begin
+        if (take_tlp_col && (tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop)
+          tlp_flow_d = 1'b1;
         if (take_tlp_col && dll_tx_beat_i.eop) begin
-          mode_d    = ST_TLP_EM;
-          tlp_pos_d = '0;
-          pkt_ptr_d = '0;
+          mode_d       = ST_TLP_EM;
+          tlp_closed_d = 1'b1;
+          if (!tlp_flow_q) begin
+            tlp_pos_d = '0;
+            pkt_ptr_d = '0;
+          end
         end
+        if (emit_fire)
+          tlp_pos_d = tlp_pos_q + 16'(sym_step);
       end
       ST_TLP_EM: begin
         if (tlp_em_done) begin
-          mode_d    = ST_OS;
-          tlp_pos_d = '0;
-          pkt_ptr_d = '0;
-        end else begin
+          mode_d       = ST_OS;
+          tlp_pos_d    = '0;
+          pkt_ptr_d    = '0;
+          tlp_flow_d   = 1'b0;
+          tlp_closed_d = 1'b0;
+        end else if (emit_fire) begin
           tlp_pos_d = tlp_pos_q + 16'(sym_step);
         end
       end
@@ -428,7 +459,7 @@ module rivet_mac_os_tx #(
           end
         end
       end
-    end else if (mode_q == ST_TLP_EM) begin
+    end else if ((mode_q == ST_TLP_EM) || tlp_flow_q) begin
       for (int unsigned s = 0; s < SYMS; s++) begin
         automatic int unsigned ord = 0;
         for (int unsigned l = 0; l < LANES; l++) begin
@@ -440,9 +471,9 @@ module rivet_mac_os_tx #(
             idx   = tlp_pos_q + 16'(sym_i);
             if (idx == 16'd0) begin
               sym_tmp = {1'b1, RIVET_SYM_STP};
-            end else if (idx == (tlp_len_q + 16'd1)) begin
+            end else if (tlp_closed_q && (idx == (tlp_len_q + 16'd1))) begin
               sym_tmp = {1'b1, RIVET_SYM_END};
-            end else if ((idx != 16'd0) && (idx <= tlp_len_q)) begin
+            end else if ((idx != 16'd0) && (!tlp_closed_q || (idx <= tlp_len_q))) begin
               boff = (tlp_pos_q == 16'd0) ? (3'(sym_i) - 3'd1) : 3'(sym_i);
               sym_tmp = {1'b0, head_byte(emit_buf_q[63:0], boff)};
             end else begin
@@ -471,7 +502,7 @@ module rivet_mac_os_tx #(
   end
 
   assign sym_valid_d = take_dllp ||
-                       (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) ||
+                       (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) || tlp_flow_q ||
                        (cur != RIVET_MAC_OS_NONE);
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
@@ -490,6 +521,8 @@ module rivet_mac_os_tx #(
       tlp_rd_slot_q <= '0;
       tlp_len_q     <= '0;
       tlp_pos_q     <= '0;
+      tlp_flow_q    <= 1'b0;
+      tlp_closed_q  <= 1'b0;
       sym_data_q    <= '0;
       sym_datak_q   <= '0;
       sym_os_d_q    <= '0;
@@ -504,6 +537,8 @@ module rivet_mac_os_tx #(
       tlp_rd_slot_q <= tlp_rd_slot_d;
       tlp_len_q     <= tlp_len_d;
       tlp_pos_q     <= tlp_pos_d;
+      tlp_flow_q    <= tlp_flow_d;
+      tlp_closed_q  <= tlp_closed_d;
       sym_data_q    <= sym_data_d;
       sym_datak_q   <= sym_datak_d;
       sym_os_d_q    <= sym_os_d_d;

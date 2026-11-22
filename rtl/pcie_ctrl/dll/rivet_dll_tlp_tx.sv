@@ -4,11 +4,11 @@
 // Frame TL payload with Seq# + LCRC and emit MAC TLP beats. New traffic is
 // pushed into the replay buffer; replay path re-emits stored framed images.
 //
-// LCRC is an 8-byte parallel fold (rivet_crc32_fold), one chunk per cycle,
-// into a dedicated 32-bit register; ST_LCRC inserts the registered LCRC in
-// its own cycle so the CRC XOR tree never chains into the 160-byte frame mux.
-// Emit tracks remaining bytes / keep / EOP in registers so beat_o is pure
-// wiring off frame_q[63:0].
+// LCRC is an 8-byte parallel fold (rivet_crc32_fold). A new packet emits
+// those same bytes during ST_CRC, so the CRC walk is the beat stream.
+// ST_LCRC sends the 4 LCRC bytes with EOP and pushes the framed image.
+// frame_q stays put so insert_lcrc hits the saved index. Replay images
+// already contain the LCRC and use ST_EMIT only.
 
 module rivet_dll_tlp_tx #(
   parameter int unsigned SLOT_BYTES = 160
@@ -148,21 +148,41 @@ module rivet_dll_tlp_tx #(
                           push_ready_i &&
                           (tl_len_i != 16'd0) && (tl_len_i <= MAX_PLD[15:0]);
   assign replay_ready_o = replay_en_i && (state_q == ST_IDLE);
-  assign push_valid_o   = (state_q == ST_PUSH);
+  assign push_valid_o   = (state_q == ST_PUSH) || (state_q == ST_LCRC);
   assign push_seq_o     = seq_q;
-  assign push_data_o    = frame_q;
+  assign push_data_o    = (state_q == ST_LCRC)
+      ? insert_lcrc(frame_q, lcrc_idx0_q, lcrc_idx1_q, lcrc_idx2_q, lcrc_idx3_q, crc_q)
+      : frame_q;
   assign push_len_o     = frame_len_q;
 
-  assign beat_valid_o = (state_q == ST_EMIT);
+  assign beat_valid_o = (state_q == ST_EMIT) || (state_q == ST_CRC) || (state_q == ST_LCRC);
   always_comb begin
     beat_o          = '0;
     beat_o.pkt_type = RIVET_MAC_PKT_TLP;
-    beat_o.sop      = emit_sop_q;
-    beat_o.eop      = emit_eop_q;
-    beat_o.keep     = emit_keep_q;
-    for (int unsigned ki = 0; ki < BEAT_B; ki++) begin
-      if (emit_keep_q[ki])
-        beat_o.data[8*ki +: 8] = frame_q[8*ki +: 8];
+    if (state_q == ST_CRC) begin
+      beat_o.sop  = emit_sop_q;
+      beat_o.eop  = 1'b0;
+      beat_o.keep = (crc_left_q >= 16'(BEAT_B)) ? 8'hFF : len_to_keep8(crc_left_q);
+      for (int unsigned ki = 0; ki < BEAT_B; ki++) begin
+        if (beat_o.keep[ki])
+          beat_o.data[8*ki +: 8] = crc_sh_q[8*ki +: 8];
+      end
+    end else if (state_q == ST_LCRC) begin
+      beat_o.sop  = 1'b0;
+      beat_o.eop  = 1'b1;
+      beat_o.keep = 8'h0F;
+      beat_o.data[7:0]   = crc_q[7:0];
+      beat_o.data[15:8]  = crc_q[15:8];
+      beat_o.data[23:16] = crc_q[23:16];
+      beat_o.data[31:24] = crc_q[31:24];
+    end else begin
+      beat_o.sop  = emit_sop_q;
+      beat_o.eop  = emit_eop_q;
+      beat_o.keep = emit_keep_q;
+      for (int unsigned ki = 0; ki < BEAT_B; ki++) begin
+        if (emit_keep_q[ki])
+          beat_o.data[8*ki +: 8] = frame_q[8*ki +: 8];
+      end
     end
   end
 
@@ -210,23 +230,30 @@ module rivet_dll_tlp_tx #(
             crc_q       <= 32'hFFFF_FFFF;
             seq_q       <= next_seq_q;
             next_seq_q  <= next_seq_q + 12'd1;
+            emit_sop_q  <= 1'b1;
             state_q     <= ST_CRC;
           end
         end
         ST_CRC: begin
-          if (crc_last) begin
-            crc_q   <= ~crc_nxt;
-            state_q <= ST_LCRC;
-          end else begin
-            crc_q      <= crc_nxt;
-            crc_sh_q   <= crc_sh_q >> (BEAT_B * 8);
-            crc_left_q <= crc_left_q - 16'(BEAT_B);
+          // Same bytes that fold into the LCRC go out on this beat.
+          if (beat_valid_o && beat_ready_i) begin
+            emit_sop_q <= 1'b0;
+            if (crc_last) begin
+              crc_q   <= ~crc_nxt;
+              state_q <= ST_LCRC;
+            end else begin
+              crc_q      <= crc_nxt;
+              crc_sh_q   <= crc_sh_q >> (BEAT_B * 8);
+              crc_left_q <= crc_left_q - 16'(BEAT_B);
+            end
           end
         end
         ST_LCRC: begin
-          frame_q <= insert_lcrc(frame_q, lcrc_idx0_q, lcrc_idx1_q,
-                                 lcrc_idx2_q, lcrc_idx3_q, crc_q);
-          state_q <= ST_PUSH;
+          if (beat_valid_o && beat_ready_i && push_ready_i) begin
+            frame_q <= insert_lcrc(frame_q, lcrc_idx0_q, lcrc_idx1_q,
+                                   lcrc_idx2_q, lcrc_idx3_q, crc_q);
+            state_q <= ST_IDLE;
+          end
         end
         ST_PUSH: begin
           if (push_ready_i) begin

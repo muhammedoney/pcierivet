@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 // Samples AXI-ST accept/stall and pcie_tfc_* while a performance sequence is armed.
-// user_clk in rivet_tb_top is 8 ns. Gen2 x4 symbol data rate is 2000 MB/s.
+// user_clk in rivet_tb_top is 4 ns. Gen2 x4 symbol data rate is 2000 MB/s.
 
 class rivet_perf_mon extends uvm_component;
   `uvm_component_utils(rivet_perf_mon)
@@ -24,7 +24,7 @@ class rivet_perf_mon extends uvm_component;
   protected int unsigned cyc;
   protected int unsigned pending_rq[$];
 
-  localparam real USER_CLK_NS   = 8.0;
+  localparam real USER_CLK_NS   = 4.0;
   localparam real GEN2_X4_MB_S  = 2000.0;
 
   function new(string name, uvm_component parent);
@@ -74,8 +74,8 @@ class rivet_perf_mon extends uvm_component;
     real mb_s, pct, stall_pct;
     bytes = rq_payload_bytes + cc_payload_bytes;
     span  = (window_cycles == 0) ? 1 : window_cycles;
-    // bytes/s / 1e6 at an 8 ns user clock: bytes * 125 / cycles.
-    mb_s = (bytes * 125.0) / span;
+    // bytes/s / 1e6 at a 4 ns user clock: bytes * 250 / cycles.
+    mb_s = (bytes * 250.0) / span;
     pct  = (100.0 * mb_s) / GEN2_X4_MB_S;
     stall_pct = (100.0 * credit_stall) / span;
     lat_avg = (lat_n == 0) ? 0 : (lat_sum / lat_n);
