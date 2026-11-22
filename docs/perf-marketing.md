@@ -1,6 +1,6 @@
 # Rivet performance note
 
-Rivet is a soft PCIe endpoint. The controller is `rivet_pcie_ctrl`. The posted-write sweep was printed by QuestaSim 2024.1 on 22 Nov 2026. Read latency, inbound, and credit stall were printed on 21 Nov 2026. The VMK180 numbers are from the route log. Nothing else is quoted as a measurement.
+Rivet is a soft PCIe endpoint. The controller is `rivet_pcie_ctrl`. The posted-write sweep was printed by QuestaSim 2024.1 on 22 Nov 2026. The requester-read sweep was printed by the same simulator on 23 Nov 2026. Read latency, inbound, and credit stall were printed on 21 Nov 2026. The FPGA slack below is the 22 Nov streaming-TX image, before the completion-path RAM, and is not a current route. Nothing else is quoted as a measurement.
 
 ## Link under test
 
@@ -34,16 +34,25 @@ PERF tag=rq64_dw16 bytes=512 cycles=95 rq_stall=7 rq_tlast=8 mb_s=1347.368 pct_g
 
 The 4096-byte MemWr64 point printed 1979.700 MB/s again.
 
-## 1 DW requester reads
+## Requester reads versus payload size
 
-`perf_rq_memrd_gen2_x4` sends eight 1 DW MemRd32, then eight 1 DW MemRd64. Each completion is a 4-byte CplD on RC. The peer frame is 32 bytes, so there is no read payload sweep. This peer advertises finite credits. UVM reported 0 errors. `bytes=32` is eight completions. The cycle count includes the gap between reads. Both bursts printed `lat_min=26`, `lat_avg=26`, `lat_max=26`.
+`perf_rq_memrd_gen2_x4` sends 8 MemRd32 TLPs at each size from 1 DW through 1024 DW, then the same sizes as MemRd64. The monitor counts CplD payload bytes on RC and stays armed until `rc_tlast=8`. The peer returns one completion per request and advertises infinite credits. UVM reported 0 errors and 0 fatals. MemRd64 printed the same cycles and `mb_s` as MemRd32 at every size. Every size printed `rq_stall=0`, `credit_stall=0`, and `tfc_nph_min=15`.
 
 ```
-PERF tag=memrd32 bytes=32 cycles=259 rc_tlast=8 lat_n=8 lat_min=26 lat_avg=26 lat_max=26 mb_s=30.888 pct_gen2x4=1.544 tfc_nph_min=8 tfc_zero=0 user_clk_ns=4.0
-PERF tag=memrd64 bytes=32 cycles=248 rc_tlast=8 lat_n=8 lat_min=26 lat_avg=26 lat_max=26 mb_s=32.258 pct_gen2x4=1.613 tfc_nph_min=0 tfc_zero=15 user_clk_ns=4.0
+PERF tag=rd_dw1    bytes=32    cycles=114  rc_tlast=8 mb_s=70.175  pct_gen2x4=3.509  user_clk_ns=4.0
+PERF tag=rd_dw2    bytes=64    cycles=132  rc_tlast=8 mb_s=121.212 pct_gen2x4=6.061  user_clk_ns=4.0
+PERF tag=rd_dw4    bytes=128   cycles=148  rc_tlast=8 mb_s=216.216 pct_gen2x4=10.811 user_clk_ns=4.0
+PERF tag=rd_dw8    bytes=256   cycles=203  rc_tlast=8 mb_s=315.271 pct_gen2x4=15.764 user_clk_ns=4.0
+PERF tag=rd_dw16   bytes=512   cycles=271  rc_tlast=8 mb_s=472.325 pct_gen2x4=23.616 user_clk_ns=4.0
+PERF tag=rd_dw32   bytes=1024  cycles=404  rc_tlast=8 mb_s=633.663 pct_gen2x4=31.683 user_clk_ns=4.0
+PERF tag=rd_dw64   bytes=2048  cycles=676  rc_tlast=8 mb_s=757.396 pct_gen2x4=37.870 user_clk_ns=4.0
+PERF tag=rd_dw128  bytes=4096  cycles=1219 rc_tlast=8 mb_s=840.033 pct_gen2x4=42.002 user_clk_ns=4.0
+PERF tag=rd_dw256  bytes=8192  cycles=2307 rc_tlast=8 mb_s=887.733 pct_gen2x4=44.387 user_clk_ns=4.0
+PERF tag=rd_dw512  bytes=16384 cycles=4483 rc_tlast=8 mb_s=913.674 pct_gen2x4=45.684 user_clk_ns=4.0
+PERF tag=rd_dw1024 bytes=32768 cycles=8835 rc_tlast=8 mb_s=927.221 pct_gen2x4=46.361 user_clk_ns=4.0
 ```
 
-Both printed `rq_stall=0` and `credit_stall=0`.
+The 4096-byte point is 927.221 MB/s. `rd64_dw1` through `rd64_dw1024` printed those same eleven rates. Latency on the 4-byte point was `lat_min=51`, `lat_avg=67`, `lat_max=82`. On the 4096-byte point it was `lat_min=1586`, `lat_avg=5194`, `lat_max=8803`.
 
 An earlier `perf_rq_memwr_gen2_x4` run (16× 1DW, finite credits, one idle user clock between beats) printed 83.333 MB/s. That run is not the payload curve.
 
@@ -79,7 +88,7 @@ No RQ beat was held. The credit scale never read 0. The lowest value seen was 4,
 
 ## FPGA timing
 
-Post-route slack on the word-RAM netlist, 22 Nov 2026. The figures are the implementation run properties. They are not throughput.
+Post-route slack on the streaming-TX image, 22 Nov 2026, before the completion-path RAM. These logs are not a route of the current netlist. The figures are the implementation run properties. They are not throughput.
 
 VCU118 (XCVU9P, PG239), `fpga/vcu118/impl.console.log`:
 

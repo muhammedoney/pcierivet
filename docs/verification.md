@@ -78,17 +78,17 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | Perf posted write | `.\scripts\sim_questa.ps1 perf_rq_memwr_gen2_x4 4` | 16× RQ MemWr32, finite-credit peer |
 | Perf payload sweep | `.\scripts\sim_questa.ps1 perf_rq_sweep_gen2_x4 4` | 8× MemWr32 at 1..1024 DW (4 B..4096 B); infinite credits and ACK |
 | Perf MemWr64 sweep | `.\scripts\sim_questa.ps1 perf_rq_memwr64_gen2_x4 4` | Same sizes, `addr[63:32]=1` (TLP type 0x60) |
-| Perf MemRd | `.\scripts\sim_questa.ps1 perf_rq_memrd_gen2_x4 4` | 8× 1 DW MemRd32 then 8× 1 DW MemRd64; 4-byte CplD on RC |
+| Perf MemRd sweep | `.\scripts\sim_questa.ps1 perf_rq_memrd_gen2_x4 4` | 8× MemRd32 then 8× MemRd64 at 1..1024 DW; CplD payload on RC |
 | Perf read latency | `.\scripts\sim_questa.ps1 perf_rq_rc_lat_gen2_x4 4` | 8× RQ MemRd32 → peer CplD → RC; min/avg/max `user_clk` cycles |
 | Perf inbound read | `.\scripts\sim_questa.ps1 perf_cq_cc_gen2_x4 4` | 8× peer MemRd32 → CC CplD; 4 payload bytes per completion |
 | Perf credit stall | `.\scripts\sim_questa.ps1 perf_credit_stall_gen2_x4 4` | RQ MemRd while sampling `pcie_tfc_nph_av` |
 
-The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top` is 4 ns, so a full 64-bit beat is 2000 MB/s. The Gen2 x4 symbol data rate used as `pct_gen2x4` is 2000 MB/s. Read latency includes the PIPE peer. The payload sweep is Questa 2024.1 on 22 Nov 2026. The other four lines are the 21 Nov 2026 run, when `user_clk` was 8 ns, and were not re-run. Both used `vsim -suppress 7061`.
+The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top` is 4 ns, so a full 64-bit beat is 2000 MB/s. The Gen2 x4 symbol data rate used as `pct_gen2x4` is 2000 MB/s. Read latency includes the PIPE peer. The posted-write sweeps are Questa 2024.1 on 22 Nov 2026. The MemRd sweep is 23 Nov 2026. `rq_rc_lat`, `cq_cc`, and `credit_stall` are the 21 Nov 2026 run, when `user_clk` was 8 ns, and were not re-run. All of them used `vsim -suppress 7061`.
 
 - `rq_memwr`: 64 bytes, 96 cycles, `rq_stall=0`, `mb_s=83.333`, `pct_gen2x4=4.167` (finite-credit peer, 8 ns user clock, not the payload curve)
 - `rq_dw1` .. `rq_dw1024` (`perf_rq_sweep_gen2_x4`, 8 TLPs, infinite credits and ACK, 4 ns user clock): `mb_s` 250.000, 500.000, 800.000, 1122.807, 1333.333, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, 1979.700. `rq_stall` 0, 0, 0, 1, 8, 11, 17, 17, 17, 18, 18. `pct_gen2x4` 12.500, 25.000, 40.000, 56.140, 66.667, 78.528, 86.195, 92.586, 96.150, 97.990, 98.985. 0 errors
 - `rq64_dw1` .. `rq64_dw1024` (`perf_rq_memwr64_gen2_x4`): same printed `mb_s` as MemWr32 except `rq64_dw16` = 1347.368 (`cycles=95`, `rq_stall=7`, `pct_gen2x4=67.368`). 4096-byte point 1979.700. 0 errors
-- `memrd32`: `bytes=32`, `cycles=259`, `rc_tlast=8`, `mb_s=30.888`, `lat_min=26`, `lat_avg=26`, `lat_max=26`, `tfc_nph_min=8`, `user_clk_ns=4.0`. `memrd64`: `bytes=32`, `cycles=248`, `mb_s=32.258`, same latency 26, `tfc_nph_min=0`, `tfc_zero=15`. 0 errors. One dword per completion, not a payload sweep
+- `rd_dw1` .. `rd_dw1024` and `rd64_dw1` .. `rd64_dw1024` (`perf_rq_memrd_gen2_x4`, 8 TLPs, infinite credits, 4 ns user clock, 23 Nov 2026): MemRd32 and MemRd64 printed the same `mb_s` 70.175, 121.212, 216.216, 315.271, 472.325, 633.663, 757.396, 840.033, 887.733, 913.674, 927.221. `cycles` 114, 132, 148, 203, 271, 404, 676, 1219, 2307, 4483, 8835. `rq_stall=0`, `credit_stall=0`, `tfc_nph_min=15`. 0 errors
 - `rq_rc_lat`: `lat_n=8`, `lat_min=363`, `lat_avg=458`, `lat_max=714` at `user_clk_ns=8.0`
 - `cq_cc`: 8 CQ and 8 CC, 32 bytes, 2876 cycles, `mb_s=1.391` at `user_clk_ns=8.0`
 - `credit_stall`: `rq_stall=0`, `credit_stall=0`, `tfc_nph_min=4` at `user_clk_ns=8.0`
