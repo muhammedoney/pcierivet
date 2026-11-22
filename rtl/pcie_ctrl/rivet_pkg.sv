@@ -366,9 +366,9 @@ package rivet_pkg;
   localparam int unsigned RIVET_TLP_LCRC_BYTES = 4;
   // One framed TLP: seq + header + payload + LCRC.
   // 4096-byte Max Payload, 16-byte header, 2-byte seq, 4-byte LCRC = 4118,
-  // rounded up to a multiple of 8. RX reassembly keeps its own smaller RAM.
+  // rounded up to a multiple of 8. One RX frame stops at this size.
   localparam int unsigned RIVET_TLP_SLOT_BYTES    = 4128;
-  localparam int unsigned RIVET_MAC_TLP_BUF_BYTES = 160;
+  localparam int unsigned RIVET_MAC_TLP_BUF_BYTES = 4128;
 
   // Type 0 config space (PF0 Gen2 EP)
   localparam int unsigned RIVET_CFG_DW_N = 1024; // 4 KiB

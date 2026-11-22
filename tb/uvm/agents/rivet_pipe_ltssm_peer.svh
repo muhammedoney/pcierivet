@@ -28,6 +28,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit [15:0] tlp_memrd_rid  = 16'h0001;
   bit [7:0]  tlp_cpld_tag   = 8'h11;
   bit [15:0] tlp_cpld_rid   = 16'h0100;
+  // Tag byte of the DUT TLP currently being parsed, and one entry per END.
+  bit [7:0]  seen_tag;
+  bit [7:0]  req_tag_q[$];
   bit [31:0] tlp_cpld_data  = 32'hCAFE_BABE;
   // Set before link-up. InitFC credit 0 means infinite.
   bit            perf_rc;
@@ -150,7 +153,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       inout logic [7:0]  b0,
       inout logic [7:0]  b1,
       inout bit          pending,
-      inout logic [11:0] seq
+      inout logic [11:0] seq,
+      inout int unsigned tlp_ends
   );
     if (is_k && (sym == rivet_pkg::RIVET_SYM_STP)) begin
       st = 1;
@@ -162,10 +166,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       if (is_k && (sym == rivet_pkg::RIVET_SYM_END)) begin
         seq     = {b0[3:0], b1};
         pending = 1'b1;
+        tlp_ends++;
+        req_tag_q.push_back(seen_tag);
         st      = 0;
       end else if (!is_k) begin
         if (n == 0) b0 = sym;
         else if (n == 1) b1 = sym;
+        else if (n == 8) seen_tag = sym;
         n++;
       end else begin
         st = 0;
@@ -280,6 +287,11 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     logic [8*32-1:0] tlp_frame;
     logic [63:0] tlp_b0, tlp_b1;
     logic [8:0]  tlp_sym9;
+    logic [7:0]  cpld_mem[0:4127];
+    bit          tlp_large;
+    int unsigned cpld_owed;
+    int unsigned tlp_ends;
+    bit          cpld_auto;
 
     if (!enable) return;
 
@@ -324,8 +336,14 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     vif.phystatus     <= '0;
     vif.phystatus_rst <= '0;
 
+    tlp_large = 1'b0;
+    cpld_owed = 0;
+    tlp_ends  = 0;
+
     forever begin
       @(posedge vif.pclk);
+      cpld_auto = 1'b0;
+      void'(uvm_config_db#(bit)::get(null, "*", "peer_cpld_auto", cpld_auto));
 
       dut_tx_ts1 = 1'b0;
       dut_tx_ts2 = 1'b0;
@@ -440,6 +458,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
 
       // Descramble DUT TX (same LFSR rules as rivet_mac_scrambler) and ACK each
       // finished TLP. Cumulative: the latest seq retires every earlier one.
+      // Each END still owes one completion; one ACK must not merge that count.
+      begin
+        automatic int unsigned ends_before;
+        ends_before = tlp_ends;
       if (perf_rc && peer_active && (vif.txelecidle != '1)) begin
         for (s = 0; s < 2; s++) begin
           for (l = 0; l < peer_lanes; l++) begin
@@ -453,9 +475,12 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             dut_lfsr[l] = lfsr;
             if (phase_q == P_IDLE)
               dut_note_sym(sym, is_k, parse_st, parse_n, seq_b0, seq_b1,
-                           ack_pending, ack_seq);
+                           ack_pending, ack_seq, tlp_ends);
           end
         end
+      end
+      if (cpld_auto)
+        cpld_owed += tlp_ends - ends_before;
       end
       if (phase_q != P_IDLE)
         parse_st = 0;
@@ -527,9 +552,22 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             rivet_axi_tlp_util::pack_dll_tlp_frame(
                 tlp_seq[11:0], tlp_b0, tlp_b1, 16, tlp_frame, tlp_nbytes);
             tlp_seq++;
-            tlp_sym = 0; tlp_sending = 1'b1; tlp_memrd_done = 1'b1;
+            tlp_sym = 0; tlp_sending = 1'b1; tlp_memrd_done = 1'b1; tlp_large = 1'b0;
             uvm_config_db#(bit)::set(null, "*", "peer_tlp_memrd_done", 1'b1);
           end
+        end else if (cpld_auto && (cpld_owed != 0)) begin
+          int unsigned dw;
+          dw = 1;
+          void'(uvm_config_db#(int unsigned)::get(null, "*", "peer_cpld_dw", dw));
+          if (dw == 0) dw = 1;
+          if (dw > 1024) dw = 1024;
+          if (req_tag_q.size() != 0)
+            tlp_cpld_tag = req_tag_q.pop_front();
+          rivet_axi_tlp_util::pack_cpld_mem(
+              tlp_seq[11:0], tlp_cpld_tag, tlp_cpld_rid, dw, cpld_mem, tlp_nbytes);
+          tlp_seq++;
+          tlp_sym = 0; tlp_sending = 1'b1; tlp_large = 1'b1;
+          cpld_owed--;
         end else if (tlp_cpld_enable && !tlp_cpld_done) begin
           bit go_c;
           go_c = 1'b0;
@@ -541,7 +579,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             rivet_axi_tlp_util::pack_dll_tlp_frame(
                 tlp_seq[11:0], tlp_b0, tlp_b1, 16, tlp_frame, tlp_nbytes);
             tlp_seq++;
-            tlp_sym = 0; tlp_sending = 1'b1; tlp_cpld_done = 1'b1;
+            tlp_sym = 0; tlp_sending = 1'b1; tlp_cpld_done = 1'b1; tlp_large = 1'b0;
             uvm_config_db#(bit)::set(null, "*", "peer_tlp_cpld_done", 1'b1);
           end
         end
@@ -559,10 +597,18 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             for (s = 0; s < 2; s++) begin
               automatic int unsigned stream_idx = tlp_sym + s * peer_lanes + l;
               automatic int unsigned framed_len = tlp_nbytes + 2;
-              if (stream_idx < framed_len)
-                tlp_sym9 = rivet_axi_tlp_util::framed_tlp_sym(
-                    stream_idx, tlp_frame, tlp_nbytes);
-              else
+              if (stream_idx < framed_len) begin
+                if (tlp_large) begin
+                  if (stream_idx == 0)
+                    tlp_sym9 = {1'b1, rivet_pkg::RIVET_SYM_STP};
+                  else if (stream_idx == tlp_nbytes + 1)
+                    tlp_sym9 = {1'b1, rivet_pkg::RIVET_SYM_END};
+                  else
+                    tlp_sym9 = {1'b0, cpld_mem[stream_idx - 1]};
+                end else
+                  tlp_sym9 = rivet_axi_tlp_util::framed_tlp_sym(
+                      stream_idx, tlp_frame, tlp_nbytes);
+              end else
                 tlp_sym9 = {1'b0, 8'h00};
               peer_tmp = tlp_sym9;
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);

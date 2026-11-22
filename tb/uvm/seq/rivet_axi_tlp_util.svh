@@ -168,4 +168,57 @@ class rivet_axi_tlp_util;
       return {1'b0, payload[8*(idx-1) +: 8]};
     return {1'b0, 8'h00};
   endfunction
+
+  // Seq# + CplD header + payload + LCRC. dw is 1..1024. 1024 encodes as
+  // length 0 and byte count 0 (4096 bytes). mem[0] is {rsvd, seq[11:8]}.
+  static function void pack_cpld_mem(
+      input  logic [11:0] seq,
+      input  logic [7:0]  tag,
+      input  logic [15:0] req_id,
+      input  int unsigned dw,
+      ref    logic [7:0]  mem[0:4127],
+      output int unsigned nbytes);
+    int unsigned payload_b, n, i, bit_i;
+    logic [9:0]  len10;
+    logic [11:0] bcnt;
+    logic [31:0] crc;
+    logic [7:0]  b;
+    logic        din, fb;
+    payload_b = (dw >= 1024) ? 4096 : (dw * 4);
+    len10     = (dw >= 1024) ? 10'd0 : dw[9:0];
+    bcnt      = (payload_b >= 4096) ? 12'd0 : payload_b[11:0];
+    mem[0]  = {4'h0, seq[11:8]};
+    mem[1]  = seq[7:0];
+    mem[2]  = rivet_pkg::RIVET_TLP_B0_CPLD;
+    mem[3]  = 8'h00;
+    mem[4]  = {6'h0, len10[9:8]};
+    mem[5]  = len10[7:0];
+    mem[6]  = 8'h00;
+    mem[7]  = 8'h01;
+    mem[8]  = {4'h0, bcnt[11:8]};
+    mem[9]  = bcnt[7:0];
+    mem[10] = req_id[7:0];
+    mem[11] = req_id[15:8];
+    mem[12] = tag;
+    mem[13] = 8'h00;
+    for (i = 0; i < payload_b; i++)
+      mem[14 + i] = 8'hA5;
+    n   = 14 + payload_b;
+    crc = 32'hFFFF_FFFF;
+    for (i = 0; i < n; i++) begin
+      b = mem[i];
+      for (bit_i = 0; bit_i < 8; bit_i++) begin
+        din = b[bit_i];
+        fb  = crc[0] ^ din;
+        crc = {1'b0, crc[31:1]};
+        if (fb) crc = crc ^ 32'hEDB88320;
+      end
+    end
+    crc = ~crc;
+    mem[n]     = crc[7:0];
+    mem[n + 1] = crc[15:8];
+    mem[n + 2] = crc[23:16];
+    mem[n + 3] = crc[31:24];
+    nbytes = n + 4;
+  endfunction
 endclass : rivet_axi_tlp_util

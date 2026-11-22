@@ -14,8 +14,8 @@ module rivet_dll #(
   parameter int unsigned UPDATEFC_GAP_CYC  = 32,
   parameter int unsigned REPLAY_TLP_SLOTS  = 16,
   parameter int unsigned REPLAY_SLOT_BYTES = 4128,
-  // RX reassembly stays on the small slot. Only TX and replay hold 4 KB.
-  parameter int unsigned RX_SLOT_BYTES     = 160,
+  // RX frame cap. The bytes live in a word RAM, not a wide vector.
+  parameter int unsigned RX_SLOT_BYTES     = 4128,
   // Starts at push, and a new push reloads it, so it must cover a max
   // frame already in the MAC plus the one just pushed. Collect is one
   // 8-byte beat per pclk. Gen2 16-bit PIPE then shifts LANES*2 bytes
@@ -138,10 +138,6 @@ module rivet_dll #(
 
   logic        whole_tx_v, whole_tx_r;
   logic [15:0] whole_tx_len;
-  logic                           whole_rx_v, whole_rx_r;
-  logic [RX_SLOT_BYTES*8-1:0]     whole_rx_d;
-  logic [15:0]                    whole_rx_len;
-  logic [11:0]                    whole_rx_seq;
 
   // Skid wires for TL <-> DLL streams
   logic [TL_DATA_W-1:0]  tl_tx_s_tdata;
@@ -346,24 +342,8 @@ module rivet_dll #(
     .rd_data_o  (tx_word)
   );
 
-  rivet_dll_tl_unpack #(
-    .DATA_W     (TL_DATA_W),
-    .SLOT_BYTES (RX_SLOT_BYTES)
-  ) u_tl_unpack (
-    .clk_i      (pclk_i),
-    .rst_ni     (rst_ni),
-    .s_valid_i  (whole_rx_v),
-    .s_ready_o  (whole_rx_r),
-    .s_data_i   (whole_rx_d),
-    .s_len_i    (whole_rx_len),
-    .s_seq_i    (whole_rx_seq),
-    .m_tdata_o  (tl_rx_u_tdata),
-    .m_tkeep_o  (tl_rx_u_tkeep),
-    .m_tlast_o  (tl_rx_u_tlast),
-    .m_tvalid_o (tl_rx_u_tvalid),
-    .m_tready_i (tl_rx_u_tready),
-    .m_seq_o    (tl_rx_u_seq)
-  );
+  // RX payload beats come straight from rivet_dll_tlp_rx. The old
+  // whole-frame unpack is not in this path.
 
   // -------------------------------------------------------------------------
   // 2-entry skid buffer on u_tl_unpack -> tl_rx
@@ -415,7 +395,12 @@ module rivet_dll #(
           end
         end
         2'b11: begin
-          tl_rx_d0_q <= din;
+          if (tl_rx_v1_q) begin
+            tl_rx_d0_q <= tl_rx_d1_q;
+            tl_rx_d1_q <= din;
+          end else begin
+            tl_rx_d0_q <= din;
+          end
         end
         default: ;
       endcase
@@ -663,11 +648,12 @@ module rivet_dll #(
     .beat_i          (rx_skid_beat),
     .beat_valid_i    (tlp_rx_v),
     .beat_ready_o    (tlp_rx_r),
-    .tl_valid_o      (whole_rx_v),
-    .tl_ready_i      (whole_rx_r),
-    .tl_data_o       (whole_rx_d),
-    .tl_len_o        (whole_rx_len),
-    .tl_seq_o        (whole_rx_seq),
+    .tl_valid_o      (tl_rx_u_tvalid),
+    .tl_ready_i      (tl_rx_u_tready),
+    .tl_data_o       (tl_rx_u_tdata),
+    .tl_keep_o       (tl_rx_u_tkeep),
+    .tl_last_o       (tl_rx_u_tlast),
+    .tl_seq_o        (tl_rx_u_seq),
     .ack_req_o       (ack_req),
     .ack_valid_o     (ack_valid),
     .ack_ready_i     (ack_ready),

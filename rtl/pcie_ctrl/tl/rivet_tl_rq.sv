@@ -171,7 +171,8 @@ module rivet_tl_rq (
             len_q   <= s_axis_rq_tdata[9:0];
             is_wr_q <= (s_axis_rq_tdata[14:11] == RIVET_CQ_REQ_MEMWR);
             is64_q  <= (addr_hi_q != 32'h0);
-            tag_q   <= s_axis_rq_tdata[55:48];
+            // DW3[7:0] is the tag. beat1 = {DW3, DW2}, so the tag is [39:32].
+            tag_q   <= s_axis_rq_tdata[39:32];
             if (s_axis_rq_tlast) begin
               // MemRd — header only. Upper address selects the 4DW format.
               more_q      <= 1'b0;
@@ -181,7 +182,7 @@ module rivet_tl_rq (
               tx_q[31:24] <= s_axis_rq_tdata[7:0];
               tx_q[39:32] <= 8'h00;                 // req id lo
               tx_q[47:40] <= 8'h01;                 // req id hi — EP bus=1
-              tx_q[55:48] <= s_axis_rq_tdata[55:48]; // tag
+              tx_q[55:48] <= s_axis_rq_tdata[39:32]; // tag, DW3[7:0]
               tx_q[59:56] <= fbe_q;
               tx_q[63:60] <= lbe_q;
               if (addr_hi_q != 32'h0) begin

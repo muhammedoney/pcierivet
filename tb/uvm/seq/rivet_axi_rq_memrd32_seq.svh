@@ -11,6 +11,8 @@ class rivet_axi_rq_memrd32_seq extends uvm_sequence #(rivet_axi_st_item);
   bit [7:0]  tag  = 8'h11;
   bit [15:0] requester_id = 16'h0100;
   bit [3:0]  first_be = 4'hF;
+  // 1 keeps the original 1 DW request. 1024 is the PCIe length encoding 0.
+  bit [10:0] payload_dw = 11'd1;
 
   function new(string name = "rivet_axi_rq_memrd32_seq");
     super.new(name);
@@ -34,12 +36,13 @@ class rivet_axi_rq_memrd32_seq extends uvm_sequence #(rivet_axi_st_item);
     logic [63:0] b0, b1;
     logic [87:0] u;
     rivet_axi_tlp_util::pack_mem_desc_2beat(
-      addr, 11'd1, rivet_pkg::RIVET_CQ_REQ_MEMRD, tag, requester_id, b0, b1,
+      addr, payload_dw, rivet_pkg::RIVET_CQ_REQ_MEMRD, tag, requester_id, b0, b1,
       addr_hi);
-    u = rivet_axi_tlp_util::rq_tuser(first_be, 4'h0);
+    u = rivet_axi_tlp_util::rq_tuser(first_be, (payload_dw > 11'd1) ? 4'hF : 4'h0);
     send_beat(b0, 2'b11, 1'b0, u);
     send_beat(b1, 2'b11, 1'b1, u);
     `uvm_info(get_type_name(),
-      $sformatf("RQ MemRd32 addr=0x%08h tag=0x%02h", addr, tag), UVM_MEDIUM)
+      $sformatf("RQ MemRd addr=0x%08h_%08h tag=0x%02h dw=%0d", addr_hi, addr, tag, payload_dw),
+      UVM_MEDIUM)
   endtask
 endclass : rivet_axi_rq_memrd32_seq

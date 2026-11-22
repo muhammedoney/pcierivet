@@ -45,7 +45,7 @@ module rivet_dll_tl_pack #(
   localparam int unsigned RAM_WORDS = 2 * (1 << SLOT_W);
   (* ram_style = "block" *) logic [63:0] word_q [0:RAM_WORDS-1];
   logic [63:0]      rd_q;
-  logic             wr_bank_q, rd_bank_q;
+  logic             wr_bank_q, rd_bank_q, rd_bank_rd;
   logic [1:0]       full_q;
   logic [OFF_W-1:0] len_q [2];
 
@@ -89,11 +89,16 @@ module rivet_dll_tl_pack #(
 
   // Synchronous read-port reset. Versal rejects an async BRAM reset
   // that is not driven by a register (REQP-2042).
+  // The bank pops on m_ready. The read issued that cycle must use the
+  // bank that becomes current, or the next frame's first word is the
+  // header of the frame that just finished.
+  assign rd_bank_rd = (full_q[rd_bank_q] && m_ready_i) ? ~rd_bank_q : rd_bank_q;
+
   always_ff @(posedge clk_i) begin
     if (!rst_ni)
       rd_q <= '0;
     else
-      rd_q <= word_q[{rd_bank_q, rd_idx_i[SLOT_W-1:0]}];
+      rd_q <= word_q[{rd_bank_rd, rd_idx_i[SLOT_W-1:0]}];
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin

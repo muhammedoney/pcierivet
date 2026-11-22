@@ -64,7 +64,7 @@ class perf_rq_memwr64_gen2_x4 extends rivet_base_test;
 endclass : perf_rq_memwr64_gen2_x4
 
 
-// 1DW MemRd32 and MemRd64, each answered with a 4-byte CplD.
+// MemRd32 and MemRd64 payload sweep. Completions are CplDs of the same size.
 class perf_rq_memrd_gen2_x4 extends rivet_base_test;
   `uvm_component_utils(perf_rq_memrd_gen2_x4)
 
@@ -81,6 +81,9 @@ class perf_rq_memrd_gen2_x4 extends rivet_base_test;
     uvm_config_db#(bit)::set(this, "env.ltssm_peer", "ltssm_peer_enable", 1'b1);
     uvm_config_db#(bit)::set(this, "env.ltssm_peer", "dllp_fc_enable", 1'b1);
     uvm_config_db#(bit)::set(this, "env.ltssm_peer", "tlp_cpld_enable", 1'b1);
+    uvm_config_db#(bit)::set(null, "*", "peer_perf_rc", 1'b1);
+    uvm_config_db#(bit)::set(null, "*", "peer_cpld_auto", 1'b1);
+    uvm_config_db#(int unsigned)::set(null, "*", "peer_cpld_dw", 1);
     uvm_config_db#(bit)::set(this, "env.scoreboard", "ltssm_l0_mode", 1'b1);
     super.build_phase(phase);
   endfunction

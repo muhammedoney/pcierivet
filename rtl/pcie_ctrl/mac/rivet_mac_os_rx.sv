@@ -410,11 +410,17 @@ module rivet_mac_os_rx #(
   // Packet framing RX: SDP + 6 D-bytes + END, or STP + N D-bytes + END/EDB
   // striped across enabled lanes (Gen2 16b PIPE).
   // Stage P0 pre-decodes framing tokens per symbol slot; Stage P1 packs TLP
-  // bytes through a 16-byte gearbox into a 32x64b distributed LUTRAM.
+  // bytes through a 16-byte gearbox into a circular block RAM. Playback of
+  // one frame overlaps capture of the next, so a 4 KB completion does not
+  // stall the wire for a second copy.
   // ---------------------------------------------------------------------------
-  localparam bit PKT_RX_OK        = (PIPE_DATA_WIDTH == 16);
-  localparam int unsigned TLP_BUF_B  = RIVET_MAC_TLP_BUF_BYTES;
-  localparam int unsigned TLP_RAM_N  = 32;
+  localparam bit PKT_RX_OK           = (PIPE_DATA_WIDTH == 16);
+  localparam int unsigned TLP_FRAME_MAX = RIVET_MAC_TLP_BUF_BYTES;
+  // Eight max-payload frames in flight. Playback cannot drain while the
+  // DLL is still presenting the previous frame, so the wire runs ahead.
+  localparam int unsigned TLP_RAM_N  = 4096;
+  localparam int unsigned TLP_AW     = 12;
+  localparam int unsigned TLP_Q      = 16;
 
   typedef enum logic [2:0] {
     RX_IDLE    = 3'b000,
@@ -472,21 +478,43 @@ module rivet_mac_os_rx #(
   logic                   dll_beat_valid_q, dll_beat_valid_d;
   rivet_dll_mac_rx_beat_t dll_beat_q, dll_beat_d;
 
-  (* ram_style = "distributed" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
-  logic        tlp_ram_we;
-  logic [4:0]  tlp_ram_waddr;
-  logic [63:0] tlp_ram_wdata;
-  logic [63:0] tlp_ram_rdata;
+  (* ram_style = "block" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
+  logic                    tlp_ram_we;
+  logic [TLP_AW-1:0]       tlp_ram_waddr;
+  logic [63:0]             tlp_ram_wdata;
+  logic [63:0]             tlp_ram_rd_q;
+  logic                    tlp_rd_issue;
 
-  logic [55:0] tlp_acc_q, tlp_acc_d;
-  logic [2:0]  tlp_acc_cnt_q, tlp_acc_cnt_d;
-  logic [4:0]  tlp_wr_slot_q, tlp_wr_slot_d;
-  logic [4:0]  tlp_rd_slot_q, tlp_rd_slot_d;
-  logic [7:0]  tlp_len_q, tlp_len_d;
-  logic [7:0]  tlp_rem_q, tlp_rem_d;
-  logic        tlp_sop_q, tlp_sop_d;
-  logic        tlp_tail_pend_q, tlp_tail_pend_d;
-  logic        tlp_err_q, tlp_err_d;
+  logic [55:0]             tlp_acc_q, tlp_acc_d;
+  logic [2:0]              tlp_acc_cnt_q, tlp_acc_cnt_d;
+  logic [TLP_AW-1:0]       tlp_wr_slot_q, tlp_wr_slot_d;
+  logic [TLP_AW-1:0]       tlp_base_q, tlp_base_d;
+  logic [12:0]             tlp_len_q, tlp_len_d;
+  logic                    tlp_tail_pend_q, tlp_tail_pend_d;
+  logic                    tlp_err_q, tlp_err_d;
+  logic                    frame_push_d;
+  logic [TLP_AW-1:0]       frame_push_base_d;
+  logic [12:0]             frame_push_len_d;
+  logic                    frame_push_err_d;
+  logic [TLP_AW-1:0]       q_base [0:TLP_Q-1];
+  logic [12:0]             q_len  [0:TLP_Q-1];
+  logic                    q_err  [0:TLP_Q-1];
+  logic [4:0]              q_wptr_q, q_rptr_q, q_count_q;
+  logic                    rd_pop;
+  logic [1:0]              rd_ph_q, rd_ph_d;
+  logic [12:0]             rd_rem_q, rd_rem_d;
+  logic                    rd_sop_q, rd_sop_d;
+  logic                    rd_err_q, rd_err_d;
+  logic [TLP_AW-1:0]       rd_addr_q, rd_addr_d;
+  logic                    rd_took;
+  logic [11:0]             rd_drop;
+  logic [12:0]             used_q;
+  // A finished DLLP waits here when the beat slot is busy. Framing stays in
+  // IDLE/RX_TLP so the next TLP is not dropped while the DLLP waits.
+  logic                    dllp_park_q, dllp_park_d;
+  logic [63:0]             dllp_park_data_q, dllp_park_data_d;
+  logic                    dllp_park_err_q, dllp_park_err_d;
+  logic                    dllp_park_ld;
 
 `ifndef SYNTHESIS
   initial begin
@@ -494,11 +522,17 @@ module rivet_mac_os_rx #(
   end
 `endif
 
-  assign tlp_ram_rdata = tlp_ram[tlp_rd_slot_q];
-
   always_ff @(posedge pclk_i) begin
     if (tlp_ram_we)
       tlp_ram[tlp_ram_waddr] <= tlp_ram_wdata;
+  end
+
+  // Synchronous read-data reset so Versal does not see an async BRAM reset.
+  always_ff @(posedge pclk_i) begin
+    if (!rst_ni)
+      tlp_ram_rd_q <= '0;
+    else if (tlp_rd_issue)
+      tlp_ram_rd_q <= tlp_ram[rd_addr_q];
   end
 
   always_comb begin
@@ -511,12 +545,27 @@ module rivet_mac_os_rx #(
     tlp_acc_d        = tlp_acc_q;
     tlp_acc_cnt_d    = tlp_acc_cnt_q;
     tlp_wr_slot_d    = tlp_wr_slot_q;
-    tlp_rd_slot_d    = tlp_rd_slot_q;
+    tlp_base_d       = tlp_base_q;
     tlp_len_d        = tlp_len_q;
-    tlp_rem_d        = tlp_rem_q;
-    tlp_sop_d        = tlp_sop_q;
     tlp_tail_pend_d  = 1'b0;
     tlp_err_d        = tlp_err_q;
+    frame_push_d     = 1'b0;
+    frame_push_base_d = tlp_wr_slot_q;
+    frame_push_len_d = tlp_len_q;
+    frame_push_err_d = 1'b0;
+    rd_ph_d          = rd_ph_q;
+    rd_rem_d         = rd_rem_q;
+    rd_sop_d         = rd_sop_q;
+    rd_err_d         = rd_err_q;
+    rd_addr_d        = rd_addr_q;
+    rd_pop           = 1'b0;
+    rd_took          = 1'b0;
+    rd_drop          = '0;
+    tlp_rd_issue     = 1'b0;
+    dllp_park_d      = dllp_park_q;
+    dllp_park_data_d = dllp_park_data_q;
+    dllp_park_err_d  = dllp_park_err_q;
+    dllp_park_ld     = 1'b0;
 
     tlp_ram_we       = 1'b0;
     tlp_ram_waddr    = tlp_wr_slot_q;
@@ -535,7 +584,7 @@ module rivet_mac_os_rx #(
       tlp_acc_cnt_d = 3'd0;
     end
 
-    if (p0_lanes_ok_q || (rx_pkt_q == RX_HOLD) || (rx_pkt_q == RX_TLP_OUT)) begin
+    if (p0_lanes_ok_q || (rx_pkt_q == RX_HOLD)) begin
       unique case (rx_pkt_q)
         RX_IDLE: begin
           if (p0_lanes_ok_q) begin
@@ -603,7 +652,9 @@ module rivet_mac_os_rx #(
               rx_cnt_d     = c;
               rx_err_pkt_d = err;
               if (done) begin
-                if (!dll_beat_valid_q || dll_rx_ready_i) begin
+                // Slot free and nothing parked: emit now. Otherwise park and
+                // stay in IDLE so a TLP that follows is still framed.
+                if ((!dll_beat_valid_q || dll_rx_ready_i) && !dllp_park_q) begin
                   dll_beat_d.data     = b;
                   dll_beat_d.keep     = 8'hFF;
                   dll_beat_d.sop      = 1'b1;
@@ -611,30 +662,47 @@ module rivet_mac_os_rx #(
                   dll_beat_d.err      = err | nullified;
                   dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
                   dll_beat_valid_d    = 1'b1;
-                  rx_pkt_d            = RX_IDLE;
-                  rx_cnt_d            = 4'd0;
                 end else begin
-                  rx_pkt_d = RX_HOLD;
+                  dllp_park_d      = 1'b1;
+                  dllp_park_data_d = b;
+                  dllp_park_err_d  = err | nullified;
+                  dllp_park_ld     = 1'b1;
                 end
+                rx_pkt_d = RX_IDLE;
+                rx_cnt_d = 4'd0;
               end else begin
                 rx_pkt_d = RX_BODY;
               end
             end else if (saw_stp) begin
-              tlp_len_d     = {4'd0, cap_n};
-              tlp_rem_d     = {4'd0, cap_n};
-              tlp_err_d     = err | nullified | (done && (cap_n == 4'd0));
-              tlp_rd_slot_d = 5'd0;
-              tlp_sop_d     = 1'b1;
+              // A tail write still owns wr_slot this cycle. The new frame
+              // starts at the next slot, which is where its bytes land.
+              automatic logic [TLP_AW-1:0] slot;
+              slot = tlp_tail_pend_q ? (tlp_wr_slot_q + 11'd1) : tlp_wr_slot_q;
+              tlp_base_d = slot;
+              tlp_len_d  = {9'd0, cap_n};
+              tlp_err_d  = err | nullified | (done && (cap_n == 4'd0)) | (used_q > 13'd3600);
               if (done) begin
-                tlp_ram_we    = 1'b1;
-                tlp_ram_waddr = 5'd0;
-                tlp_ram_wdata = cap_word;
-                tlp_wr_slot_d = 5'd1;
-                tlp_acc_d     = '0;
-                tlp_acc_cnt_d = 3'd0;
-                rx_pkt_d      = RX_TLP_OUT;
+                if (!tlp_err_d && (cap_n != 4'd0) && tlp_tail_pend_q) begin
+                  tlp_acc_d       = cap_word[55:0];
+                  tlp_acc_cnt_d   = cap_n[2:0];
+                  tlp_tail_pend_d = 1'b1;
+                end else if (!tlp_err_d && (cap_n != 4'd0)) begin
+                  tlp_ram_we    = 1'b1;
+                  tlp_ram_waddr = slot;
+                  tlp_ram_wdata = cap_word;
+                  tlp_wr_slot_d = slot + 11'd1;
+                  tlp_acc_d     = '0;
+                  tlp_acc_cnt_d = 3'd0;
+                end else begin
+                  tlp_acc_d     = '0;
+                  tlp_acc_cnt_d = 3'd0;
+                end
+                frame_push_d      = 1'b1;
+                frame_push_base_d = slot;
+                frame_push_len_d  = {9'd0, cap_n};
+                frame_push_err_d  = tlp_err_d;
+                rx_pkt_d          = RX_IDLE;
               end else begin
-                tlp_wr_slot_d = 5'd0;
                 tlp_acc_d     = cap_word[55:0];
                 tlp_acc_cnt_d = cap_n[2:0];
                 rx_pkt_d      = RX_TLP;
@@ -681,7 +749,7 @@ module rivet_mac_os_rx #(
             rx_err_pkt_d = err;
 
             if (done) begin
-              if (!dll_beat_valid_q || dll_rx_ready_i) begin
+              if ((!dll_beat_valid_q || dll_rx_ready_i) && !dllp_park_q) begin
                 dll_beat_d.data     = b;
                 dll_beat_d.keep     = 8'hFF;
                 dll_beat_d.sop      = 1'b1;
@@ -689,11 +757,14 @@ module rivet_mac_os_rx #(
                 dll_beat_d.err      = err | nullified;
                 dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
                 dll_beat_valid_d    = 1'b1;
-                rx_pkt_d            = RX_IDLE;
-                rx_cnt_d            = 4'd0;
               end else begin
-                rx_pkt_d = RX_HOLD;
+                dllp_park_d      = 1'b1;
+                dllp_park_data_d = b;
+                dllp_park_err_d  = err | nullified;
+                dllp_park_ld     = 1'b1;
               end
+              rx_pkt_d = RX_IDLE;
+              rx_cnt_d = 4'd0;
             end
           end
         end
@@ -719,7 +790,7 @@ module rivet_mac_os_rx #(
             automatic logic [63:0]  cap_word;
             automatic logic [119:0] comb_bytes;
             automatic logic [3:0]   comb_cnt;
-            automatic logic [8:0]   new_len;
+            automatic logic [13:0]  new_len;
             automatic logic         len_ovf;
             automatic logic         err       = tlp_err_q;
             automatic logic         done      = 1'b0;
@@ -744,8 +815,8 @@ module rivet_mac_os_rx #(
               end
             end
 
-            new_len = {1'b0, tlp_len_q} + {5'd0, cap_n};
-            len_ovf = (new_len > 9'(TLP_BUF_B));
+            new_len = {1'b0, tlp_len_q} + {10'd0, cap_n};
+            len_ovf = (new_len > 14'(TLP_FRAME_MAX)) || (used_q > 13'd3600);
             if (len_ovf) begin
               err  = 1'b1;
               done = 1'b1;
@@ -765,15 +836,15 @@ module rivet_mac_os_rx #(
             endcase
             comb_cnt = {1'b0, tlp_acc_cnt_q} + cap_n;
 
-            tlp_len_d = len_ovf ? 8'(TLP_BUF_B) : new_len[7:0];
-            tlp_err_d = err | nullified | (done && (new_len == 9'd0));
+            tlp_len_d = len_ovf ? 13'(TLP_FRAME_MAX) : new_len[12:0];
+            tlp_err_d = err | nullified | (done && (new_len == 14'd0));
 
             if (!done) begin
               if (comb_cnt[3]) begin
                 tlp_ram_we    = 1'b1;
                 tlp_ram_waddr = tlp_wr_slot_q;
                 tlp_ram_wdata = comb_bytes[63:0];
-                tlp_wr_slot_d = tlp_wr_slot_q + 5'd1;
+                tlp_wr_slot_d = tlp_wr_slot_q + 11'd1;
                 tlp_acc_d     = comb_bytes[119:64];
                 tlp_acc_cnt_d = comb_cnt[2:0];
               end else begin
@@ -781,14 +852,11 @@ module rivet_mac_os_rx #(
                 tlp_acc_cnt_d = comb_cnt[2:0];
               end
             end else begin
-              tlp_rd_slot_d = 5'd0;
-              tlp_sop_d     = 1'b1;
-              tlp_rem_d     = tlp_len_d;
               if (!tlp_err_d && (comb_cnt != 4'd0)) begin
                 tlp_ram_we    = 1'b1;
                 tlp_ram_waddr = tlp_wr_slot_q;
                 tlp_ram_wdata = comb_bytes[63:0];
-                tlp_wr_slot_d = tlp_wr_slot_q + 5'd1;
+                tlp_wr_slot_d = tlp_wr_slot_q + 11'd1;
               end
               if (!tlp_err_d && comb_cnt[3] && (comb_cnt[2:0] != 3'd0)) begin
                 tlp_acc_d       = comb_bytes[119:64];
@@ -798,53 +866,93 @@ module rivet_mac_os_rx #(
                 tlp_acc_d     = '0;
                 tlp_acc_cnt_d = 3'd0;
               end
-              rx_pkt_d = RX_TLP_OUT;
+              frame_push_d      = 1'b1;
+              frame_push_base_d = tlp_base_q;
+              frame_push_len_d  = tlp_len_d;
+              frame_push_err_d  = tlp_err_d;
+              rx_pkt_d          = RX_IDLE;
             end
           end
         end
 
-        RX_TLP_OUT: begin
-          automatic logic [3:0] n;
-          automatic logic       slot;
-          n    = (tlp_rem_q >= 8'd8) ? 4'd8 : tlp_rem_q[3:0];
-          slot = !dll_beat_valid_q || dll_rx_ready_i;
-          if (slot) begin
-            dll_beat_d          = '0;
-            dll_beat_d.pkt_type = RIVET_MAC_PKT_TLP;
-            dll_beat_d.sop      = tlp_sop_q;
-            if (tlp_err_q) begin
-              dll_beat_d.eop   = 1'b1;
-              dll_beat_d.err   = 1'b1;
-              dll_beat_d.keep  = 8'hFF;
-              dll_beat_valid_d = 1'b1;
-              rx_pkt_d         = RX_IDLE;
-              tlp_rem_d        = 8'd0;
-            end else if (n != 4'd0) begin
-              for (int unsigned i = 0; i < 8; i++) begin
-                if (4'(i) < n) begin
-                  dll_beat_d.data[8*i +: 8] = tlp_ram_rdata[8*i +: 8];
-                  dll_beat_d.keep[i]        = 1'b1;
-                end
-              end
-              dll_beat_d.eop   = (tlp_rem_q <= 8'd8);
-              dll_beat_d.err   = 1'b0;
-              dll_beat_valid_d = 1'b1;
-              tlp_sop_d        = 1'b0;
-              if (tlp_rem_q <= 8'd8) begin
-                tlp_rem_d = 8'd0;
-                rx_pkt_d  = RX_IDLE;
-              end else begin
-                tlp_rem_d     = tlp_rem_q - 8'd8;
-                tlp_rd_slot_d = tlp_rd_slot_q + 5'd1;
-              end
-            end else begin
-              rx_pkt_d = RX_IDLE;
-            end
-          end
-        end
+        RX_TLP_OUT: rx_pkt_d = RX_IDLE;
 
         default: rx_pkt_d = RX_IDLE;
       endcase
+    end
+
+    // Parked DLLP goes out ahead of TLP playback. Capture already ran above.
+    if (dllp_park_q && !dll_beat_valid_d) begin
+      dll_beat_d            = '0;
+      dll_beat_d.data       = dllp_park_data_q;
+      dll_beat_d.keep       = 8'hFF;
+      dll_beat_d.sop        = 1'b1;
+      dll_beat_d.eop        = 1'b1;
+      dll_beat_d.err        = dllp_park_err_q;
+      dll_beat_d.pkt_type   = RIVET_MAC_PKT_DLLP;
+      dll_beat_valid_d      = 1'b1;
+      if (!dllp_park_ld)
+        dllp_park_d = 1'b0;
+    end
+
+    // Playback is independent of capture so the next frame can land while
+    // the previous one is still moving toward the DLL.
+    if (rd_ph_q == 2'd0) begin
+      if (q_count_q != 5'd0) begin
+        rd_addr_d    = q_base[q_rptr_q[3:0]];
+        rd_rem_d     = q_len[q_rptr_q[3:0]];
+        rd_err_d     = q_err[q_rptr_q[3:0]];
+        rd_sop_d     = 1'b1;
+        rd_ph_d      = 2'd1;
+        rd_pop       = 1'b1;
+      end
+    end else if (rd_ph_q == 2'd1) begin
+      if (rd_err_q) begin
+        if (!dll_beat_valid_d) begin
+          dll_beat_d            = '0;
+          dll_beat_d.pkt_type   = RIVET_MAC_PKT_TLP;
+          dll_beat_d.sop        = 1'b1;
+          dll_beat_d.eop        = 1'b1;
+          dll_beat_d.err        = 1'b1;
+          dll_beat_d.keep       = 8'hFF;
+          dll_beat_valid_d      = 1'b1;
+          rd_ph_d               = 2'd0;
+          rd_drop               = 12'((rd_rem_q + 13'd7) >> 3);
+        end
+      end else begin
+        tlp_rd_issue = 1'b1;
+        rd_addr_d    = rd_addr_q + 11'd1;
+        rd_ph_d      = 2'd2;
+      end
+    end else if (!dll_beat_valid_d) begin
+      if (rd_rem_q != 13'd0) begin
+        automatic logic [3:0] n;
+        n = (rd_rem_q >= 13'd8) ? 4'd8 : rd_rem_q[3:0];
+        dll_beat_d          = '0;
+        dll_beat_d.pkt_type = RIVET_MAC_PKT_TLP;
+        dll_beat_d.sop      = rd_sop_q;
+        for (int unsigned i = 0; i < 8; i++) begin
+          if (4'(i) < n) begin
+            dll_beat_d.data[8*i +: 8] = tlp_ram_rd_q[8*i +: 8];
+            dll_beat_d.keep[i]        = 1'b1;
+          end
+        end
+        dll_beat_d.eop   = (rd_rem_q <= 13'd8);
+        dll_beat_d.err   = 1'b0;
+        dll_beat_valid_d = 1'b1;
+        rd_sop_d         = 1'b0;
+        rd_took          = 1'b1;
+        if (rd_rem_q <= 13'd8) begin
+          rd_rem_d = 13'd0;
+          rd_ph_d  = 2'd0;
+        end else begin
+          rd_rem_d     = rd_rem_q - 13'd8;
+          rd_addr_d    = rd_addr_q + 11'd1;
+          tlp_rd_issue = 1'b1;
+        end
+      end else begin
+        rd_ph_d = 2'd0;
+      end
     end
   end
 
@@ -859,13 +967,24 @@ module rivet_mac_os_rx #(
       tlp_acc_q        <= '0;
       tlp_acc_cnt_q    <= '0;
       tlp_wr_slot_q    <= '0;
-      tlp_rd_slot_q    <= '0;
+      tlp_base_q       <= '0;
       tlp_len_q        <= '0;
-      tlp_rem_q        <= '0;
-      tlp_sop_q        <= 1'b0;
       tlp_tail_pend_q  <= 1'b0;
       tlp_err_q        <= 1'b0;
+      q_wptr_q         <= '0;
+      q_rptr_q         <= '0;
+      q_count_q        <= '0;
+      rd_ph_q          <= '0;
+      rd_rem_q         <= '0;
+      rd_sop_q         <= 1'b0;
+      rd_err_q         <= 1'b0;
+      rd_addr_q        <= '0;
+      used_q           <= '0;
+      dllp_park_q      <= 1'b0;
+      dllp_park_data_q <= '0;
+      dllp_park_err_q  <= 1'b0;
     end else begin
+      logic [12:0] used_next;
       rx_pkt_q         <= rx_pkt_d;
       rx_body_q        <= rx_body_d;
       rx_cnt_q         <= rx_cnt_d;
@@ -875,12 +994,43 @@ module rivet_mac_os_rx #(
       tlp_acc_q        <= tlp_acc_d;
       tlp_acc_cnt_q    <= tlp_acc_cnt_d;
       tlp_wr_slot_q    <= tlp_wr_slot_d;
-      tlp_rd_slot_q    <= tlp_rd_slot_d;
+      tlp_base_q       <= tlp_base_d;
       tlp_len_q        <= tlp_len_d;
-      tlp_rem_q        <= tlp_rem_d;
-      tlp_sop_q        <= tlp_sop_d;
       tlp_tail_pend_q  <= tlp_tail_pend_d;
       tlp_err_q        <= tlp_err_d;
+      rd_ph_q          <= rd_ph_d;
+      rd_rem_q         <= rd_rem_d;
+      rd_sop_q         <= rd_sop_d;
+      rd_err_q         <= rd_err_d;
+      rd_addr_q        <= rd_addr_d;
+      dllp_park_q      <= dllp_park_d;
+      dllp_park_data_q <= dllp_park_data_d;
+      dllp_park_err_q  <= dllp_park_err_d;
+      if (frame_push_d && (q_count_q < 5'(TLP_Q))) begin
+        q_base[q_wptr_q[3:0]] <= frame_push_base_d;
+        q_len[q_wptr_q[3:0]]  <= frame_push_len_d;
+        q_err[q_wptr_q[3:0]]  <= frame_push_err_d;
+        q_wptr_q              <= q_wptr_q + 5'd1;
+      end
+      if (rd_pop && (q_count_q != 5'd0))
+        q_rptr_q <= q_rptr_q + 5'd1;
+      case ({frame_push_d && (q_count_q < 5'(TLP_Q)), rd_pop && (q_count_q != 5'd0)})
+        2'b10:   q_count_q <= q_count_q + 5'd1;
+        2'b01:   q_count_q <= q_count_q - 5'd1;
+        default: q_count_q <= q_count_q;
+      endcase
+      used_next = used_q;
+      if (tlp_ram_we)
+        used_next = used_next + 12'd1;
+      if (rd_took && (used_next != 12'd0))
+        used_next = used_next - 12'd1;
+      if (rd_drop != 12'd0) begin
+        if (rd_drop >= used_next)
+          used_next = 12'd0;
+        else
+          used_next = used_next - rd_drop;
+      end
+      used_q <= used_next;
     end
   end
 

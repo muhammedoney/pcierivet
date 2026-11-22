@@ -67,6 +67,9 @@ module rivet_dll_tlp_tx #(
   logic        cap_pend_q, cap_last_q;
   logic [63:0] cap_word_q;
   logic        pref_q, emit_sop_q, replay_q, tl_seen_q;
+  // The packer stays valid until capture finishes. Without this hold the
+  // transmitter can return to idle and start that same TLP a second time.
+  logic        tl_held_q;
   logic        start_tl, start_rp;
 
   assign next_tx_seq_o = next_seq_q;
@@ -77,8 +80,8 @@ module rivet_dll_tlp_tx #(
   assign cap_seq_o     = seq_q;
   assign cap_len_o     = frame_len_q;
 
-  assign start_tl = (state_q == ST_IDLE) && pref_q && tl_seen_q && !replay_en_i &&
-                    enable_i && tl_valid_i && cap_ready_i &&
+  assign start_tl = (state_q == ST_IDLE) && pref_q && tl_seen_q && !tl_held_q &&
+                    !replay_en_i && enable_i && tl_valid_i && cap_ready_i &&
                     (tl_len_i != 16'd0) &&
                     (tl_len_i <= 16'(SLOT_BYTES - RIVET_TLP_SEQ_BYTES - RIVET_TLP_LCRC_BYTES));
   assign start_rp = (state_q == ST_IDLE) && pref_q && replay_en_i &&
@@ -202,9 +205,14 @@ module rivet_dll_tlp_tx #(
       emit_sop_q   <= 1'b0;
       replay_q     <= 1'b0;
       tl_seen_q    <= 1'b0;
+      tl_held_q    <= 1'b0;
     end else begin
       // One cycle after the packer marks a TLP valid, word 0 is in rd_data.
       tl_seen_q <= (state_q == ST_IDLE) && tl_valid_i && !start_tl;
+      if (start_tl)
+        tl_held_q <= 1'b1;
+      else if (tl_ready_o)
+        tl_held_q <= 1'b0;
       if (cap_pend_q && cap_ready_i)
         cap_pend_q <= 1'b0;
 
