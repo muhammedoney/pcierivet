@@ -1,38 +1,40 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Replay buffer: push → ACK purge; push → NAK replay stream.
+// Replay buffer: one-word capture → ACK purge; capture → replay word read.
 
 `timescale 1ns/1ps
 
 module rivet_dll_replay_tb;
   localparam int unsigned SLOTS = 4;
   localparam int unsigned BYTES = 16;
-  localparam int unsigned DATA_W = BYTES * 8;
 
   logic clk, rst_n, clear;
-  logic push_v, push_r;
-  logic [11:0] push_seq;
-  logic [DATA_W-1:0] push_data;
-  logic [15:0] push_len;
+  logic cap_v, cap_r, cap_last;
+  logic [63:0] cap_data;
+  logic [11:0] cap_seq;
+  logic [15:0] cap_len;
   logic ack_v;
   logic [11:0] ack_seq;
   logic replay_start, replay_active, replay_done, replay_v, replay_r;
   logic [11:0] replay_seq;
-  logic [DATA_W-1:0] replay_data;
+  logic [15:0] replay_idx;
+  logic [63:0] replay_word;
   logic [15:0] replay_len;
   logic full, empty;
   logic [15:0] occ;
 
   rivet_dll_replay #(.TLP_SLOTS(SLOTS), .SLOT_BYTES(BYTES)) u_dut (
     .clk_i(clk), .rst_ni(rst_n), .clear_i(clear),
-    .push_valid_i(push_v), .push_ready_o(push_r),
-    .push_seq_i(push_seq), .push_data_i(push_data), .push_len_i(push_len),
+    .cap_valid_i(cap_v), .cap_ready_o(cap_r),
+    .cap_data_i(cap_data), .cap_last_i(cap_last),
+    .cap_seq_i(cap_seq), .cap_len_i(cap_len),
     .ack_valid_i(ack_v), .ack_seq_i(ack_seq),
     .replay_start_i(replay_start), .replay_active_o(replay_active),
     .replay_done_o(replay_done), .replay_valid_o(replay_v),
     .replay_ready_i(replay_r), .replay_seq_o(replay_seq),
-    .replay_data_o(replay_data), .replay_len_o(replay_len),
+    .replay_word_idx_i(replay_idx), .replay_word_o(replay_word),
+    .replay_len_o(replay_len),
     .full_o(full), .empty_o(empty), .occupancy_o(occ)
   );
 
@@ -41,13 +43,15 @@ module rivet_dll_replay_tb;
 
   task automatic push_one(input logic [11:0] seq, input logic [7:0] tag);
     @(negedge clk);
-    push_seq  = seq;
-    push_len  = 16'd4;
-    push_data = { {(DATA_W-8){1'b0}}, tag };
-    push_v    = 1'b1;
+    cap_seq  = seq;
+    cap_len  = 16'd4;
+    cap_data = {56'h0, tag};
+    cap_last = 1'b1;
+    cap_v    = 1'b1;
     @(negedge clk);
-    while (!push_r) @(negedge clk);
-    push_v = 1'b0;
+    while (!cap_r) @(negedge clk);
+    cap_v = 1'b0;
+    cap_last = 1'b0;
     @(posedge clk);
   endtask
 
@@ -56,13 +60,15 @@ module rivet_dll_replay_tb;
     logic [7:0] tag0;
     rst_n = 1'b0;
     clear = 1'b0;
-    push_v = 1'b0;
+    cap_v = 1'b0;
+    cap_last = 1'b0;
     ack_v = 1'b0;
     replay_start = 1'b0;
     replay_r = 1'b1;
-    push_seq = '0;
-    push_len = '0;
-    push_data = '0;
+    replay_idx = '0;
+    cap_seq = '0;
+    cap_len = '0;
+    cap_data = '0;
     ack_seq = '0;
     repeat (4) @(posedge clk);
     rst_n = 1'b1;
@@ -101,7 +107,7 @@ module rivet_dll_replay_tb;
     while (got < 2) begin
       @(posedge clk);
       if (replay_v) begin
-        tag0 = replay_data[7:0];
+        tag0 = replay_word[7:0];
         if (got == 0 && (replay_seq !== 12'h3 || tag0 !== 8'hA3)) begin
           $error("replay[0] seq=%h tag=%h", replay_seq, tag0);
           $fatal(1);

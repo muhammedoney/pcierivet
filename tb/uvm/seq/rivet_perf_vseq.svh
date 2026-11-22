@@ -360,3 +360,120 @@ class rivet_perf_rq_sweep_vseq extends rivet_perf_vseq;
     wait fork;
   endtask
 endclass : rivet_perf_rq_sweep_vseq
+
+
+// Posted MemWr64 (address above 4 GB) over the same payload steps as MemWr32.
+class rivet_perf_rq_memwr64_vseq extends rivet_perf_vseq;
+  `uvm_object_utils(rivet_perf_rq_memwr64_vseq)
+
+  int unsigned n_tlp = 8;
+
+  function new(string name = "rivet_perf_rq_memwr64_vseq");
+    super.new(name);
+  endfunction
+
+  task body();
+    rivet_cfg_mgmt_rw_seq cfg_rw;
+    int unsigned sizes[$];
+    int unsigned s;
+    sizes = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+    wait_l0();
+    start_sidebands(800_000, 1'b0, 1'b1);
+    cfg_rw = rivet_cfg_mgmt_rw_seq::type_id::create("cfg_rw");
+    cfg_rw.start(p_sequencer.cfg_sqr);
+    for (s = 0; s < sizes.size(); s++) begin
+      int unsigned dw, i;
+      dw = sizes[s];
+      repeat (8_000) @(posedge status_vif.pclk);
+      perf.arm(dw * 4, 0);
+      for (i = 0; i < n_tlp; i++) begin
+        rivet_axi_rq_memwr_seq wr;
+        wr = rivet_axi_rq_memwr_seq::type_id::create(
+          $sformatf("wr64_dw%0d_%0d", dw, i));
+        wr.payload_dw = dw;
+        wr.addr       = 32'h0000_1000 + (i << 6);
+        wr.addr_hi    = 32'h0000_0001;
+        wr.tag        = i[7:0];
+        wr.start(p_sequencer.rq_sqr);
+      end
+      perf.disarm();
+      if (status_vif.cfg_ltssm_state != 6'h10)
+        `uvm_fatal(get_type_name(),
+          $sformatf("Left L0 during MemWr64 %0dDW burst", dw))
+      if (perf.rq_tlast != n_tlp)
+        `uvm_error(get_type_name(),
+          $sformatf("MemWr64 %0dDW: expected %0d RQ tlast, saw %0d",
+                    dw, n_tlp, perf.rq_tlast))
+      perf.report_perf($sformatf("rq64_dw%0d", dw));
+    end
+    wait fork;
+  endtask
+endclass : rivet_perf_rq_memwr64_vseq
+
+
+// Eight 1DW MemRd32 and eight 1DW MemRd64. Each completion is a 4-byte CplD
+// on RC. The peer frame is 32 bytes, so this is one completion size, not a sweep.
+class rivet_perf_rq_memrd_vseq extends rivet_perf_vseq;
+  `uvm_object_utils(rivet_perf_rq_memrd_vseq)
+
+  int unsigned n_tlp = 8;
+
+  function new(string name = "rivet_perf_rq_memrd_vseq");
+    super.new(name);
+  endfunction
+
+  task automatic burst(input bit [31:0] addr_hi, input string tag);
+    int unsigned i;
+    perf.arm(0, 0, 4);
+    for (i = 0; i < n_tlp; i++) begin
+      rivet_axi_rq_memrd32_seq rd;
+      bit peer_done;
+      int unsigned cyc;
+      int unsigned rc_before;
+      uvm_config_db#(bit)::set(null, "*", "peer_cpld_rearm", 1'b1);
+      uvm_config_db#(bit [7:0])::set(null, "*", "peer_cpld_tag", i[7:0] + 8'h11);
+      peer_done = 1'b1;
+      for (cyc = 0; cyc < 2_000; cyc++) begin
+        @(posedge status_vif.pclk);
+        void'(uvm_config_db#(bit)::get(null, "*", "peer_cpld_rearm", peer_done));
+        if (!peer_done)
+          break;
+      end
+      rd = rivet_axi_rq_memrd32_seq::type_id::create($sformatf("%s_%0d", tag, i));
+      rd.tag     = i[7:0] + 8'h11;
+      rd.addr_hi = addr_hi;
+      rd.start(p_sequencer.rq_sqr);
+      rc_before = perf.rc_tlast;
+      uvm_config_db#(bit)::set(null, "*", "peer_cpld_go", 1'b1);
+      peer_done = 1'b0;
+      for (cyc = 0; cyc < 80_000; cyc++) begin
+        @(posedge status_vif.pclk);
+        void'(uvm_config_db#(bit)::get(null, "*", "peer_tlp_cpld_done", peer_done));
+        if (peer_done && (perf.rc_tlast > rc_before))
+          break;
+      end
+      if (!(peer_done && (perf.rc_tlast > rc_before)))
+        `uvm_fatal(get_type_name(),
+          $sformatf("%s CplD %0d did not reach RC", tag, i))
+    end
+    perf.disarm();
+    if (perf.rc_tlast != n_tlp)
+      `uvm_error(get_type_name(),
+        $sformatf("%s: expected %0d RC tlast, saw %0d", tag, n_tlp, perf.rc_tlast))
+    perf.report_perf(tag);
+  endtask
+
+  task body();
+    rivet_cfg_mgmt_rw_seq cfg_rw;
+    wait_l0();
+    start_sidebands(n_tlp * 160_000, 1'b0, 1'b1);
+    cfg_rw = rivet_cfg_mgmt_rw_seq::type_id::create("cfg_rw");
+    cfg_rw.start(p_sequencer.cfg_sqr);
+    burst(32'h0, "memrd32");
+    repeat (2_000) @(posedge status_vif.pclk);
+    burst(32'h1, "memrd64");
+    if (status_vif.cfg_ltssm_state != 6'h10)
+      `uvm_fatal(get_type_name(), "Left L0 during MemRd")
+    wait fork;
+  endtask
+endclass : rivet_perf_rq_memrd_vseq

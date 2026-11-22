@@ -25,10 +25,11 @@ class rivet_axi_tlp_util;
       input  logic [7:0]  tag,
       input  logic [15:0] requester_id,
       output logic [63:0] beat0,
-      output logic [63:0] beat1);
+      output logic [63:0] beat1,
+      input  logic [31:0] addr_hi = 32'h0);
     logic [31:0] dw0, dw1, dw2, dw3;
     dw0 = {addr[31:2], 2'b00};
-    dw1 = 32'h0;
+    dw1 = addr_hi;
     // DW2[10:0]=length, [14:11]=req_type; upper bits 0 for Phase-1 helpers.
     dw2 = {17'h0, req_type, dword_count};
     // DW3[7:0]=tag, [23:8]=requester_id; BAR/fn 0.

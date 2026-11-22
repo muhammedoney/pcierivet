@@ -92,14 +92,17 @@ module rivet_dll #(
   logic            dllp_req_valid;
   logic            dllp_req_ready;
 
-  logic                           push_v, push_r;
-  logic [11:0]                    push_seq;
-  logic [REPLAY_SLOT_BYTES*8-1:0] push_data;
-  logic [15:0]                    push_len;
+  logic        cap_v, cap_r, cap_last;
+  logic [63:0] cap_data;
+  logic [11:0] cap_seq;
+  logic [15:0] cap_len;
   logic                           rep_start, rep_active, rep_v, rep_r;
   logic [11:0]                    rep_seq;
-  logic [REPLAY_SLOT_BYTES*8-1:0] rep_data;
+  logic [63:0]                    rep_word;
+  logic [15:0]                    rep_word_idx;
   logic [15:0]                    rep_len;
+  logic [15:0]                    tx_word_idx;
+  logic [63:0]                    tx_word;
   logic                           rep_full, rep_empty;
   logic [15:0]                    rep_occ;
 
@@ -133,9 +136,8 @@ module rivet_dll #(
   logic [11:0]            last_good;
   logic                   lcrc_err;
 
-  logic                           whole_tx_v, whole_tx_r;
-  logic [REPLAY_SLOT_BYTES*8-1:0] whole_tx_d;
-  logic [15:0]                    whole_tx_len;
+  logic        whole_tx_v, whole_tx_r;
+  logic [15:0] whole_tx_len;
   logic                           whole_rx_v, whole_rx_r;
   logic [RX_SLOT_BYTES*8-1:0]     whole_rx_d;
   logic [15:0]                    whole_rx_len;
@@ -180,7 +182,7 @@ module rivet_dll #(
       end else begin
         timer_exp_q <= 1'b0;
 
-        if (push_v && push_r) begin
+        if (cap_v && cap_last && cap_r) begin
           timer_en_q <= 1'b1;
           timer_q    <= REPLAY_TIMER_CYC[15:0];
         end else if (ack_to_buf) begin
@@ -339,8 +341,9 @@ module rivet_dll #(
     .s_tready_o (tl_tx_s_tready),
     .m_valid_o  (whole_tx_v),
     .m_ready_i  (whole_tx_r),
-    .m_data_o   (whole_tx_d),
-    .m_len_o    (whole_tx_len)
+    .m_len_o    (whole_tx_len),
+    .rd_idx_i   (tx_word_idx),
+    .rd_data_o  (tx_word)
   );
 
   rivet_dll_tl_unpack #(
@@ -426,11 +429,12 @@ module rivet_dll #(
     .clk_i           (pclk_i),
     .rst_ni          (rst_ni),
     .clear_i         (clear_replay),
-    .push_valid_i    (push_v),
-    .push_ready_o    (push_r),
-    .push_seq_i      (push_seq),
-    .push_data_i     (push_data),
-    .push_len_i      (push_len),
+    .cap_valid_i     (cap_v),
+    .cap_ready_o     (cap_r),
+    .cap_data_i      (cap_data),
+    .cap_last_i      (cap_last),
+    .cap_seq_i       (cap_seq),
+    .cap_len_i       (cap_len),
     .ack_valid_i     (ack_to_buf),
     .ack_seq_i       (ack_seq_to_buf),
     .replay_start_i  (rep_start),
@@ -439,7 +443,8 @@ module rivet_dll #(
     .replay_valid_o  (rep_v),
     .replay_ready_i  (rep_r),
     .replay_seq_o    (rep_seq),
-    .replay_data_o   (rep_data),
+    .replay_word_idx_i(rep_word_idx),
+    .replay_word_o   (rep_word),
     .replay_len_o    (rep_len),
     .full_o          (rep_full),
     .empty_o         (rep_empty),
@@ -510,18 +515,21 @@ module rivet_dll #(
     .replay_en_i     (rep_active),
     .tl_valid_i      (whole_tx_v),
     .tl_ready_o      (whole_tx_r),
-    .tl_data_i       (whole_tx_d),
     .tl_len_i        (whole_tx_len),
+    .tl_word_i       (tx_word),
+    .tl_word_idx_o   (tx_word_idx),
     .replay_valid_i  (rep_v),
     .replay_ready_o  (rep_r),
     .replay_seq_i    (rep_seq),
-    .replay_data_i   (rep_data),
     .replay_len_i    (rep_len),
-    .push_valid_o    (push_v),
-    .push_ready_i    (push_r),
-    .push_seq_o      (push_seq),
-    .push_data_o     (push_data),
-    .push_len_o      (push_len),
+    .replay_word_i   (rep_word),
+    .replay_word_idx_o(rep_word_idx),
+    .cap_valid_o     (cap_v),
+    .cap_ready_i     (cap_r),
+    .cap_data_o      (cap_data),
+    .cap_last_o      (cap_last),
+    .cap_seq_o       (cap_seq),
+    .cap_len_o       (cap_len),
     .beat_o          (tlp_beat),
     .beat_valid_o    (tlp_v),
     .beat_ready_i    (tlp_r),

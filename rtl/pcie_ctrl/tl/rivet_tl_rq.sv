@@ -58,6 +58,12 @@ module rivet_tl_rq (
   // the head beat consumes the first one or two DWs first.
   logic [10:0]  dw_n;
   logic [31:0]  addr_q;
+  logic [31:0]  addr_hi_q;
+  // Nonzero upper address selects the 4DW Mem64 header. Zero keeps Mem32.
+  logic         is64_q;
+  // Mem64 payload is parked in sh_q before the header beats, so TX1 must
+  // not clear it the way a Mem32 packet with no stashed DW does.
+  logic         sh_primed_q;
   logic [7:0]   tag_q;
   logic [3:0]   fbe_q, lbe_q;
   logic [31:0]  data_q;
@@ -104,7 +110,7 @@ module rivet_tl_rq (
   assign tx_tdata_o  = (st_q == ST_TX1) ? tx_q[127:64] :
                        (st_q == ST_MORE) ? sh_q[63:0] : tx_q[63:0];
   assign tx_tkeep_o  = (st_q == ST_MORE) ? more_keep :
-                       (st_q == ST_TX1) ? (is_wr_q ? 8'hFF : 8'h0F) : 8'hFF;
+                       (st_q == ST_TX1) ? ((is64_q || is_wr_q) ? 8'hFF : 8'h0F) : 8'hFF;
   assign tx_tlast_o  = ((st_q == ST_TX1) && !more_q) ||
                        ((st_q == ST_MORE) && more_beat && more_last);
   assign tx_hdr0_o   = tx_q[7:0];
@@ -126,6 +132,9 @@ module rivet_tl_rq (
       is_wr_q <= 1'b0;
       len_q  <= '0;
       addr_q <= '0;
+      addr_hi_q <= '0;
+      is64_q <= 1'b0;
+      sh_primed_q <= 1'b0;
       tag_q  <= '0;
       fbe_q  <= '0;
       lbe_q  <= '0;
@@ -150,7 +159,8 @@ module rivet_tl_rq (
       unique case (st_q)
         ST_D0: begin
           if (s_axis_rq_tvalid && s_axis_rq_tready) begin
-            addr_q <= {s_axis_rq_tdata[31:2], 2'b00};
+            addr_q    <= {s_axis_rq_tdata[31:2], 2'b00};
+            addr_hi_q <= s_axis_rq_tdata[63:32];
             fbe_q  <= s_axis_rq_tuser[3:0];
             lbe_q  <= s_axis_rq_tuser[7:4];
             st_q   <= ST_D1;
@@ -160,11 +170,12 @@ module rivet_tl_rq (
           if (s_axis_rq_tvalid && s_axis_rq_tready) begin
             len_q   <= s_axis_rq_tdata[9:0];
             is_wr_q <= (s_axis_rq_tdata[14:11] == RIVET_CQ_REQ_MEMWR);
+            is64_q  <= (addr_hi_q != 32'h0);
             tag_q   <= s_axis_rq_tdata[55:48];
             if (s_axis_rq_tlast) begin
-              // MemRd — build header only
+              // MemRd — header only. Upper address selects the 4DW format.
               more_q      <= 1'b0;
-              tx_q[7:0]   <= RIVET_TLP_B0_MEMRD32;
+              sh_primed_q <= 1'b0;
               tx_q[15:8]  <= 8'h00;
               tx_q[23:16] <= {6'h0, s_axis_rq_tdata[9:8]};
               tx_q[31:24] <= s_axis_rq_tdata[7:0];
@@ -173,10 +184,23 @@ module rivet_tl_rq (
               tx_q[55:48] <= s_axis_rq_tdata[55:48]; // tag
               tx_q[59:56] <= fbe_q;
               tx_q[63:60] <= lbe_q;
-              tx_q[71:64] <= addr_q[31:24];
-              tx_q[79:72] <= addr_q[23:16];
-              tx_q[87:80] <= addr_q[15:8];
-              tx_q[95:88] <= addr_q[7:0];
+              if (addr_hi_q != 32'h0) begin
+                tx_q[7:0]     <= RIVET_TLP_B0_MEMRD64;
+                tx_q[71:64]   <= addr_hi_q[31:24];
+                tx_q[79:72]   <= addr_hi_q[23:16];
+                tx_q[87:80]   <= addr_hi_q[15:8];
+                tx_q[95:88]   <= addr_hi_q[7:0];
+                tx_q[103:96]  <= addr_q[31:24];
+                tx_q[111:104] <= addr_q[23:16];
+                tx_q[119:112] <= addr_q[15:8];
+                tx_q[127:120] <= addr_q[7:0];
+              end else begin
+                tx_q[7:0]   <= RIVET_TLP_B0_MEMRD32;
+                tx_q[71:64] <= addr_q[31:24];
+                tx_q[79:72] <= addr_q[23:16];
+                tx_q[87:80] <= addr_q[15:8];
+                tx_q[95:88] <= addr_q[7:0];
+              end
               st_q <= ST_TX0;
             end else
               st_q <= ST_DAT;
@@ -187,7 +211,6 @@ module rivet_tl_rq (
             logic [10:0] left;
             logic [10:0] full;
             data_q <= s_axis_rq_tdata[31:0];
-            tx_q[7:0]   <= RIVET_TLP_B0_MEMWR32;
             tx_q[15:8]  <= 8'h00;
             tx_q[23:16] <= {6'h0, len_q[9:8]};
             tx_q[31:24] <= len_q[7:0];
@@ -196,27 +219,53 @@ module rivet_tl_rq (
             tx_q[55:48] <= tag_q;
             tx_q[59:56] <= fbe_q;
             tx_q[63:60] <= lbe_q;
-            tx_q[71:64] <= addr_q[31:24];
-            tx_q[79:72] <= addr_q[23:16];
-            tx_q[87:80] <= addr_q[15:8];
-            tx_q[95:88] <= addr_q[7:0];
-            tx_q[103:96]  <= s_axis_rq_tdata[7:0];
-            tx_q[111:104] <= s_axis_rq_tdata[15:8];
-            tx_q[119:112] <= s_axis_rq_tdata[23:16];
-            tx_q[127:120] <= s_axis_rq_tdata[31:24];
-            // DW0 rides in the 16-byte head. A second DW in this beat is stashed.
             // full==0 is not used; a captured length of 0 is 1024 DW.
-            full = (s_axis_rq_tvalid) ? dw_n : 11'd0;
-            left = (full > 11'd1) ? (full - 11'd1) : 11'd0;
-            if ((full > 11'd1) && s_axis_rq_tkeep[1]) begin
-              stash_q   <= s_axis_rq_tdata[63:32];
-              stash_v_q <= 1'b1;
-              left      = left - 11'd1;
+            full = dw_n;
+            if (addr_hi_q != 32'h0) begin
+              // 16-byte MemWr64 header. Every payload DW follows it.
+              logic [3:0] nb;
+              logic [3:0] step;
+              tx_q[7:0]     <= RIVET_TLP_B0_MEMWR64;
+              tx_q[71:64]   <= addr_hi_q[31:24];
+              tx_q[79:72]   <= addr_hi_q[23:16];
+              tx_q[87:80]   <= addr_hi_q[15:8];
+              tx_q[95:88]   <= addr_hi_q[7:0];
+              tx_q[103:96]  <= addr_q[31:24];
+              tx_q[111:104] <= addr_q[23:16];
+              tx_q[119:112] <= addr_q[15:8];
+              tx_q[127:120] <= addr_q[7:0];
+              nb   = s_axis_rq_tkeep[1] ? 4'd8 : 4'd4;
+              step = s_axis_rq_tkeep[1] ? 4'd2 : 4'd1;
+              sh_q <= s_axis_rq_tkeep[1] ? {32'h0, s_axis_rq_tdata}
+                                        : {64'h0, s_axis_rq_tdata[31:0]};
+              sh_n_q      <= nb;
+              sh_primed_q <= 1'b1;
+              stash_v_q   <= 1'b0;
+              left = (full > {7'd0, step}) ? (full - {7'd0, step}) : 11'd0;
+              more_q <= 1'b1;
             end else begin
-              stash_v_q <= 1'b0;
+              // DW0 rides in the 16-byte head. A second DW in this beat is stashed.
+              tx_q[7:0]   <= RIVET_TLP_B0_MEMWR32;
+              tx_q[71:64] <= addr_q[31:24];
+              tx_q[79:72] <= addr_q[23:16];
+              tx_q[87:80] <= addr_q[15:8];
+              tx_q[95:88] <= addr_q[7:0];
+              tx_q[103:96]  <= s_axis_rq_tdata[7:0];
+              tx_q[111:104] <= s_axis_rq_tdata[15:8];
+              tx_q[119:112] <= s_axis_rq_tdata[23:16];
+              tx_q[127:120] <= s_axis_rq_tdata[31:24];
+              sh_primed_q <= 1'b0;
+              left = (full > 11'd1) ? (full - 11'd1) : 11'd0;
+              if ((full > 11'd1) && s_axis_rq_tkeep[1]) begin
+                stash_q   <= s_axis_rq_tdata[63:32];
+                stash_v_q <= 1'b1;
+                left      = left - 11'd1;
+              end else begin
+                stash_v_q <= 1'b0;
+              end
+              more_q <= (full > 11'd1);
             end
             dw_left_q <= left[9:0];
-            more_q    <= (full > 11'd1);
             st_q <= ST_TX0;
           end
         end
@@ -229,10 +278,11 @@ module rivet_tl_rq (
               if (stash_v_q) begin
                 sh_q   <= {64'd0, stash_q};
                 sh_n_q <= 4'd4;
-              end else begin
+              end else if (!sh_primed_q) begin
                 sh_q   <= '0;
                 sh_n_q <= '0;
               end
+              sh_primed_q <= 1'b0;
               st_q <= ST_MORE;
             end else begin
               more_q <= 1'b0;

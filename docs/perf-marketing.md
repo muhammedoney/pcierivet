@@ -15,16 +15,35 @@ PERF tag=rq_dw1    bytes=32    cycles=32   rq_stall=0  rq_tlast=8 mb_s=250.000 p
 PERF tag=rq_dw2    bytes=64    cycles=32   rq_stall=0  rq_tlast=8 mb_s=500.000 pct_gen2x4=25.000 user_clk_ns=4.0
 PERF tag=rq_dw4    bytes=128   cycles=40   rq_stall=0  rq_tlast=8 mb_s=800.000 pct_gen2x4=40.000 user_clk_ns=4.0
 PERF tag=rq_dw8    bytes=256   cycles=57   rq_stall=1  rq_tlast=8 mb_s=1122.807 pct_gen2x4=56.140 user_clk_ns=4.0
-PERF tag=rq_dw16   bytes=512   cycles=95   rq_stall=7  rq_tlast=8 mb_s=1347.368 pct_gen2x4=67.368 user_clk_ns=4.0
-PERF tag=rq_dw32   bytes=1024  cycles=161  rq_stall=9  rq_tlast=8 mb_s=1590.062 pct_gen2x4=79.503 user_clk_ns=4.0
-PERF tag=rq_dw64   bytes=2048  cycles=293  rq_stall=13 rq_tlast=8 mb_s=1747.440 pct_gen2x4=87.372 user_clk_ns=4.0
-PERF tag=rq_dw128  bytes=4096  cycles=549  rq_stall=13 rq_tlast=8 mb_s=1865.209 pct_gen2x4=93.260 user_clk_ns=4.0
-PERF tag=rq_dw256  bytes=8192  cycles=1061 rq_stall=13 rq_tlast=8 mb_s=1930.254 pct_gen2x4=96.513 user_clk_ns=4.0
-PERF tag=rq_dw512  bytes=16384 cycles=2085 rq_stall=13 rq_tlast=8 mb_s=1964.508 pct_gen2x4=98.225 user_clk_ns=4.0
-PERF tag=rq_dw1024 bytes=32768 cycles=4133 rq_stall=13 rq_tlast=8 mb_s=1982.095 pct_gen2x4=99.105 user_clk_ns=4.0
+PERF tag=rq_dw16   bytes=512   cycles=96   rq_stall=8  rq_tlast=8 mb_s=1333.333 pct_gen2x4=66.667 user_clk_ns=4.0
+PERF tag=rq_dw32   bytes=1024  cycles=163  rq_stall=11 rq_tlast=8 mb_s=1570.552 pct_gen2x4=78.528 user_clk_ns=4.0
+PERF tag=rq_dw64   bytes=2048  cycles=297  rq_stall=17 rq_tlast=8 mb_s=1723.906 pct_gen2x4=86.195 user_clk_ns=4.0
+PERF tag=rq_dw128  bytes=4096  cycles=553  rq_stall=17 rq_tlast=8 mb_s=1851.718 pct_gen2x4=92.586 user_clk_ns=4.0
+PERF tag=rq_dw256  bytes=8192  cycles=1065 rq_stall=17 rq_tlast=8 mb_s=1923.005 pct_gen2x4=96.150 user_clk_ns=4.0
+PERF tag=rq_dw512  bytes=16384 cycles=2090 rq_stall=18 rq_tlast=8 mb_s=1959.809 pct_gen2x4=97.990 user_clk_ns=4.0
+PERF tag=rq_dw1024 bytes=32768 cycles=4138 rq_stall=18 rq_tlast=8 mb_s=1979.700 pct_gen2x4=98.985 user_clk_ns=4.0
 ```
 
-UVM reported 0 errors and 0 fatals. 1024 DW is 4096 bytes per TLP; `bytes=32768` is 8 of those packets. That point is 1982.095 MB/s, the printed 99.105% of the 2000 MB/s Gen2 x4 symbol rate. Every size printed `credit_stall=0` and `tfc_nph_min=15`. From 64 DW up the same window printed `rq_stall=13`.
+UVM reported 0 errors and 0 fatals. 1024 DW is 4096 bytes per TLP; `bytes=32768` is 8 of those packets. That point is 1979.700 MB/s, the printed 98.985% of the 2000 MB/s Gen2 x4 symbol rate. Every size printed `credit_stall=0` and `tfc_nph_min=15`. From 64 DW through 256 DW the window printed `rq_stall=17`. 512 DW and 1024 DW printed `rq_stall=18`.
+
+`perf_rq_memwr64_gen2_x4` repeats the sweep as MemWr64 (`addr[63:32]=1`). UVM reported 0 errors. The 4-byte through 32-byte points, and every point from 128 bytes up, printed the same `cycles`, `rq_stall`, and `mb_s` as MemWr32. The 64-byte point differed:
+
+```
+PERF tag=rq64_dw16 bytes=512 cycles=95 rq_stall=7 rq_tlast=8 mb_s=1347.368 pct_gen2x4=67.368 user_clk_ns=4.0
+```
+
+The 4096-byte MemWr64 point printed 1979.700 MB/s again.
+
+## 1 DW requester reads
+
+`perf_rq_memrd_gen2_x4` sends eight 1 DW MemRd32, then eight 1 DW MemRd64. Each completion is a 4-byte CplD on RC. The peer frame is 32 bytes, so there is no read payload sweep. This peer advertises finite credits. UVM reported 0 errors. `bytes=32` is eight completions. The cycle count includes the gap between reads. Both bursts printed `lat_min=26`, `lat_avg=26`, `lat_max=26`.
+
+```
+PERF tag=memrd32 bytes=32 cycles=259 rc_tlast=8 lat_n=8 lat_min=26 lat_avg=26 lat_max=26 mb_s=30.888 pct_gen2x4=1.544 tfc_nph_min=8 tfc_zero=0 user_clk_ns=4.0
+PERF tag=memrd64 bytes=32 cycles=248 rc_tlast=8 lat_n=8 lat_min=26 lat_avg=26 lat_max=26 mb_s=32.258 pct_gen2x4=1.613 tfc_nph_min=0 tfc_zero=15 user_clk_ns=4.0
+```
+
+Both printed `rq_stall=0` and `credit_stall=0`.
 
 An earlier `perf_rq_memwr_gen2_x4` run (16× 1DW, finite credits, one idle user clock between beats) printed 83.333 MB/s. That run is not the payload curve.
 

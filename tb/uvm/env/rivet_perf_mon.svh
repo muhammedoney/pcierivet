@@ -15,12 +15,13 @@ class rivet_perf_mon extends uvm_component;
   int unsigned rc_accept, rc_tlast;
   int unsigned cq_accept, cq_tlast;
   int unsigned cc_accept, cc_tlast;
-  int unsigned rq_payload_bytes, cc_payload_bytes;
+  int unsigned rq_payload_bytes, cc_payload_bytes, rc_payload_bytes;
   int unsigned credit_stall, tfc_zero;
   int unsigned tfc_nph_min;
   int unsigned lat_min, lat_max, lat_sum, lat_n;
   int unsigned rq_payload_per_tlast;
   int unsigned cc_payload_per_tlast;
+  int unsigned rc_payload_per_tlast;
   protected int unsigned cyc;
   protected int unsigned pending_rq[$];
 
@@ -47,14 +48,15 @@ class rivet_perf_mon extends uvm_component;
   endfunction
 
   function void arm(int unsigned rq_bytes_per_tlast = 0,
-                    int unsigned cc_bytes_per_tlast = 0);
+                    int unsigned cc_bytes_per_tlast = 0,
+                    int unsigned rc_bytes_per_tlast = 0);
     armed = 1'b0;
     window_cycles = 0;
     rq_accept = 0; rq_stall = 0; rq_tlast = 0;
     rc_accept = 0; rc_tlast = 0;
     cq_accept = 0; cq_tlast = 0;
     cc_accept = 0; cc_tlast = 0;
-    rq_payload_bytes = 0; cc_payload_bytes = 0;
+    rq_payload_bytes = 0; cc_payload_bytes = 0; rc_payload_bytes = 0;
     credit_stall = 0; tfc_zero = 0;
     tfc_nph_min = 15;
     lat_min = 32'hffff_ffff; lat_max = 0; lat_sum = 0; lat_n = 0;
@@ -62,6 +64,7 @@ class rivet_perf_mon extends uvm_component;
     pending_rq.delete();
     rq_payload_per_tlast = rq_bytes_per_tlast;
     cc_payload_per_tlast = cc_bytes_per_tlast;
+    rc_payload_per_tlast = rc_bytes_per_tlast;
     armed = 1'b1;
   endfunction
 
@@ -72,7 +75,7 @@ class rivet_perf_mon extends uvm_component;
   function void report_perf(string tag);
     int unsigned bytes, span, lat_avg;
     real mb_s, pct, stall_pct;
-    bytes = rq_payload_bytes + cc_payload_bytes;
+    bytes = rq_payload_bytes + cc_payload_bytes + rc_payload_bytes;
     span  = (window_cycles == 0) ? 1 : window_cycles;
     // bytes/s / 1e6 at a 4 ns user clock: bytes * 250 / cycles.
     mb_s = (bytes * 250.0) / span;
@@ -129,6 +132,7 @@ class rivet_perf_mon extends uvm_component;
         if (rc_vif.tlast) begin
           int unsigned issued;
           rc_tlast++;
+          rc_payload_bytes += rc_payload_per_tlast;
           if (pending_rq.size() != 0) begin
             int unsigned d;
             issued = pending_rq.pop_front();

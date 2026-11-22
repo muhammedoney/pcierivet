@@ -1,11 +1,9 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Replay (retry) buffer: store TX TLP images until ACK; retransmit on NAK.
-// Payload stored as a packed vector per slot for tool friendliness.
-//
-// A cumulative ACK retires one head slot per cycle. Retiring every slot in
-// one cycle is a TLP_SLOTS-deep dependent chain on pclk.
+// Replay buffer. Frame bytes are stored as 64-bit words, one write per
+// cycle, so the retry image is not a SLOT_BYTES-wide vector on pclk.
+// A cumulative ACK retires one head slot per cycle.
 
 module rivet_dll_replay #(
   parameter int unsigned TLP_SLOTS  = 16,
@@ -15,11 +13,12 @@ module rivet_dll_replay #(
   input  logic        rst_ni,
   input  logic        clear_i,
 
-  input  logic                       push_valid_i,
-  output logic                       push_ready_o,
-  input  logic [11:0]                push_seq_i,
-  input  logic [SLOT_BYTES*8-1:0]    push_data_i,
-  input  logic [15:0]                push_len_i,
+  input  logic        cap_valid_i,
+  output logic        cap_ready_o,
+  input  logic [63:0] cap_data_i,
+  input  logic        cap_last_i,
+  input  logic [11:0] cap_seq_i,
+  input  logic [15:0] cap_len_i,
 
   input  logic        ack_valid_i,
   input  logic [11:0] ack_seq_i,
@@ -30,7 +29,8 @@ module rivet_dll_replay #(
   output logic                       replay_valid_o,
   input  logic                       replay_ready_i,
   output logic [11:0]                replay_seq_o,
-  output logic [SLOT_BYTES*8-1:0]    replay_data_o,
+  input  logic [15:0]                replay_word_idx_i,
+  output logic [63:0]                replay_word_o,
   output logic [15:0]                replay_len_o,
 
   output logic        full_o,
@@ -38,34 +38,37 @@ module rivet_dll_replay #(
   output logic [15:0] occupancy_o
 );
 
-  localparam int unsigned IDX_W = (TLP_SLOTS <= 1) ? 1 : $clog2(TLP_SLOTS);
-  localparam int unsigned DATA_W = SLOT_BYTES * 8;
+  localparam int unsigned IDX_W  = (TLP_SLOTS <= 1) ? 1 : $clog2(TLP_SLOTS);
+  localparam int unsigned WORDS  = SLOT_BYTES / 8;
+  localparam int unsigned WORD_W = (WORDS <= 1) ? 1 : $clog2(WORDS);
+  // Power-of-two word stride so the RAM address is a concatenation.
+  localparam int unsigned RAM_WORDS = TLP_SLOTS * (1 << WORD_W);
 
   logic        valid_q [TLP_SLOTS];
   logic [11:0] seq_q   [TLP_SLOTS];
   logic [15:0] len_q   [TLP_SLOTS];
-  // One slot is 1280 bits. A flip-flop array with a combo read does not
-  // close at Gen2 pclk. The read data is the slot addressed last cycle,
-  // and replay_valid_o is held off for that fetch cycle.
-  (* ram_style = "block" *) logic [DATA_W-1:0] data_q [0:TLP_SLOTS-1];
-  logic [DATA_W-1:0] replay_data_q;
-  logic              replay_valid_q;
+  (* ram_style = "block" *) logic [63:0] word_q [0:RAM_WORDS-1];
+  logic [63:0] replay_word_q;
+  logic        filling_q;
 
   function automatic bit seq_acked(input logic [11:0] a, input logic [11:0] s);
     return ((s - a) < 12'd2048);
   endfunction
 
-  logic [IDX_W-1:0] wr_q, rd_q, replay_idx_q;
-  logic [15:0]      count_q;
-  logic             replay_active_q;
-  logic             replay_done_q;
-  logic             ack_hold_q;
-  logic [11:0]      ack_seq_q;
+  logic [IDX_W-1:0]  wr_q, rd_q, replay_idx_q;
+  logic [WORD_W-1:0] wr_word_q;
+  logic [15:0]       count_q;
+  logic              replay_active_q;
+  logic              replay_done_q;
+  logic              replay_valid_q;
+  logic              ack_hold_q;
+  logic [11:0]       ack_seq_q;
 
   logic [11:0]      ack_seq_eff;
   logic             ack_live;
   logic             head_ack;
   logic [IDX_W-1:0] rd_next;
+  logic             cap_fire;
 
   assign ack_seq_eff = ack_valid_i ? ack_seq_i : ack_seq_q;
   assign ack_live    = ack_valid_i || ack_hold_q;
@@ -76,27 +79,32 @@ module rivet_dll_replay #(
   assign full_o      = (count_q == TLP_SLOTS[15:0]);
   assign empty_o     = (count_q == 16'd0);
   assign occupancy_o = count_q;
-  assign push_ready_o = !full_o && !replay_active_q;
+  assign cap_ready_o = !replay_active_q && (filling_q || !full_o);
+  assign cap_fire    = cap_valid_i && cap_ready_o;
 
   assign replay_active_o = replay_active_q;
   assign replay_done_o   = replay_done_q;
   assign replay_valid_o  = replay_valid_q;
   assign replay_seq_o    = seq_q[replay_idx_q];
   assign replay_len_o    = len_q[replay_idx_q];
-  assign replay_data_o   = replay_data_q;
+  assign replay_word_o   = replay_word_q;
+
+  always_ff @(posedge clk_i) begin
+    if (cap_fire)
+      word_q[{wr_q, wr_word_q}] <= cap_data_i;
+  end
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni)
-      replay_data_q <= '0;
+      replay_word_q <= '0;
     else
-      replay_data_q <= data_q[replay_idx_q];
-    if (rst_ni && !clear_i && push_valid_i && push_ready_o)
-      data_q[wr_q] <= push_data_i;
+      replay_word_q <= word_q[{replay_idx_q, replay_word_idx_i[WORD_W-1:0]}];
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       wr_q            <= '0;
+      wr_word_q       <= '0;
       rd_q            <= '0;
       count_q         <= '0;
       replay_idx_q    <= '0;
@@ -105,6 +113,7 @@ module rivet_dll_replay #(
       replay_valid_q  <= 1'b0;
       ack_hold_q      <= 1'b0;
       ack_seq_q       <= '0;
+      filling_q       <= 1'b0;
       for (int unsigned i = 0; i < TLP_SLOTS; i++) begin
         valid_q[i] <= 1'b0;
         seq_q[i]   <= '0;
@@ -112,6 +121,7 @@ module rivet_dll_replay #(
       end
     end else if (clear_i) begin
       wr_q            <= '0;
+      wr_word_q       <= '0;
       rd_q            <= '0;
       count_q         <= '0;
       replay_idx_q    <= '0;
@@ -120,6 +130,7 @@ module rivet_dll_replay #(
       replay_valid_q  <= 1'b0;
       ack_hold_q      <= 1'b0;
       ack_seq_q       <= '0;
+      filling_q       <= 1'b0;
       for (int unsigned i = 0; i < TLP_SLOTS; i++) valid_q[i] <= 1'b0;
     end else begin
       logic             ack_hold_d;
@@ -132,15 +143,23 @@ module rivet_dll_replay #(
         ack_hold_d = 1'b1;
         ack_seq_d  = ack_seq_i;
       end
-      // A same-cycle push keeps the latched ACK and retires on a later cycle.
-      purge_d = head_ack && !(push_valid_i && push_ready_o);
+      purge_d = head_ack && !(cap_fire && cap_last_i);
 
-      if (push_valid_i && push_ready_o) begin
+      if (cap_fire && cap_last_i) begin
         valid_q[wr_q] <= 1'b1;
-        seq_q[wr_q]   <= push_seq_i;
-        len_q[wr_q]   <= push_len_i;
+        seq_q[wr_q]   <= cap_seq_i;
+        len_q[wr_q]   <= cap_len_i;
         wr_q          <= wr_q + 1'b1;
-        count_q       <= count_q + 16'd1;
+        wr_word_q     <= '0;
+        filling_q     <= 1'b0;
+        if (!filling_q)
+          count_q <= count_q + 16'd1;
+      end else if (cap_fire) begin
+        wr_word_q <= wr_word_q + 1'b1;
+        if (!filling_q) begin
+          filling_q <= 1'b1;
+          count_q   <= count_q + 16'd1;
+        end
       end else if (purge_d) begin
         valid_q[rd_q] <= 1'b0;
         rd_q          <= rd_next;
@@ -155,8 +174,6 @@ module rivet_dll_replay #(
       ack_seq_q  <= ack_seq_d;
 
       if (replay_active_q && (count_q == 16'd0)) begin
-        // ACKs retired every slot before the walk finished. A cleared
-        // valid bit must not leave replay_active stuck.
         replay_active_q <= 1'b0;
         replay_done_q   <= 1'b1;
         replay_valid_q  <= 1'b0;

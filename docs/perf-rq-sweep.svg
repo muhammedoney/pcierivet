@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 460" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 490" role="img" aria-labelledby="title desc">
   <title id="title">Posted-write throughput versus payload size</title>
-  <desc id="desc">Three lines for Gen2 x4. Rivet measured rates, 8 MemWr32 TLPs per size on a 4 ns user clock, are 250.000, 500.000, 800.000, 1122.807, 1347.368, 1590.062, 1747.440, 1865.209, 1930.254, 1964.508, and 1982.095 MB/s. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The middle line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
-  <rect width="1120" height="460" fill="#ffffff"/>
+  <desc id="desc">Gen2 x4. Rivet MemWr32 rates, 8 TLPs per size on a 4 ns user clock, are 250.000, 500.000, 800.000, 1122.807, 1333.333, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. MemWr64 matches those rates except 1347.368 MB/s at 64 bytes. MemRd32 is 30.888 MB/s and MemRd64 is 32.258 MB/s, both at 4 bytes, eight 1 DW completions. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The middle line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
+  <rect width="1120" height="490" fill="#ffffff"/>
   <text x="78" y="28" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Posted-write throughput vs payload</text>
-  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 x4. Rivet is measured at 64 bits, 4 ns. The other lines are the symbol rate and the WP350 / AN 456 formula.</text>
+  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 x4. Rivet MemWr32 and MemWr64 at 64 bits, 4 ns. MemRd marks are 1 DW round trips.</text>
   <g fill="none" stroke="#d0d7de" stroke-width="1">
     <line x1="78" y1="72" x2="1040" y2="72"/>
     <line x1="78" y1="147" x2="1040" y2="147"/>
@@ -22,20 +22,29 @@
   <line x1="96" y1="72" x2="996" y2="72" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="5 4"/>
   <polyline fill="none" stroke="#bf8700" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,322 186,286.29 276,238.67 366,187.38 456,143.43 546,112.54 636,93.74 726,83.28 816,77.75 906,74.9 996,73.46"/>
   <rect x="630" y="98.55" width="12" height="12" fill="#8250df"/>
-  <polyline fill="none" stroke="#1f6feb" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,334.50 186,297.00 276,252.00 366,203.58 456,169.89 546,133.49 636,109.88 726,92.22 816,82.46 906,77.32 996,74.69"/>
+  <polyline fill="none" stroke="#1f6feb" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,334.50 186,297.00 276,252.00 366,203.58 456,172.00 546,136.42 636,113.41 726,94.24 816,83.55 906,78.03 996,75.05"/>
+  <polyline fill="none" stroke="#1a7f37" stroke-width="2.5" stroke-dasharray="7 4" stroke-linejoin="round" stroke-linecap="round" points="96,334.50 186,297.00 276,252.00 366,203.58 456,169.89 546,136.42 636,113.41 726,94.24 816,83.55 906,78.03 996,75.05"/>
   <g fill="#1f6feb">
     <circle cx="96" cy="334.50" r="3.5"/>
     <circle cx="186" cy="297.00" r="3.5"/>
     <circle cx="276" cy="252.00" r="3.5"/>
     <circle cx="366" cy="203.58" r="3.5"/>
-    <circle cx="456" cy="169.89" r="3.5"/>
-    <circle cx="546" cy="133.49" r="3.5"/>
-    <circle cx="636" cy="109.88" r="3.5"/>
-    <circle cx="726" cy="92.22" r="3.5"/>
-    <circle cx="816" cy="82.46" r="3.5"/>
-    <circle cx="906" cy="77.32" r="3.5"/>
-    <circle cx="996" cy="74.69" r="3.5"/>
+    <circle cx="456" cy="172.00" r="3.5"/>
+    <circle cx="546" cy="136.42" r="3.5"/>
+    <circle cx="636" cy="113.41" r="3.5"/>
+    <circle cx="726" cy="94.24" r="3.5"/>
+    <circle cx="816" cy="83.55" r="3.5"/>
+    <circle cx="906" cy="78.03" r="3.5"/>
+    <circle cx="996" cy="75.05" r="3.5"/>
   </g>
+  <g fill="#1a7f37">
+    <circle cx="456" cy="169.89" r="3.5"/>
+  </g>
+  <g fill="#cf222e">
+    <circle cx="96" cy="367.37" r="3.5"/>
+    <circle cx="96" cy="367.16" r="3.5"/>
+  </g>
+  <text x="110" y="364" fill="#cf222e" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">MemRd 30.888 / 32.258</text>
   <g fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" text-anchor="middle">
     <text x="96" y="390">4</text>
     <text x="186" y="390">8</text>
@@ -56,8 +65,12 @@
     <line x1="210" y1="436" x2="240" y2="436" stroke="#bf8700" stroke-width="2.5"/>
     <text x="246" y="440">Theoretical payload</text>
     <circle cx="400" cy="436" r="4" fill="#1f6feb"/>
-    <text x="410" y="440">Rivet, measured</text>
-    <rect x="540" y="430" width="10" height="10" fill="#8250df"/>
-    <text x="556" y="440">Quartus hard IP, AN 456 (one point)</text>
+    <text x="410" y="440">Rivet MemWr32</text>
+    <circle cx="530" cy="436" r="4" fill="#1a7f37"/>
+    <text x="540" y="440">Rivet MemWr64</text>
+    <circle cx="660" cy="436" r="4" fill="#cf222e"/>
+    <text x="670" y="440">Rivet MemRd, 1 DW</text>
+    <rect x="820" y="430" width="10" height="10" fill="#8250df"/>
+    <text x="836" y="440">AN 456, one point</text>
   </g>
 </svg>

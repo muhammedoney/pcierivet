@@ -6,6 +6,8 @@ class rivet_axi_rq_memrd32_seq extends uvm_sequence #(rivet_axi_st_item);
   `uvm_object_utils(rivet_axi_rq_memrd32_seq)
 
   bit [31:0] addr = 32'h0000_1000;
+  // Nonzero selects a 64-bit-address MemRd (TLP type 0x20).
+  bit [31:0] addr_hi = 32'h0;
   bit [7:0]  tag  = 8'h11;
   bit [15:0] requester_id = 16'h0100;
   bit [3:0]  first_be = 4'hF;
@@ -32,7 +34,8 @@ class rivet_axi_rq_memrd32_seq extends uvm_sequence #(rivet_axi_st_item);
     logic [63:0] b0, b1;
     logic [87:0] u;
     rivet_axi_tlp_util::pack_mem_desc_2beat(
-      addr, 11'd1, rivet_pkg::RIVET_CQ_REQ_MEMRD, tag, requester_id, b0, b1);
+      addr, 11'd1, rivet_pkg::RIVET_CQ_REQ_MEMRD, tag, requester_id, b0, b1,
+      addr_hi);
     u = rivet_axi_tlp_util::rq_tuser(first_be, 4'h0);
     send_beat(b0, 2'b11, 1'b0, u);
     send_beat(b1, 2'b11, 1'b1, u);

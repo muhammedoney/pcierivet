@@ -7,6 +7,8 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
 
   int unsigned payload_dw = 1;
   bit [31:0]   addr = 32'h0000_1000;
+  // Nonzero selects a 64-bit-address MemWr (TLP type 0x60).
+  bit [31:0]   addr_hi = 32'h0;
   bit [7:0]    tag  = 8'h00;
   bit [15:0]   requester_id = 16'h0100;
 
@@ -31,7 +33,7 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
                           (payload_dw > 1) ? 4'hF : 4'h0);
     rivet_axi_tlp_util::pack_mem_desc_2beat(
       addr, payload_dw[10:0], rivet_pkg::RIVET_CQ_REQ_MEMWR, tag, requester_id,
-      b0, b1);
+      b0, b1, addr_hi);
     item.burst_data.push_back(b0);
     item.burst_keep.push_back(2'b11);
     item.burst_last.push_back(1'b0);
