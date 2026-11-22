@@ -87,7 +87,9 @@ module rivet_dll_tl_pack #(
       word_q[{wr_bank_q, wr_slot}] <= beat_packed;
   end
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
+  // Synchronous read-port reset. Versal rejects an async BRAM reset
+  // that is not driven by a register (REQP-2042).
+  always_ff @(posedge clk_i) begin
     if (!rst_ni)
       rd_q <= '0;
     else
