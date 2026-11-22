@@ -79,14 +79,21 @@ No RQ beat was held. The credit scale never read 0. The lowest value seen was 4,
 
 ## FPGA timing
 
-VMK180 (XCVM1802, PG345 GTY) Gen2 x4, post-route in `fpga/vmk180/impl.log`:
+Post-route slack on the word-RAM netlist, 22 Nov 2026. The figures are the implementation run properties. They are not throughput.
 
-- WNS +0.143 ns (property 0.142599 ns)
+VCU118 (XCVU9P, PG239), `fpga/vcu118/impl.console.log`:
+
+- WNS +0.029814 ns
 - TNS 0
-- WHS +0.019 ns (property 0.018743 ns)
-- THS 0
+- WHS +0.011372 ns
+- `write_bitstream` completed, progress 100%
 
-That is setup and hold slack from the netlist before the 4 KB transmit slot. It is not a throughput result, and it does not apply to this RTL.
+VMK180 (XCVM1802, PG345), `fpga/vmk180/impl.console.log`:
+
+- WNS +0.052571 ns
+- TNS 0
+- WHS +0.025194 ns
+- `write_device_image` completed, DRC 0 errors, progress 100%
 
 ## Not in these numbers
 

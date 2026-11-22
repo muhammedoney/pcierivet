@@ -40,6 +40,11 @@ Posted-write payload sweep, test `perf_rq_sweep_gen2_x4`, 8 MemWr32 TLPs per siz
 
 An earlier 16× 1DW run with a finite-credit peer and a one-cycle bubble between beats printed 83.333 MB/s. That number is not this curve.
 
-VMK180 routed timing, from `fpga/vmk180/impl.log`, is a separate fact: WNS +0.143 ns, TNS 0, WHS +0.019 ns, THS 0. That slack is from the netlist before the 4 KB transmit slot. It is not a data rate and it does not apply to this RTL.
+Routed timing on the word-RAM netlist, from the implementation logs on 22 Nov 2026. These are the run properties after place and route, not a data rate.
+
+| Board | WNS | TNS | WHS | Image |
+|---|---:|---:|---:|---|
+| VCU118 | +0.029814 ns | 0 | +0.011372 ns | bitstream, progress 100% |
+| VMK180 | +0.052571 ns | 0 | +0.025194 ns | PDI, progress 100%, DRC 0 errors |
 
 Gen2 x4 after 8b/10b is 2.000 GB/s of symbol data per direction. The sweep MB/s figures are payload bytes on the 4 ns user bus. The 4096-byte point is 1979.700 MB/s. The latency, inbound, and credit-stall figures above that table stay on the 8 ns clock they were measured with.
