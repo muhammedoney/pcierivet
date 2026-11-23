@@ -537,13 +537,41 @@ module rivet_pcie_ctrl #(
   logic                      rq_u_tlast, rq_u_tvalid, rq_u_tready;
   logic                      rq_p_tlast, rq_p_tvalid, rq_p_tready;
   logic [AXI_RQ_USER_W-1:0]  rq_u_tuser, rq_p_tuser;
+  // 0 = descriptor beat 0, 1 = descriptor beat 1, 2 = payload.
+  logic [1:0]                rq_ph_q;
+  logic                      rq_user_cfg_stall;
+  logic                      rq_user_fire;
+
+  function automatic logic rq_is_cfg(input logic [3:0] req);
+    return (req == RIVET_RQ_REQ_CFGRD0) || (req == RIVET_RQ_REQ_CFGRD1) ||
+           (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+  endfunction
+
+  // Config request types are only legal on the root port. The type is on
+  // descriptor beat 1, so beat 0 is still accepted and beat 1 holds tready.
+  assign rq_user_cfg_stall = (MODE != RIVET_MODE_RC) && (rq_ph_q == 2'd1) &&
+                             s_axis_rq_tvalid && rq_is_cfg(s_axis_rq_tdata[14:11]);
+  assign rq_user_fire = s_axis_rq_tvalid && rq_u_tready && !rq_user_cfg_stall;
 
   assign rq_u_tdata  = s_axis_rq_tdata;
   assign rq_u_tkeep  = s_axis_rq_tkeep;
   assign rq_u_tlast  = s_axis_rq_tlast;
-  assign rq_u_tvalid = s_axis_rq_tvalid;
+  assign rq_u_tvalid = s_axis_rq_tvalid && !rq_user_cfg_stall;
   assign rq_u_tuser  = s_axis_rq_tuser;
-  assign s_axis_rq_tready = {4{rq_u_tready}};
+  assign s_axis_rq_tready = {4{rq_u_tready && !rq_user_cfg_stall}};
+
+  always_ff @(posedge user_clk or negedge user_rst_sync_n) begin
+    if (!user_rst_sync_n)
+      rq_ph_q <= 2'd0;
+    else if (rq_user_fire) begin
+      if (s_axis_rq_tlast)
+        rq_ph_q <= 2'd0;
+      else if (rq_ph_q == 2'd0)
+        rq_ph_q <= 2'd1;
+      else
+        rq_ph_q <= 2'd2;
+    end
+  end
 
   rivet_cdc_axis #(
     .DATA_W (AXI_DATA_WIDTH),

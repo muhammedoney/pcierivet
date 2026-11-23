@@ -6,11 +6,15 @@
 // (header + DW0) and then stream the rest, 8 bytes per beat. A descriptor
 // length of 0 is 1024 DW (4096-byte Max Payload).
 
-module rivet_tl_rq (
+module rivet_tl_rq #(
+  parameter int unsigned MODE = 0
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
 
   input  logic        bus_master_en_i,
+  // Requester ID bus byte for config TLPs. Memory TLPs keep the EP encoding.
+  input  logic [7:0]  primary_bus_i = 8'h00,
 
   input  logic [63:0] s_axis_rq_tdata,
   input  logic [1:0]  s_axis_rq_tkeep,
@@ -53,6 +57,9 @@ module rivet_tl_rq (
   st_e          st_q;
   logic [127:0] tx_q;
   logic         is_wr_q;
+  logic         is_cfg_q;
+  logic [7:0]   cfg_b0_q;
+  logic [15:0]  cfg_cpl_q;
   logic [9:0]   len_q;
   // PCIe length 0 means 1024 DW. dw_left never holds that full count:
   // the head beat consumes the first one or two DWs first.
@@ -86,6 +93,25 @@ module rivet_tl_rq (
   // in the same cycle.
   logic         more_fire;
   logic [3:0]   more_room;
+  logic         cfg_stall;
+
+  function automatic logic is_rq_cfg(input logic [3:0] req);
+    return (req == RIVET_RQ_REQ_CFGRD0) || (req == RIVET_RQ_REQ_CFGRD1) ||
+           (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+  endfunction
+
+  function automatic logic [7:0] cfg_b0(input logic [3:0] req);
+    unique case (req)
+      RIVET_RQ_REQ_CFGRD0: return RIVET_TLP_B0_CFGRD0;
+      RIVET_RQ_REQ_CFGRD1: return RIVET_TLP_B0_CFGRD1;
+      RIVET_RQ_REQ_CFGWR0: return RIVET_TLP_B0_CFGWR0;
+      default:             return RIVET_TLP_B0_CFGWR1;
+    endcase
+  endfunction
+
+  // A non-root port must not accept a config descriptor. The type sits on beat 1.
+  assign cfg_stall = (MODE != RIVET_MODE_RC) && (st_q == ST_D1) &&
+                     s_axis_rq_tvalid && is_rq_cfg(s_axis_rq_tdata[14:11]);
 
   assign more_beat = (sh_n_q >= 4'd8) || ((dw_left_q == 10'd0) && (sh_n_q != 4'd0));
   assign more_take = (sh_n_q >= 4'd8) ? 4'd8 : sh_n_q;
@@ -102,7 +128,7 @@ module rivet_tl_rq (
   assign more_fire = (st_q == ST_MORE) && more_beat && tx_tready_i;
   assign more_room = more_fire ? (sh_n_q - more_take) : sh_n_q;
 
-  assign s_axis_rq_tready = bus_master_en_i &&
+  assign s_axis_rq_tready = bus_master_en_i && !cfg_stall &&
                             ((st_q == ST_D0) || (st_q == ST_D1) || (st_q == ST_DAT) ||
                              ((st_q == ST_MORE) && (dw_left_q != 10'd0) &&
                               (more_room <= 4'd4)));
@@ -130,6 +156,9 @@ module rivet_tl_rq (
       st_q   <= ST_D0;
       tx_q   <= '0;
       is_wr_q <= 1'b0;
+      is_cfg_q <= 1'b0;
+      cfg_b0_q <= '0;
+      cfg_cpl_q <= '0;
       len_q  <= '0;
       addr_q <= '0;
       addr_hi_q <= '0;
@@ -168,7 +197,38 @@ module rivet_tl_rq (
         end
         ST_D1: begin
           if (s_axis_rq_tvalid && s_axis_rq_tready) begin
+            if ((MODE == RIVET_MODE_RC) && is_rq_cfg(s_axis_rq_tdata[14:11])) begin
+              logic [3:0] req;
+              req = s_axis_rq_tdata[14:11];
+              is_cfg_q  <= 1'b1;
+              is64_q    <= 1'b0;
+              is_wr_q   <= (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+              len_q     <= 10'd1;
+              tag_q     <= s_axis_rq_tdata[39:32];
+              cfg_b0_q  <= cfg_b0(req);
+              cfg_cpl_q <= s_axis_rq_tdata[55:40];
+              if (s_axis_rq_tlast) begin
+                more_q      <= 1'b0;
+                sh_primed_q <= 1'b0;
+                tx_q[7:0]   <= cfg_b0(req);
+                tx_q[15:8]  <= 8'h00;
+                tx_q[23:16] <= 8'h00;
+                tx_q[31:24] <= 8'h01;
+                tx_q[39:32] <= 8'h00;
+                tx_q[47:40] <= primary_bus_i;
+                tx_q[55:48] <= s_axis_rq_tdata[39:32];
+                tx_q[59:56] <= fbe_q;
+                tx_q[63:60] <= 4'h0;
+                tx_q[71:64] <= s_axis_rq_tdata[55:48];
+                tx_q[79:72] <= s_axis_rq_tdata[47:40];
+                tx_q[87:80] <= {4'h0, addr_q[11:8]};
+                tx_q[95:88] <= {addr_q[7:2], 2'b00};
+                st_q <= ST_TX0;
+              end else
+                st_q <= ST_DAT;
+            end else begin
             len_q   <= s_axis_rq_tdata[9:0];
+            is_cfg_q <= 1'b0;
             is_wr_q <= (s_axis_rq_tdata[14:11] == RIVET_CQ_REQ_MEMWR);
             is64_q  <= (addr_hi_q != 32'h0);
             // DW3[7:0] is the tag. beat1 = {DW3, DW2}, so the tag is [39:32].
@@ -205,10 +265,33 @@ module rivet_tl_rq (
               st_q <= ST_TX0;
             end else
               st_q <= ST_DAT;
+            end
           end
         end
         ST_DAT: begin
-          if (s_axis_rq_tvalid && s_axis_rq_tready) begin
+          if (s_axis_rq_tvalid && s_axis_rq_tready && is_cfg_q) begin
+            more_q      <= 1'b0;
+            sh_primed_q <= 1'b0;
+            data_q      <= s_axis_rq_tdata[31:0];
+            tx_q[7:0]   <= cfg_b0_q;
+            tx_q[15:8]  <= 8'h00;
+            tx_q[23:16] <= 8'h00;
+            tx_q[31:24] <= 8'h01;
+            tx_q[39:32] <= 8'h00;
+            tx_q[47:40] <= primary_bus_i;
+            tx_q[55:48] <= tag_q;
+            tx_q[59:56] <= fbe_q;
+            tx_q[63:60] <= 4'h0;
+            tx_q[71:64] <= cfg_cpl_q[15:8];
+            tx_q[79:72] <= cfg_cpl_q[7:0];
+            tx_q[87:80] <= {4'h0, addr_q[11:8]};
+            tx_q[95:88] <= {addr_q[7:2], 2'b00};
+            tx_q[103:96]  <= s_axis_rq_tdata[7:0];
+            tx_q[111:104] <= s_axis_rq_tdata[15:8];
+            tx_q[119:112] <= s_axis_rq_tdata[23:16];
+            tx_q[127:120] <= s_axis_rq_tdata[31:24];
+            st_q <= ST_TX0;
+          end else if (s_axis_rq_tvalid && s_axis_rq_tready) begin
             logic [10:0] left;
             logic [10:0] full;
             data_q <= s_axis_rq_tdata[31:0];

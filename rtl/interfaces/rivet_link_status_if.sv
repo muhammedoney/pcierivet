@@ -16,4 +16,18 @@ interface rivet_link_status_if (
   logic       aspm_l1_req;
   logic       hot_reset_req;
   logic       link_disable_req;
+  // Directed inject of one config TLP into rivet_tl_cfg. rivet_tb_top owns the handshake.
+  logic       cfg_inj_go;
+  logic [7:0] cfg_inj_bus;
+  logic       cfg_inj_done;
+  logic [7:0] cfg_inj_b0;
+  logic [2:0] cfg_inj_status;
+  // Present one config RQ descriptor and record whether beat 1 is refused.
+  logic       rq_stall_go;
+  logic       rq_stall_done;
+  logic       rq_stall_pass;
+  // Arm a watch on the packed RQ header byte 0. rivet_tb_top samples it.
+  logic       rq_watch_arm;
+  logic [7:0] rq_watch_b0;
+  logic       rq_watch_hit;
 endinterface : rivet_link_status_if

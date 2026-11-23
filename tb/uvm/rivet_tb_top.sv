@@ -212,6 +212,111 @@ module rivet_tb_top;
     status_if.aspm_l1_req      = 1'b0;
     status_if.hot_reset_req    = 1'b0;
     status_if.link_disable_req = 1'b0;
+    status_if.cfg_inj_go       = 1'b0;
+    status_if.cfg_inj_bus      = 8'h00;
+    status_if.cfg_inj_done     = 1'b0;
+    status_if.rq_stall_go      = 1'b0;
+    status_if.rq_stall_done    = 1'b0;
+    status_if.rq_stall_pass    = 1'b0;
+    status_if.rq_watch_arm     = 1'b0;
+    status_if.rq_watch_b0      = 8'h00;
+    status_if.rq_watch_hit     = 1'b0;
+  end
+
+  always @(posedge pclk) begin
+    if (!status_if.rq_watch_arm)
+      status_if.rq_watch_hit <= 1'b0;
+    else if (dut.u_tl_rq.tx_tvalid_o &&
+             (dut.u_tl_rq.tx_hdr0_o == status_if.rq_watch_b0))
+      status_if.rq_watch_hit <= 1'b1;
+  end
+
+  initial begin
+    forever begin
+      wait (status_if.rq_watch_arm === 1'b1);
+      force dut.u_tl_rq.tx_tready_i = 1'b1;
+      wait (status_if.rq_watch_arm === 1'b0);
+      release dut.u_tl_rq.tx_tready_i;
+    end
+  end
+
+  // Push one CfgRd0 at cfg_inj_bus into the completer and publish the Cpl header.
+  // tx_tready is held low so the header beat stays visible.
+  initial begin
+    forever begin
+      wait (status_if.cfg_inj_go === 1'b1);
+      @(posedge pclk);
+      force dut.u_tl_cfg.tx_tready_i = 1'b0;
+      force dut.u_tl_cfg.rx_tvalid_i = 1'b1;
+      force dut.u_tl_cfg.rx_tlast_i  = 1'b0;
+      force dut.u_tl_cfg.rx_tkeep_i  = 8'hFF;
+      force dut.u_tl_cfg.rx_tdata_i  = 64'h0F01_0000_0100_0004;
+      @(posedge pclk);
+      while (dut.u_tl_cfg.rx_tready_o !== 1'b1) @(posedge pclk);
+      @(posedge pclk);
+      force dut.u_tl_cfg.rx_tlast_i = 1'b1;
+      force dut.u_tl_cfg.rx_tdata_i = {56'h0, status_if.cfg_inj_bus};
+      @(posedge pclk);
+      while (dut.u_tl_cfg.rx_tready_o !== 1'b1) @(posedge pclk);
+      @(posedge pclk);
+      force dut.u_tl_cfg.rx_tvalid_i = 1'b0;
+      force dut.u_tl_cfg.rx_tlast_i  = 1'b0;
+      while (dut.u_tl_cfg.tx_tvalid_o !== 1'b1) @(posedge pclk);
+      status_if.cfg_inj_b0     = dut.u_tl_cfg.tx_tdata_o[7:0];
+      status_if.cfg_inj_status = dut.u_tl_cfg.tx_tdata_o[55:53];
+      status_if.cfg_inj_done   = 1'b1;
+      release dut.u_tl_cfg.rx_tvalid_i;
+      release dut.u_tl_cfg.rx_tlast_i;
+      release dut.u_tl_cfg.rx_tkeep_i;
+      release dut.u_tl_cfg.rx_tdata_i;
+      release dut.u_tl_cfg.tx_tready_i;
+      wait (status_if.cfg_inj_go === 1'b0);
+      status_if.cfg_inj_done = 1'b0;
+    end
+  end
+
+  // Beat 1 of a CfgWr1 descriptor must not be accepted outside RC.
+  initial begin
+    integer guard;
+    integer held;
+    bit     pass;
+    forever begin
+      wait (status_if.rq_stall_go === 1'b1);
+      pass = 1'b1;
+      @(posedge user_clk);
+      force dut.s_axis_rq_tvalid = 1'b1;
+      force dut.s_axis_rq_tlast  = 1'b0;
+      force dut.s_axis_rq_tkeep  = 2'b11;
+      force dut.s_axis_rq_tuser  = 85'hF;
+      force dut.s_axis_rq_tdata  = 64'h0;
+      guard = 0;
+      while ((dut.s_axis_rq_tready == 4'h0) && (guard < 2000)) begin
+        @(posedge user_clk);
+        guard++;
+      end
+      if (dut.s_axis_rq_tready == 4'h0)
+        pass = 1'b0;
+      @(posedge user_clk);
+      force dut.s_axis_rq_tlast = 1'b1;
+      force dut.s_axis_rq_tdata = 64'h0000_0000_0000_5801;
+      held = 0;
+      repeat (50) begin
+        @(posedge user_clk);
+        if (dut.s_axis_rq_tready != 4'h0)
+          pass = 1'b0;
+        held++;
+      end
+      force dut.s_axis_rq_tvalid = 1'b0;
+      release dut.s_axis_rq_tvalid;
+      release dut.s_axis_rq_tlast;
+      release dut.s_axis_rq_tkeep;
+      release dut.s_axis_rq_tuser;
+      release dut.s_axis_rq_tdata;
+      status_if.rq_stall_pass = pass && (held == 50);
+      status_if.rq_stall_done = 1'b1;
+      wait (status_if.rq_stall_go === 1'b0);
+      status_if.rq_stall_done = 1'b0;
+    end
   end
 
   always @(status_if.aspm_l0s_req) begin

@@ -491,6 +491,13 @@ package rivet_pkg;
   localparam logic [7:0] RIVET_TLP_B0_MSGD    = 8'h70;
   localparam logic [7:0] RIVET_TLP_B0_CFGRD0  = 8'h04;
   localparam logic [7:0] RIVET_TLP_B0_CFGWR0  = 8'h44;
+  localparam logic [7:0] RIVET_TLP_B0_CFGRD1  = 8'h05;
+  localparam logic [7:0] RIVET_TLP_B0_CFGWR1  = 8'h45;
+  // PG213 RQ descriptor DW2[14:11]. Distinct from the CQ req-type names.
+  localparam logic [3:0] RIVET_RQ_REQ_CFGRD0 = 4'b1000;
+  localparam logic [3:0] RIVET_RQ_REQ_CFGRD1 = 4'b1001;
+  localparam logic [3:0] RIVET_RQ_REQ_CFGWR0 = 4'b1010;
+  localparam logic [3:0] RIVET_RQ_REQ_CFGWR1 = 4'b1011;
   localparam logic [7:0] RIVET_TLP_B0_CPL     = 8'h0A;
   localparam logic [7:0] RIVET_TLP_B0_CPLD    = 8'h4A;
 

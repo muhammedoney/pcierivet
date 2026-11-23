@@ -50,7 +50,9 @@ module rivet_tl_rx_route (
 
   logic is_cfg, is_mem, is_cpl;
   assign is_cfg = (s_tdata_i[7:0] == RIVET_TLP_B0_CFGRD0) ||
-                  (s_tdata_i[7:0] == RIVET_TLP_B0_CFGWR0);
+                  (s_tdata_i[7:0] == RIVET_TLP_B0_CFGWR0) ||
+                  (s_tdata_i[7:0] == RIVET_TLP_B0_CFGRD1) ||
+                  (s_tdata_i[7:0] == RIVET_TLP_B0_CFGWR1);
   assign is_mem = (s_tdata_i[7:0] == RIVET_TLP_B0_MEMRD32) ||
                   (s_tdata_i[7:0] == RIVET_TLP_B0_MEMWR32) ||
                   (s_tdata_i[7:0] == RIVET_TLP_B0_MEMRD64) ||

@@ -3,9 +3,13 @@
 //
 // Fabric Type 0 CfgRd0/CfgWr0 completer. Config file is rivet_tl_cfg_space.
 
-module rivet_tl_cfg (
+module rivet_tl_cfg #(
+  parameter int unsigned MODE = 0
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
+  // Downstream ports compare a config TLP bus number to this byte.
+  input  logic [7:0]  primary_bus_i = 8'h00,
 
   input  logic [63:0] rx_tdata_i,
   input  logic [7:0]  rx_tkeep_i,
@@ -39,6 +43,9 @@ module rivet_tl_cfg (
 
   import rivet_pkg::*;
 
+  localparam bit IS_DOWNSTREAM =
+      (MODE == RIVET_MODE_RC) || (MODE == RIVET_MODE_DSP);
+
   typedef enum logic [2:0] {
     ST_RX    = 3'd0,
     ST_SPACE = 3'd1,
@@ -63,11 +70,25 @@ module rivet_tl_cfg (
   logic [9:0] req_len;
 
   function automatic logic is_cfg_b0(input logic [7:0] b0);
-    return (b0 == RIVET_TLP_B0_CFGRD0) || (b0 == RIVET_TLP_B0_CFGWR0);
+    if ((b0 == RIVET_TLP_B0_CFGRD0) || (b0 == RIVET_TLP_B0_CFGWR0))
+      return 1'b1;
+    if (IS_DOWNSTREAM &&
+        ((b0 == RIVET_TLP_B0_CFGRD1) || (b0 == RIVET_TLP_B0_CFGWR1)))
+      return 1'b1;
+    return 1'b0;
   endfunction
 
-  assign is_cfgrd = (hdr0_q == RIVET_TLP_B0_CFGRD0);
-  assign is_cfgwr = (hdr0_q == RIVET_TLP_B0_CFGWR0);
+  function automatic logic is_cfg_wr_b0(input logic [7:0] b0);
+    if (b0 == RIVET_TLP_B0_CFGWR0)
+      return 1'b1;
+    if (IS_DOWNSTREAM && (b0 == RIVET_TLP_B0_CFGWR1))
+      return 1'b1;
+    return 1'b0;
+  endfunction
+
+  assign is_cfgrd = (hdr0_q == RIVET_TLP_B0_CFGRD0) ||
+                    (IS_DOWNSTREAM && (hdr0_q == RIVET_TLP_B0_CFGRD1));
+  assign is_cfgwr = is_cfg_wr_b0(hdr0_q);
   assign req_len  = rivet_tlp_len_dw(rx_q[23:16], rx_q[31:24]);
 
   assign rx_tready_o = (st_q == ST_RX) && !fab_busy_i;
@@ -123,16 +144,32 @@ module rivet_tl_cfg (
               b0 = have_lo_q ? hdr0_q : rx_tdata_i[7:0];
               have_lo_q <= 1'b0;
               if (is_cfg_b0(b0)) begin
-                reg_dw_q  <= {4'h0, rx_tdata_i[31:26]};
-                fbe_q     <= have_lo_q ? rx_q[59:56] : 4'hF;
-                wdata_q   <= rx_tdata_i[63:32];
-                is_wr_q   <= (b0 == RIVET_TLP_B0_CFGWR0);
-                fab_req_q <= 1'b1;
-                // Stash requester ID / tag for Cpl
+                // Stash requester ID / tag for Cpl. Byte 8 of a 3DW header is the bus.
                 tx_q[71:64] <= have_lo_q ? rx_q[39:32] : 8'h00;
                 tx_q[79:72] <= have_lo_q ? rx_q[47:40] : 8'h00;
                 tx_q[87:80] <= have_lo_q ? rx_q[55:48] : 8'h00;
-                st_q <= ST_SPACE;
+                // EP/USP complete every Type 0. Downstream completes only its primary bus.
+                if (!IS_DOWNSTREAM || (rx_tdata_i[7:0] == primary_bus_i)) begin
+                  reg_dw_q  <= {4'h0, rx_tdata_i[31:26]};
+                  fbe_q     <= have_lo_q ? rx_q[59:56] : 4'hF;
+                  wdata_q   <= rx_tdata_i[63:32];
+                  is_wr_q   <= is_cfg_wr_b0(b0);
+                  fab_req_q <= 1'b1;
+                  st_q <= ST_SPACE;
+                end else begin
+                  is_wr_q       <= 1'b0;
+                  tx_has_data_q <= 1'b0;
+                  tx_len_q      <= 10'd0;
+                  tx_q[7:0]     <= RIVET_TLP_B0_CPL;
+                  tx_q[15:8]    <= 8'h00;
+                  tx_q[23:16]   <= 8'h00;
+                  tx_q[31:24]   <= 8'h00;
+                  tx_q[39:32]   <= 8'h00;
+                  tx_q[47:40]   <= 8'h01;
+                  tx_q[55:48]   <= 8'h20; // status UR in [7:5]
+                  tx_q[63:56]   <= 8'h04;
+                  st_q <= ST_TX0;
+                end
               end
             end
           end
