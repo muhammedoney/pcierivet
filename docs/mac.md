@@ -82,6 +82,11 @@ Detect.Quiet → Detect.Active → Polling.Active → Polling.Configuration
   → Configuration.Linkwidth.* → Lanenum.* → Complete → Idle → L0
 ```
 
+Polling.Active advances on eight consecutive TS1 or TS2 Ordered Sets with
+Link and Lane numbers PAD (after 1024 transmitted TS1s). The TS2 alternative
+is what lets a Gen2 port finish training against a partner that has already
+entered Polling.Configuration.
+
 ### 2.1 Minimal ASPM and speed downshift
 
 **Recovery.Speed downshift.** `rivet_ltssm` enters `Recovery.Speed` from `Recovery.RcvrCfg` when

@@ -111,8 +111,9 @@ Each slice keeps every current Gen2 EP smoke green. New tests are ×4.
 
 ### Slice 1 — Downstream LTSSM polarity
 
-Goal: `MODE=RC`, Gen2 ×4, reaches L0 against an Upstream peer, then can
-originate Hot Reset and Link Disable.
+Goal: `MODE=RC`, Gen2 ×4, reaches L0 against the PG213 Endpoint model
+(`xilinx_pcie4_uscale_ep`), then can originate Hot Reset and Link Disable.
+The UVM PIPE peer stays the Downstream partner of Rivet Endpoint tests.
 
 Behavior locked here:
 

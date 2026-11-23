@@ -47,7 +47,7 @@ EP and USP share the Upstream port (Type 0, adopt Link# / Lane#). RC and DSP sha
 
 | Slice | Content | Gate |
 |-------|---------|------|
-| **3A LTSSM** | RC trains against an Upstream peer; Downstream originates Hot Reset and holds Disabled | `ltssm_l0_gen2_rc_x4`, `smoke_dp_hot_reset_gen2_x4`, `smoke_dp_disable_gen2_x4` |
+| **3A LTSSM** | RC trains against the PG213 Endpoint model; Downstream originates Hot Reset and holds Disabled | `sim_bfm_pg213_rc.ps1` → `PASS: Rivet RC + PG213 EP link_up` |
 | **3B Config** | Type 1 bridge header on RC/DSP; EP/USP image unchanged | `smoke_cfg_type1_gen2_rc_x4` |
 | **3C Requester** | RC emits CfgWr1/CfgRd1, then one CfgRd0 | `smoke_rc_cfg_gen2_x4`, `smoke_cfg_type0_req_gen2_rc_x4` |
 | **3D Aliases** | USP trains as Upstream + Type 0; DSP as Downstream + Type 1, no config master | `ltssm_l0_gen2_usp_x4`, `ltssm_l0_gen2_dsp_x4` |

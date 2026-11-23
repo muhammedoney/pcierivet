@@ -379,11 +379,17 @@ module rivet_ltssm #(
       RIVET_LTSSM_POLLING_ACTIVE: begin
         os_req_o = RIVET_MAC_OS_TS1; // Link and Lane numbers = PAD
 
-        if (ts1_pad_all_i && (os_sent_cnt_i >= 12'(N_TS1_POLLING))) begin
+        // Eight consecutive TS1 or TS2 with Link and Lane = PAD. A Gen3/4
+        // partner (PG213 Endpoint) leaves Polling.Active after a few
+        // milliseconds, so the rest of the burst is TS2. TS1-only matching
+        // then times out back to Detect and the link never forms.
+        if ((ts1_pad_all_i || ts2_pad_all_i) &&
+            (os_sent_cnt_i >= 12'(N_TS1_POLLING))) begin
           state_d = RIVET_LTSSM_POLLING_CONFIGURATION;
         end else if (timer_expired) begin
-          // Relaxed 24 ms path: any Lane trained is enough to move on.
-          state_d = (ts1_pad_any_i && (os_sent_cnt_i >= 12'(N_TS1_POLLING)))
+          // Relaxed 24 ms path: any Lane that saw PAD TS1 or TS2 is enough.
+          state_d = ((ts1_pad_any_i || ts2_pad_any_i) &&
+                     (os_sent_cnt_i >= 12'(N_TS1_POLLING)))
                     ? RIVET_LTSSM_POLLING_CONFIGURATION
                     : RIVET_LTSSM_DETECT_QUIET;
         end

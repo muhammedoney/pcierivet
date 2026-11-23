@@ -8,6 +8,7 @@ Complementary to UVM / Verilator. Example `board.v` / IP trees sit under `third_
 |-----|------|-----|
 | [pg239_phy](pg239_phy/README.md) | PG239 PHY example → Rivet ctrl on PIPE | `.\scripts\sim_bfm_pg239.ps1` / `-Dut rivet` |
 | [pg213_ep](pg213_ep/README.md) | PG213 EP example + RP model → swap EP for Rivet+PG239 | `.\scripts\sim_bfm_pg213.ps1` |
+| [pg213_rc](pg213_rc/README.md) | PG213 Endpoint model → Rivet RC+PG239 | `.\scripts\sim_bfm_pg213_rc.ps1` |
 
 ## Roadmap
 
