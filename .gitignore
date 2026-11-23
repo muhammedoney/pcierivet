@@ -52,6 +52,9 @@ fpga/agi027/build/
 *.str
 vivado*.str
 .Xil/
+.cursor/
+.githooks/
+.github/
 *.ltx
 
 # Vendor / proprietary third-party (never commit binaries)
