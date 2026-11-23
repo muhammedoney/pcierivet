@@ -1,9 +1,12 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// PF0 Type 0 config space (4 KiB) shared by fabric Cfg TLPs and cfg_mgmt_*.
+// PF0 config space (4 KiB) shared by fabric Cfg TLPs and cfg_mgmt_*.
+// MODE EP/USP keep the Type 0 image. MODE RC/DSP present a Type 1 bridge.
 
-module rivet_tl_cfg_space (
+module rivet_tl_cfg_space #(
+  parameter int unsigned MODE = 0
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
 
@@ -33,6 +36,8 @@ module rivet_tl_cfg_space (
   output logic [31:0] bar0_mask_o,
   output logic        bar0_mem_en_o,
   output logic        bus_master_en_o,
+  // Type 1 primary bus. Type 0 stays 0.
+  output logic [7:0]  primary_bus_o,
 
   // MSI capability snapshot
   output logic        msi_enable_o,
@@ -50,6 +55,9 @@ module rivet_tl_cfg_space (
 );
 
   import rivet_pkg::*;
+
+  localparam bit IS_DOWNSTREAM =
+      (MODE == RIVET_MODE_RC) || (MODE == RIVET_MODE_DSP);
 
   // Block RAM. A 1024:1 flip-flop mux does not close at Gen2 pclk.
   // Combo snapshots of the dwords the datapath reads every cycle live in
@@ -70,8 +78,21 @@ module rivet_tl_cfg_space (
   logic [31:0] sh_msi_data_q;
   logic [31:0] sh_dev_q;
   logic [31:0] sh_link_q;
+  logic [7:0]  sh_pri_q;
 
   function automatic logic [31:0] cfg_reset_dw(input logic [9:0] dw);
+    if (IS_DOWNSTREAM && (dw <= 10'd15)) begin
+      unique case (dw)
+        10'd0:  return {RIVET_CFG_DEVICE_ID, RIVET_CFG_VENDOR_ID};
+        10'd1:  return 32'h0010_0000;
+        10'd2:  return {24'h060400, RIVET_CFG_REV_ID};
+        10'd3:  return 32'h0001_0000; // header type 1 in [23:16]
+        // primary 00, secondary 01, subordinate 01, secondary latency 0
+        10'd6:  return 32'h0001_0100;
+        10'd13: return {24'h0, RIVET_CFG_CAP_PTR};
+        default: return 32'h0;
+      endcase
+    end
     unique case (dw)
       10'd0:  return {RIVET_CFG_DEVICE_ID, RIVET_CFG_VENDOR_ID};
       10'd1:  return 32'h0010_0000;
@@ -92,6 +113,10 @@ module rivet_tl_cfg_space (
   // Writable / W1C / BAR masks
   // -------------------------------------------------------------------------
   function automatic logic [31:0] bar_mask(input logic [9:0] dw);
+    if (IS_DOWNSTREAM) begin
+      if (dw == 10'd4) return RIVET_CFG_BAR0_MASK;
+      return 32'h0;
+    end
     unique case (dw)
       10'd4:  return RIVET_CFG_BAR0_MASK;
       10'd5:  return RIVET_CFG_BAR1_MASK;
@@ -105,11 +130,26 @@ module rivet_tl_cfg_space (
   endfunction
 
   function automatic logic is_bar_dw(input logic [9:0] dw);
+    if (IS_DOWNSTREAM)
+      return (dw == 10'd4) || (dw == 10'd5);
     return (dw >= 10'd4 && dw <= 10'd9) || (dw == 10'd12);
   endfunction
 
   // Bits software may write (before BAR sizing / W1C).
   function automatic logic [31:0] wr_mask(input logic [9:0] dw);
+    if (IS_DOWNSTREAM && (dw <= 10'd15)) begin
+      unique case (dw)
+        10'd1:  return 32'h0000_0547;
+        10'd4, 10'd5: return 32'hFFFF_FFFF;
+        10'd6:  return 32'hFFFF_FFFF;
+        10'd7:  return 32'h0000_FFFF;
+        10'd8, 10'd9: return 32'hFFF0_FFF0;
+        10'd10, 10'd11, 10'd12: return 32'hFFFF_FFFF;
+        // Interrupt Line plus Bridge Control secondary-bus reset (bit 6).
+        10'd15: return 32'h0040_00FF;
+        default: return 32'h0;
+      endcase
+    end
     unique case (dw)
       10'd1:  return 32'h0000_0547; // Command: IO/Mem/BM/Parity/SERR/IntDisable
       10'd3:  return 32'h0000_FF00; // Latency timer (Cache Line RO for EP smoke)
@@ -209,6 +249,7 @@ module rivet_tl_cfg_space (
   assign bar0_mask_o     = RIVET_CFG_BAR0_MASK;
   assign bar0_mem_en_o   = sh_cmd_q[1]; // Command.Memory Space Enable
   assign bus_master_en_o = sh_cmd_q[2]; // Command.Bus Master Enable
+  assign primary_bus_o   = sh_pri_q;
   assign msi_enable_o    = sh_msi_ctrl_q[16]; // Message Control.MSI Enable
   assign msi_addr_o      = sh_msi_addr_q;
   assign msi_data_o      = sh_msi_data_q[15:0];
@@ -317,6 +358,7 @@ module rivet_tl_cfg_space (
       sh_msi_data_q <= '0;
       sh_dev_q      <= '0;
       sh_link_q     <= '0;
+      sh_pri_q      <= 8'h00;
       link_up_q     <= 1'b0;
       link_speed_q  <= 4'h1;
       link_width_q  <= 6'h1;
@@ -324,6 +366,8 @@ module rivet_tl_cfg_space (
       logic [31:0] cur;
       logic [31:0] nxt;
       sh_dev_q     <= dev_now_c;
+      if (IS_DOWNSTREAM && mem_we && (mem_waddr == 10'd6))
+        sh_pri_q <= mem_wdata[7:0];
       link_up_q    <= link_up_i;
       link_speed_q <= link_speed_i;
       link_width_q <= link_width_i;

@@ -261,6 +261,7 @@ module rivet_pcie_ctrl #(
   logic [31:0] fab_wdata, fab_rdata;
   logic [31:0] bar0_base, bar0_mask;
   logic        bar0_mem_en, bus_master_en;
+  logic [7:0]  primary_bus;
 
   // Credit OR of Cfg + CQ/CC + RC/RQ paths
   assign cr_rx_acc = cr_rx_acc_cfg | cr_rx_acc_cq | cr_rx_acc_rc;
@@ -308,7 +309,7 @@ module rivet_pcie_ctrl #(
     .space_debug_access_o         (mgmt_p_debug)
   );
 
-  rivet_tl_cfg_space u_cfg_space (
+  rivet_tl_cfg_space #(.MODE(MODE)) u_cfg_space (
     .clk_i                        (pclk),
     .rst_ni                       (pclk_rst_sync_n),
     .fab_req_i                    (fab_req),
@@ -332,6 +333,7 @@ module rivet_pcie_ctrl #(
     .bar0_mask_o                  (bar0_mask),
     .bar0_mem_en_o                (bar0_mem_en),
     .bus_master_en_o              (bus_master_en),
+    .primary_bus_o                (primary_bus),
     .msi_enable_o                 (msi_enable_p),
     .msi_addr_o                   (msi_addr_p),
     .msi_data_o                   (msi_data_p),
@@ -368,9 +370,10 @@ module rivet_pcie_ctrl #(
     .rc_tready_i (rc_rx_r)
   );
 
-  rivet_tl_cfg u_tl_cfg (
+  rivet_tl_cfg #(.MODE(MODE)) u_tl_cfg (
     .clk_i        (pclk),
     .rst_ni       (preset_n),
+    .primary_bus_i(primary_bus),
     .rx_tdata_i   (cfg_rx_d),
     .rx_tkeep_i   (cfg_rx_k),
     .rx_tlast_i   (cfg_rx_l),
@@ -566,10 +569,11 @@ module rivet_pcie_ctrl #(
     .m_tuser_o  (rq_p_tuser)
   );
 
-  rivet_tl_rq u_tl_rq (
+  rivet_tl_rq #(.MODE(MODE)) u_tl_rq (
     .clk_i             (pclk),
     .rst_ni            (pclk_rst_sync_n),
     .bus_master_en_i   (bus_master_en),
+    .primary_bus_i     (primary_bus),
     .s_axis_rq_tdata   (rq_p_tdata),
     .s_axis_rq_tkeep   (rq_p_tkeep[1:0]),
     .s_axis_rq_tlast   (rq_p_tlast),
