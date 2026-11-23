@@ -185,6 +185,7 @@ module rivet_ltssm #(
   logic             speed_chg_done_q, speed_chg_done_d; // Speed executed this Recovery
   logic             l0s_exit_q,    l0s_exit_d;   // Tx_L0s exit (FTS) sub-phase
   logic             tx_hot_reset_q, tx_hot_reset_d; // Downstream is sending Hot Reset
+  logic             tx_disable_q,   tx_disable_d;   // Downstream is sending Disable Link
   logic             accept_dll_tlp_q;
   logic             in_detect_q;
 
@@ -306,6 +307,7 @@ module rivet_ltssm #(
     speed_chg_done_d = speed_chg_done_q;
     l0s_exit_d      = l0s_exit_q;
     tx_hot_reset_d  = tx_hot_reset_q;
+    tx_disable_d    = tx_disable_q;
 
     os_req_o           = RIVET_MAC_OS_NONE;
     txdetectrx_o       = 1'b0;
@@ -339,6 +341,7 @@ module rivet_ltssm #(
         speed_chg_done_d   = 1'b0;
         l0s_exit_d         = 1'b0;
         tx_hot_reset_d     = 1'b0;
+        tx_disable_d       = 1'b0;
 
         // 12 ms, or as soon as Electrical Idle is broken on any Lane.
         if (timer_expired || (rxelecidle_i != {LANES{1'b1}}))
@@ -597,6 +600,9 @@ module rivet_ltssm #(
           // the link partner has seen it.
           tx_hot_reset_d = 1'b1;
           state_d        = RIVET_LTSSM_RECOVERY_RCVRLOCK;
+        end else if (IS_DOWNSTREAM && link_disable_req_i) begin
+          tx_disable_d = 1'b1;
+          state_d      = RIVET_LTSSM_RECOVERY_RCVRLOCK;
         end
       end
 
@@ -678,6 +684,8 @@ module rivet_ltssm #(
         else if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX))) begin
           if (IS_DOWNSTREAM && tx_hot_reset_q)
             state_d = RIVET_LTSSM_HOT_RESET;
+          else if (IS_DOWNSTREAM && tx_disable_q)
+            state_d = RIVET_LTSSM_DISABLED;
           else if (mutual_speed_chg)
             state_d = RIVET_LTSSM_RECOVERY_SPEED;
           else
@@ -738,10 +746,16 @@ module rivet_ltssm #(
         end
       end
 
-      // Disabled: EIOS then Electrical Idle / P1 until timeout → Detect.
+      // Disabled. Downstream keeps sending the Disable Link bit while the
+      // request is high so the partner can enter Disabled, then EIOS and
+      // Detect when the request drops. Upstream: EIOS, Electrical Idle, timer.
       RIVET_LTSSM_DISABLED: begin
-        link_up_d = 1'b0;
-        if (!speed_ei_q) begin
+        link_up_d  = 1'b0;
+        link_pad_d = 1'b0;
+        lane_pad_d = 1'b0;
+        if (IS_DOWNSTREAM && link_disable_req_i) begin
+          os_req_o = RIVET_MAC_OS_TS1;
+        end else if (!speed_ei_q) begin
           os_req_o = RIVET_MAC_OS_EIOS;
           if (os_sent_cnt_i >= 12'd2)
             speed_ei_d = 1'b1;
@@ -749,8 +763,12 @@ module rivet_ltssm #(
           os_req_o    = RIVET_MAC_OS_NONE;
           powerdown_o = RIVET_PIPE_P1;
         end
-        if (timer_expired)
+        if (IS_DOWNSTREAM) begin
+          if (!link_disable_req_i && speed_ei_q)
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+        end else if (timer_expired) begin
           state_d = RIVET_LTSSM_DETECT_QUIET;
+        end
       end
 
       default: state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -766,6 +784,8 @@ module rivet_ltssm #(
     // already on the TS before the Hot Reset state itself.
     if (tx_hot_reset_q)
       tx_train_ctrl_o[RIVET_TS_TC_HOT_RESET] = 1'b1;
+    if (tx_disable_q)
+      tx_train_ctrl_o[RIVET_TS_TC_DISABLE] = 1'b1;
   end
 
   assign state_change  = (state_d != state_q);
@@ -858,6 +878,7 @@ module rivet_ltssm #(
       speed_chg_done_q <= 1'b0;
       l0s_exit_q      <= 1'b0;
       tx_hot_reset_q  <= 1'b0;
+      tx_disable_q    <= 1'b0;
       accept_dll_tlp_q <= 1'b0;
       in_detect_q     <= 1'b1;
     end else begin
@@ -886,6 +907,7 @@ module rivet_ltssm #(
       speed_chg_done_q <= speed_chg_done_d;
       l0s_exit_q      <= l0s_exit_d;
       tx_hot_reset_q  <= tx_hot_reset_d;
+      tx_disable_q    <= tx_disable_d;
       accept_dll_tlp_q <= (state_d == RIVET_LTSSM_L0);
       in_detect_q     <= (state_d == RIVET_LTSSM_DETECT_QUIET) ||
                          (state_d == RIVET_LTSSM_DETECT_ACTIVE);
@@ -938,6 +960,6 @@ module rivet_ltssm #(
   // Reserved for later multi-lane refinements.
   logic _unused_ok;
   assign _unused_ok = ts2_pad_all_i ^ ts1_link_all_i ^ ts1_lane_any_i ^
-                      (|ts1_lane_lanes_i) ^ link_disable_req_i;
+                      (|ts1_lane_lanes_i);
 
 endmodule : rivet_ltssm

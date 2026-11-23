@@ -255,11 +255,14 @@ if ($Step -eq "all" -or $Step -eq "simulate") {
   $text = Get-Content (Join-Path $WorkDir "simulate.log") -Raw
   $up = $text -match "PASS: Rivet RC \+ PG213 EP link_up"
   $hr = $text -match "PASS: Rivet RC \+ PG213 EP hot reset"
-  if ($up -and $hr) {
+  $dis = $text -match "PASS: Rivet RC \+ PG213 EP link disable"
+  if ($up -and $hr -and $dis) {
     Write-Host "PASS: Rivet RC + PG213 EP link_up"
     Write-Host "PASS: Rivet RC + PG213 EP hot reset"
+    Write-Host "PASS: Rivet RC + PG213 EP link disable"
     exit 0
   }
   if (-not $up) { Fail "simulate did not reach link_up - see $WorkDir\simulate.log" }
-  Fail "simulate did not complete hot reset - see $WorkDir\simulate.log"
+  if (-not $hr) { Fail "simulate did not complete hot reset - see $WorkDir\simulate.log" }
+  Fail "simulate did not complete link disable - see $WorkDir\simulate.log"
 }

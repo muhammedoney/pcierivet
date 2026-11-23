@@ -125,8 +125,10 @@ Behavior locked here:
   `RIVET_LTSSM_HOT_RESET` and transmits training-control bit 0. When the
   request drops and the timer has been entered, go to Detect and retrain.
 - A level `link_disable_req_i` sampled in L0 moves through Recovery,
-  transmits training-control bit 1, then `RIVET_LTSSM_DISABLED`. Stay there
-  while the request is high. When it falls, go to Detect and retrain.
+  transmits training-control bit 1, then `RIVET_LTSSM_DISABLED`. While the
+  request stays high the Downstream port keeps sending TS1 with that bit so
+  the partner can enter Disabled. When the request falls, send EIOS, enter
+  Electrical Idle, then Detect and retrain.
 - Requests are TB-forced the same way `aspm_l0s_req` is forced today
   (`rivet_link_status_if` + `force` in `rivet_tb_top`). Slice 2 connects
   Link Disable to the Type 1 Link Control bit. Slice 1 does not invent a
@@ -140,8 +142,9 @@ Gate:
 - `ltssm_l0_gen2_rc_x4` reaches L0, `negotiated_width=4`, link number 0.
 - `sim_bfm_pg213_rc.ps1` prints `PASS: Rivet RC + PG213 EP hot reset`:
   Rivet RC and the PG213 Endpoint both enter `6'h27`, then both return to L0.
-- `smoke_dp_disable_gen2_x4` sees `6'h20` and stays there until the request
-  drops, then L0.
+- `sim_bfm_pg213_rc.ps1` prints `PASS: Rivet RC + PG213 EP link disable`:
+  Rivet RC and the PG213 Endpoint both enter `6'h20` and the RC stays there
+  while the request is high, then both return to L0 after the request drops.
 - Existing `ltssm_l0_gen2_x4`, `smoke_hot_reset_gen2_x4`, and
   `smoke_disabled_gen2_x4` still pass with `MODE=0`.
 

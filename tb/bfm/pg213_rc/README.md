@@ -22,6 +22,7 @@ Work dir: `tb/bfm/pg213_rc/work/`.
 |-------------------------|--------|
 | `PASS: Rivet RC + PG213 EP link_up` | Both ports in L0 |
 | `PASS: Rivet RC + PG213 EP hot reset` | After L0, Rivet RC holds Hot Reset until the Endpoint is in `6'h27`, then both return to L0 |
+| `PASS: Rivet RC + PG213 EP link disable` | After that, Rivet RC holds Disabled until the Endpoint is in `6'h20`, stays there while the request is high, then both return to L0 |
 | `FAIL: Rivet RC + PG213 EP link training timeout` | Sequence did not finish before the bench timeout |
 
 Config TLPs from the Root Port come after the Type 1 header and the requester.

@@ -24,6 +24,7 @@ module board;
   logic        rc_phy_ready, rc_link_up;
   logic [5:0]  rc_ltssm;
   logic        hot_reset_req;
+  logic        link_disable_req;
   wire  [5:0]  ep_ltssm = EP.pcie4_uscale_plus_0_i.inst.cfg_ltssm_state;
 
   function automatic string ltssm_name(input logic [5:0] s);
@@ -39,6 +40,9 @@ module board;
       6'h09: ltssm_name = "Cfg.Complete";
       6'h0A: ltssm_name = "Cfg.Idle";
       6'h10: ltssm_name = "L0";
+      6'h0B: ltssm_name = "Recovery.RcvrLock";
+      6'h20: ltssm_name = "Disabled";
+      6'h27: ltssm_name = "Hot Reset";
       default: ltssm_name = $sformatf("0x%0h", s);
     endcase
   endfunction
@@ -57,7 +61,8 @@ module board;
   );
 
   initial begin
-    hot_reset_req = 1'b0;
+    hot_reset_req    = 1'b0;
+    link_disable_req = 1'b0;
     $display("[%t] : System Reset Is Asserted...", $realtime);
     sys_rst_n = 1'b0;
     repeat (500) @(posedge rp_sys_clk_p);
@@ -69,6 +74,10 @@ module board;
   always @* begin
     if (hot_reset_req === 1'b1) force RC.u_ctrl.u_mac.hot_reset_req = 1'b1;
     else                        release RC.u_ctrl.u_mac.hot_reset_req;
+  end
+  always @* begin
+    if (link_disable_req === 1'b1) force RC.u_ctrl.u_mac.link_disable_req = 1'b1;
+    else                           release RC.u_ctrl.u_mac.link_disable_req;
   end
 
   // Vendor Endpoint. Do not replace this with a Rivet peer.
@@ -140,11 +149,24 @@ module board;
         hot_reset_req = 1'b0;
         wait (rc_link_up === 1'b1 && rc_ltssm == 6'h10 && ep_ltssm == 6'h10);
         $display("[%t] : PASS: Rivet RC + PG213 EP hot reset", $realtime);
+        #1_000_000;
+        link_disable_req = 1'b1;
+        wait (rc_ltssm == 6'h20 && ep_ltssm == 6'h20);
+        $display("[%t] : both ports Disabled", $realtime);
+        #2_000_000;
+        if (rc_ltssm != 6'h20) begin
+          $display("[%t] : FAIL: Rivet RC left Disabled while the request was high (RC=0x%02h)",
+                   $realtime, rc_ltssm);
+          $finish;
+        end
+        link_disable_req = 1'b0;
+        wait (rc_link_up === 1'b1 && rc_ltssm == 6'h10 && ep_ltssm == 6'h10);
+        $display("[%t] : PASS: Rivet RC + PG213 EP link disable", $realtime);
         #10_000;
         $finish;
       end
       begin
-        #500_000_000;
+        #1_500_000_000;
         $display("[%t] : FAIL: Rivet RC + PG213 EP link training timeout (RC=0x%02h EP=0x%02h)",
                  $realtime, rc_ltssm, ep_ltssm);
         $finish;

@@ -68,7 +68,7 @@ Use these **exact** values in `rivet_pkg` / `rivet_ltssm` so status ports and UV
 | `6'h15` | Tx_L0s | **Minimal** (see [§2.1](#21-minimal-aspm-and-speed-downshift)) |
 | `6'h17` | L1.Entry | **Minimal** |
 | `6'h18` | L1.Idle | **Minimal** |
-| `6'h20` | Disabled | **Yes** (TS Disable Link → Detect) |
+| `6'h20` | Disabled | **Yes** (Upstream: received TS Disable Link → EIOS → Detect. Downstream: L0 request → Recovery with the bit set → Disabled, TS1 while the request is high, then EIOS and Detect) |
 | `6'h21`–`6'h26` | Loopback.* | Later |
 | `6'h27` | Hot_Reset | **Yes** (Upstream: received TS Hot Reset bit → Detect. Downstream: L0 request → Recovery with the bit set → Hot Reset, held while the request is high) |
 | `6'h28`–`6'h2B` | Recovery.Equalization.* | **Gen3+ only** |
