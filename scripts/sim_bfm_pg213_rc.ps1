@@ -253,9 +253,13 @@ if ($Step -eq "all" -or $Step -eq "simulate") {
     Invoke-VsimDo "simulate.do" "simulate.log"
   } finally { Pop-Location }
   $text = Get-Content (Join-Path $WorkDir "simulate.log") -Raw
-  if ($text -match "PASS: Rivet RC \+ PG213 EP link_up") {
+  $up = $text -match "PASS: Rivet RC \+ PG213 EP link_up"
+  $hr = $text -match "PASS: Rivet RC \+ PG213 EP hot reset"
+  if ($up -and $hr) {
     Write-Host "PASS: Rivet RC + PG213 EP link_up"
+    Write-Host "PASS: Rivet RC + PG213 EP hot reset"
     exit 0
   }
-  Fail "simulate did not reach link_up - see $WorkDir\simulate.log"
+  if (-not $up) { Fail "simulate did not reach link_up - see $WorkDir\simulate.log" }
+  Fail "simulate did not complete hot reset - see $WorkDir\simulate.log"
 }

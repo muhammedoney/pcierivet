@@ -23,6 +23,7 @@ module board;
 
   logic        rc_phy_ready, rc_link_up;
   logic [5:0]  rc_ltssm;
+  logic        hot_reset_req;
   wire  [5:0]  ep_ltssm = EP.pcie4_uscale_plus_0_i.inst.cfg_ltssm_state;
 
   function automatic string ltssm_name(input logic [5:0] s);
@@ -56,11 +57,18 @@ module board;
   );
 
   initial begin
+    hot_reset_req = 1'b0;
     $display("[%t] : System Reset Is Asserted...", $realtime);
     sys_rst_n = 1'b0;
     repeat (500) @(posedge rp_sys_clk_p);
     $display("[%t] : System Reset Is De-asserted...", $realtime);
     sys_rst_n = 1'b1;
+  end
+
+  // Same hook the UVM bench uses: the MAC ties this net to 0.
+  always @* begin
+    if (hot_reset_req === 1'b1) force RC.u_ctrl.u_mac.hot_reset_req = 1'b1;
+    else                        release RC.u_ctrl.u_mac.hot_reset_req;
   end
 
   // Vendor Endpoint. Do not replace this with a Rivet peer.
@@ -122,6 +130,16 @@ module board;
       begin
         wait (rc_link_up === 1'b1 && rc_ltssm == 6'h10 && ep_ltssm == 6'h10);
         $display("[%t] : PASS: Rivet RC + PG213 EP link_up", $realtime);
+        // Hold the request until the Endpoint is in Hot Reset. The scaled
+        // Hot Reset timer is only a few microseconds; the level keeps Rivet
+        // transmitting the bit until the vendor model has entered 6'h27.
+        #1_000_000;
+        hot_reset_req = 1'b1;
+        wait (rc_ltssm == 6'h27 && ep_ltssm == 6'h27);
+        $display("[%t] : both ports in Hot Reset", $realtime);
+        hot_reset_req = 1'b0;
+        wait (rc_link_up === 1'b1 && rc_ltssm == 6'h10 && ep_ltssm == 6'h10);
+        $display("[%t] : PASS: Rivet RC + PG213 EP hot reset", $realtime);
         #10_000;
         $finish;
       end

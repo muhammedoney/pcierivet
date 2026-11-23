@@ -21,6 +21,7 @@ Work dir: `tb/bfm/pg213_rc/work/`.
 | Token in `simulate.log` | Result |
 |-------------------------|--------|
 | `PASS: Rivet RC + PG213 EP link_up` | Both ports in L0 |
-| `FAIL: Rivet RC + PG213 EP link training timeout` | No L0 within 500 us |
+| `PASS: Rivet RC + PG213 EP hot reset` | After L0, Rivet RC holds Hot Reset until the Endpoint is in `6'h27`, then both return to L0 |
+| `FAIL: Rivet RC + PG213 EP link training timeout` | Sequence did not finish before the bench timeout |
 
-The first gate is link-up only. Config TLPs from the Root Port come after the Type 1 header and the requester.
+Config TLPs from the Root Port come after the Type 1 header and the requester.

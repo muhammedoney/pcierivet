@@ -70,7 +70,7 @@ Use these **exact** values in `rivet_pkg` / `rivet_ltssm` so status ports and UV
 | `6'h18` | L1.Idle | **Minimal** |
 | `6'h20` | Disabled | **Yes** (TS Disable Link → Detect) |
 | `6'h21`–`6'h26` | Loopback.* | Later |
-| `6'h27` | Hot_Reset | **Yes** (TS Hot Reset → Detect) |
+| `6'h27` | Hot_Reset | **Yes** (Upstream: received TS Hot Reset bit → Detect. Downstream: L0 request → Recovery with the bit set → Hot Reset, held while the request is high) |
 | `6'h28`–`6'h2B` | Recovery.Equalization.* | **Gen3+ only** |
 
 Canonical type: `typedef enum logic [5:0] { ... } rivet_ltssm_state_e;`

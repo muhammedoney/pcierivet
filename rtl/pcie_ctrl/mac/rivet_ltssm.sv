@@ -74,6 +74,9 @@ module rivet_ltssm #(
   // Minimal ASPM requests (level): L0 → Tx_L0s / L1 while asserted.
   input  logic             aspm_l0s_req_i,
   input  logic             aspm_l1_req_i,
+  // Downstream only. Level requests; Upstream ignores them.
+  input  logic             hot_reset_req_i,
+  input  logic             link_disable_req_i,
 
   // Ordered-set transmission (rivet_mac_os_tx)
   output rivet_pkg::rivet_mac_os_type_e os_req_o,
@@ -181,6 +184,7 @@ module rivet_ltssm #(
   logic             lane_rev_q,    lane_rev_d;   // full lane reversal sticky
   logic             speed_chg_done_q, speed_chg_done_d; // Speed executed this Recovery
   logic             l0s_exit_q,    l0s_exit_d;   // Tx_L0s exit (FTS) sub-phase
+  logic             tx_hot_reset_q, tx_hot_reset_d; // Downstream is sending Hot Reset
   logic             accept_dll_tlp_q;
   logic             in_detect_q;
 
@@ -301,6 +305,7 @@ module rivet_ltssm #(
     lane_rev_d      = lane_rev_q;
     speed_chg_done_d = speed_chg_done_q;
     l0s_exit_d      = l0s_exit_q;
+    tx_hot_reset_d  = tx_hot_reset_q;
 
     os_req_o           = RIVET_MAC_OS_NONE;
     txdetectrx_o       = 1'b0;
@@ -333,6 +338,7 @@ module rivet_ltssm #(
         lane_rev_d         = 1'b0;
         speed_chg_done_d   = 1'b0;
         l0s_exit_d         = 1'b0;
+        tx_hot_reset_d     = 1'b0;
 
         // 12 ms, or as soon as Electrical Idle is broken on any Lane.
         if (timer_expired || (rxelecidle_i != {LANES{1'b1}}))
@@ -585,6 +591,13 @@ module rivet_ltssm #(
           state_d = RIVET_LTSSM_L1_ENTRY;
         else if (aspm_l0s_req_i)
           state_d = RIVET_LTSSM_TX_L0S;
+        else if (IS_DOWNSTREAM && hot_reset_req_i) begin
+          // Directed Hot Reset: Recovery first, with the Hot Reset bit set
+          // on the TS, then Hot Reset. The request is held by the TB until
+          // the link partner has seen it.
+          tx_hot_reset_d = 1'b1;
+          state_d        = RIVET_LTSSM_RECOVERY_RCVRLOCK;
+        end
       end
 
       // Tx_L0s (minimal ASPM): EIOS → Electrical Idle (P0s) while requested;
@@ -640,9 +653,11 @@ module rivet_ltssm #(
         if (ts1_link_any_i || ts1_lane_any_i || ts2_cfg_any_i ||
             ts1_pad_any_i || ts2_pad_any_i)
           rx_seen_d = 1'b1;
-        if (rx_hot_reset)
+        // Upstream reacts to a received Hot Reset / Disable bit. Downstream
+        // originates those bits and must not take the same entries.
+        if (!IS_DOWNSTREAM && rx_hot_reset)
           state_d = RIVET_LTSSM_HOT_RESET;
-        else if (rx_disable)
+        else if (!IS_DOWNSTREAM && rx_disable)
           state_d = RIVET_LTSSM_DISABLED;
         else if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX)))
           state_d = RIVET_LTSSM_RECOVERY_RCVRCFG;
@@ -656,12 +671,14 @@ module rivet_ltssm #(
         lane_pad_d = 1'b0;
         if (ts2_cfg_any_i || ts2_pad_any_i)
           rx_seen_d = 1'b1;
-        if (rx_hot_reset)
+        if (!IS_DOWNSTREAM && rx_hot_reset)
           state_d = RIVET_LTSSM_HOT_RESET;
-        else if (rx_disable)
+        else if (!IS_DOWNSTREAM && rx_disable)
           state_d = RIVET_LTSSM_DISABLED;
         else if (rx_seen_q && (os_sent_cnt_i >= 12'(RIVET_N_TS_AFTER_RX))) begin
-          if (mutual_speed_chg)
+          if (IS_DOWNSTREAM && tx_hot_reset_q)
+            state_d = RIVET_LTSSM_HOT_RESET;
+          else if (mutual_speed_chg)
             state_d = RIVET_LTSSM_RECOVERY_SPEED;
           else
             state_d = RIVET_LTSSM_RECOVERY_IDLE;
@@ -704,15 +721,21 @@ module rivet_ltssm #(
           state_d = RIVET_LTSSM_DETECT_QUIET;
       end
 
-      // Hot Reset: echo Hot Reset TS1, then Detect to retrain (Upstream Port).
+      // Hot Reset. Upstream leaves on the 2 ms timer. Downstream keeps
+      // transmitting the bit while hot_reset_req_i is high, then leaves once
+      // the timer has also expired.
       RIVET_LTSSM_HOT_RESET: begin
         os_req_o        = RIVET_MAC_OS_TS1;
         tx_train_ctrl_o = 8'h01 << RIVET_TS_TC_HOT_RESET;
         link_pad_d      = 1'b0;
         lane_pad_d      = 1'b0;
         link_up_d       = 1'b0;
-        if (timer_expired)
+        if (IS_DOWNSTREAM) begin
+          if (!hot_reset_req_i && timer_expired)
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+        end else if (timer_expired) begin
           state_d = RIVET_LTSSM_DETECT_QUIET;
+        end
       end
 
       // Disabled: EIOS then Electrical Idle / P1 until timeout → Detect.
@@ -738,6 +761,11 @@ module rivet_ltssm #(
       rx_seen_d    = 1'b0;
       idle_rx_ok_d = 1'b0;
     end
+
+    // Sticky from the L0 request through Recovery, so the Hot Reset bit is
+    // already on the TS before the Hot Reset state itself.
+    if (tx_hot_reset_q)
+      tx_train_ctrl_o[RIVET_TS_TC_HOT_RESET] = 1'b1;
   end
 
   assign state_change  = (state_d != state_q);
@@ -829,6 +857,7 @@ module rivet_ltssm #(
       lane_rev_q      <= 1'b0;
       speed_chg_done_q <= 1'b0;
       l0s_exit_q      <= 1'b0;
+      tx_hot_reset_q  <= 1'b0;
       accept_dll_tlp_q <= 1'b0;
       in_detect_q     <= 1'b1;
     end else begin
@@ -856,6 +885,7 @@ module rivet_ltssm #(
       lane_rev_q      <= lane_rev_d;
       speed_chg_done_q <= speed_chg_done_d;
       l0s_exit_q      <= l0s_exit_d;
+      tx_hot_reset_q  <= tx_hot_reset_d;
       accept_dll_tlp_q <= (state_d == RIVET_LTSSM_L0);
       in_detect_q     <= (state_d == RIVET_LTSSM_DETECT_QUIET) ||
                          (state_d == RIVET_LTSSM_DETECT_ACTIVE);
@@ -908,6 +938,6 @@ module rivet_ltssm #(
   // Reserved for later multi-lane refinements.
   logic _unused_ok;
   assign _unused_ok = ts2_pad_all_i ^ ts1_link_all_i ^ ts1_lane_any_i ^
-                      (|ts1_lane_lanes_i);
+                      (|ts1_lane_lanes_i) ^ link_disable_req_i;
 
 endmodule : rivet_ltssm

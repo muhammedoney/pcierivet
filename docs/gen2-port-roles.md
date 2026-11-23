@@ -138,8 +138,8 @@ Behavior locked here:
 Gate:
 
 - `ltssm_l0_gen2_rc_x4` reaches L0, `negotiated_width=4`, link number 0.
-- `smoke_dp_hot_reset_gen2_x4` sees `cfg_ltssm_state == 6'h27` with the
-  Hot Reset bit set on the transmitted TS, then L0 again.
+- `sim_bfm_pg213_rc.ps1` prints `PASS: Rivet RC + PG213 EP hot reset`:
+  Rivet RC and the PG213 Endpoint both enter `6'h27`, then both return to L0.
 - `smoke_dp_disable_gen2_x4` sees `6'h20` and stays there until the request
   drops, then L0.
 - Existing `ltssm_l0_gen2_x4`, `smoke_hot_reset_gen2_x4`, and

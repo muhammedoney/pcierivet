@@ -208,8 +208,10 @@ module rivet_tb_top;
   // Minimal ASPM: vseqs drive status_if.aspm_*_req; force them onto the MAC
   // request nets (tied to 0 in rivet_mac) and release when deasserted.
   initial begin
-    status_if.aspm_l0s_req = 1'b0;
-    status_if.aspm_l1_req  = 1'b0;
+    status_if.aspm_l0s_req     = 1'b0;
+    status_if.aspm_l1_req      = 1'b0;
+    status_if.hot_reset_req    = 1'b0;
+    status_if.link_disable_req = 1'b0;
   end
 
   always @(status_if.aspm_l0s_req) begin
@@ -220,6 +222,16 @@ module rivet_tb_top;
   always @(status_if.aspm_l1_req) begin
     if (status_if.aspm_l1_req === 1'b1) force dut.u_mac.aspm_l1_req = 1'b1;
     else                                release dut.u_mac.aspm_l1_req;
+  end
+
+  always @(status_if.hot_reset_req) begin
+    if (status_if.hot_reset_req === 1'b1) force dut.u_mac.hot_reset_req = 1'b1;
+    else                                  release dut.u_mac.hot_reset_req;
+  end
+
+  always @(status_if.link_disable_req) begin
+    if (status_if.link_disable_req === 1'b1) force dut.u_mac.link_disable_req = 1'b1;
+    else                                     release dut.u_mac.link_disable_req;
   end
 
   // Negotiated width ≈ Lanes not held in Electrical Idle by the MAC.

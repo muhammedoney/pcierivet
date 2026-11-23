@@ -144,12 +144,16 @@ module rivet_mac #(
   logic [7:0]         remote_n_fts;
   logic               lane_reversed;
 
-  // Minimal ASPM requests. Tied off in the product path; UVM forces these
-  // nets hierarchically (tb/uvm/rivet_tb_top.sv) for L0s / L1 smoke.
+  // Tied off in the product path. UVM and the PG213 RC board force these
+  // nets hierarchically. Downstream Hot Reset / Link Disable use the same hook.
   logic               aspm_l0s_req;
   logic               aspm_l1_req;
-  assign aspm_l0s_req = 1'b0;
-  assign aspm_l1_req  = 1'b0;
+  logic               hot_reset_req;
+  logic               link_disable_req;
+  assign aspm_l0s_req     = 1'b0;
+  assign aspm_l1_req      = 1'b0;
+  assign hot_reset_req    = 1'b0;
+  assign link_disable_req = 1'b0;
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] map_tx_data;
   logic [2*LANES-1:0]               map_tx_datak;
@@ -230,6 +234,8 @@ module rivet_mac #(
     .nak_storm_i          (dll_to_mac_sb_i.nak_storm),
     .aspm_l0s_req_i       (aspm_l0s_req),
     .aspm_l1_req_i        (aspm_l1_req),
+    .hot_reset_req_i      (hot_reset_req),
+    .link_disable_req_i   (link_disable_req),
     .os_req_o             (os_req),
     .os_req_valid_o       (os_req_valid),
     .os_cnt_clr_o         (os_cnt_clr),
