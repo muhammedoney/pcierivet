@@ -52,8 +52,8 @@ Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-
 
 | Parameter | Values | Notes |
 |-----------|--------|-------|
-| `MODE` | EP / RC / USP / DSP | EP+USP Upstream Type 0; RC+DSP Downstream Type 1; RC requester is Phase 3 |
-| `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 3+ |
+| `MODE` | EP / RC / USP / DSP | EP+USP Upstream Type 0; RC+DSP Downstream Type 1; RC is the config requester |
+| `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 4 Gen3 |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
 | `FPGA_FAMILY` | 0=US+, 1=US, 2=Versal | On `rivet_pcie` / PHY only. US+ bring-up **VCU118 / XCVU9P**. Versal bring-up **VMK180 / XCVM1802**. |
 | `PIPE_DATA_WIDTH` | `16` now | 32 Gen3 / 64 Gen4 US+ later |

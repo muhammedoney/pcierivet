@@ -233,8 +233,9 @@ Goal: prove the two aliases are the two ports, not two new stacks.
 
 - `MODE=USP` trains to L0 against the existing Downstream peer
   (`ltssm_l0_gen2_usp_x4`) and `cfg_mgmt` reads header type 0.
-- `MODE=DSP` trains to L0 against the Upstream peer from Slice 1
-  (`ltssm_l0_gen2_dsp_x4`) and `cfg_mgmt` reads header type 1.
+- `MODE=DSP` trains to L0 against the PG213 Endpoint model
+  (`sim_bfm_pg213_rc.ps1 -Mode 3`) and `cfg_mgmt` reads header type 1.
+  The UVM smoke checks the Type 1 image without a link partner.
 - DSP does not grow an RQ config master. A CfgWr1 descriptor on a DSP
   build produces no TLP (ready stays low). RC is the only mode that
   emits config requests in this design.
@@ -254,8 +255,6 @@ Goal: prove the two aliases are the two ports, not two new stacks.
 
 ## Docs already moved
 
-`docs/roadmap.md` Phase 3 is these four slices. EP Gen3 is Phase 4 and
-keeps `docs/gen-evolution.md` as its procedure. The Gen3 plan file stays,
-with a deferral line at the top, so an agent does not start it while this
-design is active. This file lives at `docs/gen2-port-roles.md` because
-`specs/` is gitignored.
+`docs/roadmap.md` Phase 3 closed on 2026-11-23. EP Gen3 is Phase 4 and
+keeps `docs/gen-evolution.md` as its procedure. The Gen3 plan is next.
+This file lives at `docs/gen2-port-roles.md` because `specs/` is gitignored.

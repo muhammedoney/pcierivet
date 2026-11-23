@@ -2,7 +2,7 @@
 
 ## Principle
 
-**Verification before features.** Primary DUT is **`rivet_pcie_ctrl`** at PIPE (Questa UVM). Verilator is lint/elaborate; Vivado BFM is complementary. Active generation: **Gen2**. Gen3/4 deferred — [gen-evolution.md](gen-evolution.md).
+**Verification before features.** Primary DUT is **`rivet_pcie_ctrl`** at PIPE (Questa UVM). Verilator is lint/elaborate; Vivado BFM is complementary. Active generation: **Gen2**, with EP/RC/USP/DSP closed. Next is EP Gen3 — [gen-evolution.md](gen-evolution.md).
 
 Primary verified width: **Gen2 EP ×4** (`LANES=4`). ×1/×2 remain fast regression.
 
@@ -98,6 +98,22 @@ The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top
 ASPM requests are tied to 0 in `rivet_mac`; the ASPM smokes drive `rivet_link_status_if.aspm_l0s_req` / `aspm_l1_req`, and `rivet_tb_top` `force`s them onto `dut.u_mac.aspm_*_req`.
 
 Phase 2 Full Gen2 EP (sim) **closed** when the table above is green @ ×4.
+
+## Phase 3 Gen2 port roles (closed 2026-11-23)
+
+The link partner for RC and DSP is the PG213 Endpoint model. UVM mode is the third argument of `sim_questa.ps1` (`RIVET_TB_MODE`).
+
+| Gate | Command / token | Status |
+|------|-----------------|--------|
+| RC link, hot reset, disable | `.\scripts\sim_bfm_pg213_rc.ps1` | PASS |
+| RC CfgRd0 vendor `16'h10EE` | same log, `PASS: Rivet RC + PG213 EP cfg rd0` | PASS |
+| Type 1 header | `.\scripts\sim_questa.ps1 smoke_cfg_type1_gen2_rc_x4 4 1` | PASS |
+| Config UR | `.\scripts\sim_questa.ps1 smoke_cfg_ur_gen2_rc_x4 4 1` | PASS |
+| RC config wire bytes | `.\scripts\sim_questa.ps1 smoke_rc_cfg_gen2_x4 4 1` | PASS |
+| Type 0 request alias | `.\scripts\sim_questa.ps1 smoke_cfg_type0_req_gen2_rc_x4 4 1` | PASS |
+| USP L0 + Type 0 | `.\scripts\sim_questa.ps1 ltssm_l0_gen2_usp_x4 4 2` | PASS |
+| DSP Type 1 + RQ stall | `.\scripts\sim_questa.ps1 ltssm_l0_gen2_dsp_x4 4 3` | PASS |
+| DSP link, header, stall | `.\scripts\sim_bfm_pg213_rc.ps1 -Mode 3` | PASS |
 
 ## Phase 1 UVM build-out (historical)
 

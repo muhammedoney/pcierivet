@@ -60,19 +60,19 @@ Where each layer, interface, and vendor product sits in the stack:
 - **`rivet_pcie_phy_*`** covers **PCS + PMA** by wrapping the family PHY (Xilinx **PG239** / **PG345**).
 - **`rivet_pcie`** = controller + PHY, the drop-in full IP.
 
-`MODE` selects Endpoint, Root Complex/Port, Switch USP, or Switch DSP. Current focus: **Endpoint**, **Gen2**, lanes **×1 / ×2 / ×4**. Phase 1 priority: **UVM environment**, then Gen2 link RTL.
+`MODE` selects Endpoint, Root Complex/Port, Switch USP, or Switch DSP. Gen2 EP, RC, USP, and DSP are in simulation on lanes **×1 / ×2 / ×4**. Next: EP Gen3.
 
 ## Status
 
 | Area | State |
 |------|--------|
-| Mode | EP closed in sim. Next: RC Downstream, then USP/DSP aliases |
-| Generation | **Gen2 active.** Gen3 after port roles ([evolution notes](docs/gen-evolution.md)) |
+| Mode | Gen2 EP, RC, USP, and DSP closed in sim |
+| Generation | **Gen2 port roles closed.** Next: Gen3 ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
 | Target FPGA | **VMK180** preferred, **VCU118** also in tree. VPK180 is the later Premium path |
 | Verification | Phase 1 MVP + Phase 2 Full Gen2 EP (sim) closed; Verilator CI; Vivado BFM side-path |
 
-Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen2 Downstream port and Root Port. Gen3 stays deferred until those port roles close.
+Phase 1/2 Gen2 EP sim gates and Phase 3 Gen2 port roles are closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 4 EP Gen3.
 
 ## Measured throughput
 

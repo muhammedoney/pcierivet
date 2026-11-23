@@ -36,9 +36,9 @@ Ordered ×4 gates ([verification.md](verification.md)):
 
 Gen2 leftovers (closed): Recovery.Speed Gen2→Gen1 downshift (`smoke_recovery_downshift_gen2_x4`), minimal ASPM L0s/L1, RxStatus-error Recovery (`smoke_rxstatus_err_gen2_x4`), ×2 TLP clones (`smoke_tlp_rq_memwr_gen2_x2`, `smoke_tlp_cq_cc_gen2_x2`).
 
-Still **no Gen3/4 protocol**. Next: Phase 3 Gen2 port roles. Gen3 waits until that phase closes, because Recovery.Equalization needs a Downstream master and an Upstream slave.
+Phase 3 closed on 2026-11-23. Next: Phase 4 EP Gen3. Recovery.Equalization can use the Downstream master and the Upstream slave from that phase.
 
-## Phase 3 — Gen2 port roles (active)
+## Phase 3 — Gen2 port roles (closed 2026-11-23)
 
 Design: [gen2-port-roles](gen2-port-roles.md).
 Plan: [2026-11-23-gen2-up-dp-rc](superpowers/plans/2026-11-23-gen2-up-dp-rc.md).
@@ -47,18 +47,18 @@ EP and USP share the Upstream port (Type 0, adopt Link# / Lane#). RC and DSP sha
 
 | Slice | Content | Gate |
 |-------|---------|------|
-| **3A LTSSM** | RC trains against the PG213 Endpoint model; Downstream originates Hot Reset and holds Disabled | `sim_bfm_pg213_rc.ps1` → `PASS: Rivet RC + PG213 EP link_up`, `PASS: Rivet RC + PG213 EP hot reset`, `PASS: Rivet RC + PG213 EP link disable` |
-| **3B Config** | Type 1 bridge header on RC/DSP; EP/USP image unchanged | `smoke_cfg_type1_gen2_rc_x4` |
-| **3C Requester** | RC emits CfgWr1/CfgRd1, then one CfgRd0 | `smoke_rc_cfg_gen2_x4`, `smoke_cfg_type0_req_gen2_rc_x4` |
-| **3D Aliases** | USP trains as Upstream + Type 0; DSP as Downstream + Type 1, no config master | `ltssm_l0_gen2_usp_x4`, `ltssm_l0_gen2_dsp_x4` |
+| **3A LTSSM** | RC and DSP train against the PG213 Endpoint model; Downstream originates Hot Reset and holds Disabled | `sim_bfm_pg213_rc.ps1` and `-Mode 3` → link_up, hot reset, link disable |
+| **3B Config** | Type 1 bridge header on RC/DSP; a foreign bus completes as UR; EP/USP image unchanged | `smoke_cfg_type1_gen2_rc_x4`, `smoke_cfg_ur_gen2_rc_x4` |
+| **3C Requester** | RC emits CfgWr1/CfgRd1/CfgWr0/CfgRd0; the PG213 Endpoint completes CfgRd0 with vendor `16'h10EE` | `smoke_rc_cfg_gen2_x4`, `smoke_cfg_type0_req_gen2_rc_x4`, `PASS: Rivet RC + PG213 EP cfg rd0` |
+| **3D Aliases** | USP trains as Upstream + Type 0; DSP is Downstream + Type 1 and holds RQ `tready` low on a config descriptor | `ltssm_l0_gen2_usp_x4`, `ltssm_l0_gen2_dsp_x4`, `PASS: Rivet DSP + PG213 EP type1`, `PASS: Rivet DSP + PG213 EP rq stall` |
 
 Every current Gen2 EP smoke stays green after each slice.
 
-## Phase 4 — EP Gen3
+## Phase 4 — EP Gen3 (next)
 
-- After Phase 3. Both port roles already exist, so equalization can grow a master and a slave together.
+- Both port roles already exist, so equalization can grow a master and a slave together.
 - 128b/130b, Recovery.Equalization, PG239 EQ/assist
-- Procedure (do not start while Phase 3 is open): [2026-11-23-gen3-ep](superpowers/plans/2026-11-23-gen3-ep.md)
+- Procedure: [2026-11-23-gen3-ep](superpowers/plans/2026-11-23-gen3-ep.md)
 - Details: [gen-evolution.md](gen-evolution.md)
 
 ## Phase 5 — EP Gen4
