@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 490" role="img" aria-labelledby="title desc">
   <title id="title">Throughput versus payload size</title>
-  <desc id="desc">Gen2 x4. Rivet MemWr32 rates, 8 TLPs per size on a 4 ns user clock, are 250.000, 500.000, 800.000, 1122.807, 1333.333, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. MemWr64 matches those rates except 1347.368 MB/s at 64 bytes. Rivet MemRd32 and MemRd64 printed the same completion-payload rates: 70.175, 121.212, 216.216, 315.271, 472.325, 633.663, 757.396, 840.033, 887.733, 913.674, and 927.221 MB/s. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The amber line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
+  <desc id="desc">Gen2 x4. Rivet MemWr32 rates, 8 TLPs per size on a 4 ns user clock, are 250.000, 500.000, 800.000, 1122.807, 1333.333, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. MemWr64 matches those rates except 1347.368 MB/s at 64 bytes. Rivet MemRd32 and MemRd64 printed the same completion-payload rates: 77.670, 146.789, 275.862, 444.444, 695.652, 973.384, 1207.547, 1378.197, 1480.839, 1538.115, and 1568.447 MB/s. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The amber line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
   <rect width="1120" height="490" fill="#ffffff"/>
   <text x="78" y="28" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Throughput vs payload</text>
   <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 x4 at 64 bits, 4 ns. MemRd32 and MemRd64 printed the same CplD payload rate.</text>
@@ -40,19 +40,19 @@
   <g fill="#1a7f37">
     <circle cx="456" cy="169.89" r="3.5"/>
   </g>
-  <polyline fill="none" stroke="#cf222e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,361.47 186,353.82 276,339.57 366,324.71 456,301.15 546,276.95 636,258.39 726,246.00 816,238.84 906,234.95 996,232.92"/>
+  <polyline fill="none" stroke="#cf222e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,360.35 186,349.98 276,330.62 366,305.33 456,267.65 546,225.99 636,190.87 726,165.27 816,149.87 906,141.28 996,136.73"/>
   <g fill="#cf222e">
-    <circle cx="96" cy="361.47" r="3.5"/>
-    <circle cx="186" cy="353.82" r="3.5"/>
-    <circle cx="276" cy="339.57" r="3.5"/>
-    <circle cx="366" cy="324.71" r="3.5"/>
-    <circle cx="456" cy="301.15" r="3.5"/>
-    <circle cx="546" cy="276.95" r="3.5"/>
-    <circle cx="636" cy="258.39" r="3.5"/>
-    <circle cx="726" cy="246.00" r="3.5"/>
-    <circle cx="816" cy="238.84" r="3.5"/>
-    <circle cx="906" cy="234.95" r="3.5"/>
-    <circle cx="996" cy="232.92" r="3.5"/>
+    <circle cx="96" cy="360.35" r="3.5"/>
+    <circle cx="186" cy="349.98" r="3.5"/>
+    <circle cx="276" cy="330.62" r="3.5"/>
+    <circle cx="366" cy="305.33" r="3.5"/>
+    <circle cx="456" cy="267.65" r="3.5"/>
+    <circle cx="546" cy="225.99" r="3.5"/>
+    <circle cx="636" cy="190.87" r="3.5"/>
+    <circle cx="726" cy="165.27" r="3.5"/>
+    <circle cx="816" cy="149.87" r="3.5"/>
+    <circle cx="906" cy="141.28" r="3.5"/>
+    <circle cx="996" cy="136.73" r="3.5"/>
   </g>
   <g fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" text-anchor="middle">
     <text x="96" y="390">4</text>

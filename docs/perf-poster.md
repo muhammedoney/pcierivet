@@ -5,7 +5,7 @@ Endpoint `rivet_pcie_ctrl` at PIPE, 4 lanes. The posted-write sweep is QuestaSim
 | Test | Printed result |
 |---|---|
 | Posted write vs payload, 8 TLPs each | See the table below. Peer advertises infinite credits and ACKs each TLP. Largest point is 1024 DW (4096 bytes): **1979.700 MB/s**, 98.985% of the 2000 MB/s Gen2 x4 symbol rate |
-| Requester read vs payload, 8 TLPs each | MemRd32 and MemRd64 printed the same CplD-payload rate. Largest point is 1024 DW (4096 bytes): **927.221 MB/s**, 46.361% of 2000 MB/s |
+| Requester read vs payload, 8 TLPs each | MemRd32 and MemRd64 printed the same CplD-payload rate. Largest point is 1024 DW (4096 bytes): **1568.447 MB/s**, 78.422% of 2000 MB/s |
 | Read latency, 8× RQ MemRd → RC CplD | min 363, avg 458, max 714 `user_clk` cycles on the 8.0 ns bench. Includes the PIPE peer. Not re-run at 4 ns |
 | Inbound, 8× CQ MemRd → CC CplD | 8 CQ packets and 8 CC completions, 32 payload bytes in 2876 `user_clk` cycles. **1.391 MB/s** at `user_clk_ns=8.0`. The window includes the wait for each peer MemRd |
 | Credit stall, 12× RQ MemRd | 0 RQ stall cycles, 0 cycles with `pcie_tfc_nph_av = 0`. Lowest NPH credit scale observed: 4. Measured at `user_clk_ns=8.0` |
@@ -34,19 +34,19 @@ Posted-write payload sweep, test `perf_rq_sweep_gen2_x4`, 8 MemWr32 TLPs per siz
 
 | Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | MB/s | % of 2000 MB/s | lat min / avg / max |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1 DW | 4 | 32 | 114 | 70.175 | 3.509 | 51 / 67 / 82 |
-| 2 DW | 8 | 64 | 132 | 121.212 | 6.061 | 54 / 77 / 100 |
-| 4 DW | 16 | 128 | 148 | 216.216 | 10.811 | 56 / 86 / 116 |
-| 8 DW | 32 | 256 | 203 | 315.271 | 15.764 | 63 / 117 / 171 |
-| 16 DW | 64 | 512 | 271 | 472.325 | 23.616 | 75 / 158 / 239 |
-| 32 DW | 128 | 1024 | 404 | 633.663 | 31.683 | 98 / 235 / 372 |
-| 64 DW | 256 | 2048 | 676 | 757.396 | 37.870 | 147 / 395 / 644 |
-| 128 DW | 512 | 4096 | 1219 | 840.033 | 42.002 | 242 / 714 / 1187 |
-| 256 DW | 1024 | 8192 | 2307 | 887.733 | 44.387 | 434 / 1354 / 2275 |
-| 512 DW | 2048 | 16384 | 4483 | 913.674 | 45.684 | 818 / 2634 / 4451 |
-| 1024 DW | 4096 | 32768 | 8835 | 927.221 | 46.361 | 1586 / 5194 / 8803 |
+| 1 DW | 4 | 32 | 103 | 77.670 | 3.883 | 51 / 61 / 71 |
+| 2 DW | 8 | 64 | 109 | 146.789 | 7.339 | 54 / 66 / 77 |
+| 4 DW | 16 | 128 | 116 | 275.862 | 13.793 | 56 / 70 / 84 |
+| 8 DW | 32 | 256 | 144 | 444.444 | 22.222 | 63 / 87 / 112 |
+| 16 DW | 64 | 512 | 184 | 695.652 | 34.783 | 75 / 113 / 152 |
+| 32 DW | 128 | 1024 | 263 | 973.384 | 48.669 | 98 / 164 / 231 |
+| 64 DW | 256 | 2048 | 424 | 1207.547 | 60.377 | 147 / 269 / 392 |
+| 128 DW | 512 | 4096 | 743 | 1378.197 | 68.910 | 242 / 476 / 711 |
+| 256 DW | 1024 | 8192 | 1383 | 1480.839 | 74.042 | 434 / 892 / 1351 |
+| 512 DW | 2048 | 16384 | 2663 | 1538.115 | 76.906 | 818 / 1724 / 2631 |
+| 1024 DW | 4096 | 32768 | 5223 | 1568.447 | 78.422 | 1586 / 3388 / 5191 |
 
-1024 DW is 4096 bytes on each completion. The wire length field is 0 for that size. `bytes=32768` is eight completions. The window closes when `rc_tlast` reaches 8, so the drain between sizes is not inside the cycle count. Capture of the next completion does not overlap playback of the current one, so a large read stays near half the symbol rate. The amber posted-write formula is not this curve.
+1024 DW is 4096 bytes on each completion. The wire length field is 0 for that size. `bytes=32768` is eight completions. The window closes when `rc_tlast` reaches 8, so the drain between sizes is not inside the cycle count. At 4096 bytes, `lat_max - lat_min` is 3605 cycles across the seven gaps after the first completion, 515 cycles each, which is the frame on the wire. The printed 1568.447 MB/s still includes that first round trip (`lat_min=1586`). The amber posted-write formula is not this curve.
 
 An earlier 16× 1DW run with a finite-credit peer and a one-cycle bubble between beats printed 83.333 MB/s. That number is not this curve.
 
@@ -57,4 +57,4 @@ Routed timing below is the streaming-TX image from 22 Nov 2026, before the compl
 | VCU118 | +0.029814 ns | 0 | +0.011372 ns | bitstream, progress 100% |
 | VMK180 | +0.052571 ns | 0 | +0.025194 ns | PDI, progress 100%, DRC 0 errors |
 
-Gen2 x4 after 8b/10b is 2.000 GB/s of symbol data per direction. The sweep MB/s figures are payload bytes on the 4 ns user bus. The 4096-byte posted write is 1979.700 MB/s. The 4096-byte requester read is 927.221 MB/s. The latency, inbound, and credit-stall figures above the timing table stay on the 8 ns clock they were measured with.
+Gen2 x4 after 8b/10b is 2.000 GB/s of symbol data per direction. The sweep MB/s figures are payload bytes on the 4 ns user bus. The 4096-byte posted write is 1979.700 MB/s. The 4096-byte requester read is 1568.447 MB/s. The latency, inbound, and credit-stall figures above the timing table stay on the 8 ns clock they were measured with.

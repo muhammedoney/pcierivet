@@ -39,20 +39,20 @@ The 4096-byte MemWr64 point printed 1979.700 MB/s again.
 `perf_rq_memrd_gen2_x4` sends 8 MemRd32 TLPs at each size from 1 DW through 1024 DW, then the same sizes as MemRd64. The monitor counts CplD payload bytes on RC and stays armed until `rc_tlast=8`. The peer returns one completion per request and advertises infinite credits. UVM reported 0 errors and 0 fatals. MemRd64 printed the same cycles and `mb_s` as MemRd32 at every size. Every size printed `rq_stall=0`, `credit_stall=0`, and `tfc_nph_min=15`.
 
 ```
-PERF tag=rd_dw1    bytes=32    cycles=114  rc_tlast=8 mb_s=70.175  pct_gen2x4=3.509  user_clk_ns=4.0
-PERF tag=rd_dw2    bytes=64    cycles=132  rc_tlast=8 mb_s=121.212 pct_gen2x4=6.061  user_clk_ns=4.0
-PERF tag=rd_dw4    bytes=128   cycles=148  rc_tlast=8 mb_s=216.216 pct_gen2x4=10.811 user_clk_ns=4.0
-PERF tag=rd_dw8    bytes=256   cycles=203  rc_tlast=8 mb_s=315.271 pct_gen2x4=15.764 user_clk_ns=4.0
-PERF tag=rd_dw16   bytes=512   cycles=271  rc_tlast=8 mb_s=472.325 pct_gen2x4=23.616 user_clk_ns=4.0
-PERF tag=rd_dw32   bytes=1024  cycles=404  rc_tlast=8 mb_s=633.663 pct_gen2x4=31.683 user_clk_ns=4.0
-PERF tag=rd_dw64   bytes=2048  cycles=676  rc_tlast=8 mb_s=757.396 pct_gen2x4=37.870 user_clk_ns=4.0
-PERF tag=rd_dw128  bytes=4096  cycles=1219 rc_tlast=8 mb_s=840.033 pct_gen2x4=42.002 user_clk_ns=4.0
-PERF tag=rd_dw256  bytes=8192  cycles=2307 rc_tlast=8 mb_s=887.733 pct_gen2x4=44.387 user_clk_ns=4.0
-PERF tag=rd_dw512  bytes=16384 cycles=4483 rc_tlast=8 mb_s=913.674 pct_gen2x4=45.684 user_clk_ns=4.0
-PERF tag=rd_dw1024 bytes=32768 cycles=8835 rc_tlast=8 mb_s=927.221 pct_gen2x4=46.361 user_clk_ns=4.0
+PERF tag=rd_dw1    bytes=32    cycles=103  rc_tlast=8 mb_s=77.670  pct_gen2x4=3.883  user_clk_ns=4.0
+PERF tag=rd_dw2    bytes=64    cycles=109  rc_tlast=8 mb_s=146.789 pct_gen2x4=7.339  user_clk_ns=4.0
+PERF tag=rd_dw4    bytes=128   cycles=116  rc_tlast=8 mb_s=275.862 pct_gen2x4=13.793 user_clk_ns=4.0
+PERF tag=rd_dw8    bytes=256   cycles=144  rc_tlast=8 mb_s=444.444 pct_gen2x4=22.222 user_clk_ns=4.0
+PERF tag=rd_dw16   bytes=512   cycles=184  rc_tlast=8 mb_s=695.652 pct_gen2x4=34.783 user_clk_ns=4.0
+PERF tag=rd_dw32   bytes=1024  cycles=263  rc_tlast=8 mb_s=973.384 pct_gen2x4=48.669 user_clk_ns=4.0
+PERF tag=rd_dw64   bytes=2048  cycles=424  rc_tlast=8 mb_s=1207.547 pct_gen2x4=60.377 user_clk_ns=4.0
+PERF tag=rd_dw128  bytes=4096  cycles=743  rc_tlast=8 mb_s=1378.197 pct_gen2x4=68.910 user_clk_ns=4.0
+PERF tag=rd_dw256  bytes=8192  cycles=1383 rc_tlast=8 mb_s=1480.839 pct_gen2x4=74.042 user_clk_ns=4.0
+PERF tag=rd_dw512  bytes=16384 cycles=2663 rc_tlast=8 mb_s=1538.115 pct_gen2x4=76.906 user_clk_ns=4.0
+PERF tag=rd_dw1024 bytes=32768 cycles=5223 rc_tlast=8 mb_s=1568.447 pct_gen2x4=78.422 user_clk_ns=4.0
 ```
 
-The 4096-byte point is 927.221 MB/s. `rd64_dw1` through `rd64_dw1024` printed those same eleven rates. Latency on the 4-byte point was `lat_min=51`, `lat_avg=67`, `lat_max=82`. On the 4096-byte point it was `lat_min=1586`, `lat_avg=5194`, `lat_max=8803`.
+The 4096-byte point is 1568.447 MB/s. `rd64_dw1` through `rd64_dw1024` printed those same eleven rates. Latency on the 4-byte point was `lat_min=51`, `lat_avg=61`, `lat_max=71`. On the 4096-byte point it was `lat_min=1586`, `lat_avg=3388`, `lat_max=5191`. The seven gaps after the first 4096-byte completion are 515 cycles each. The printed rate includes the first round trip.
 
 An earlier `perf_rq_memwr_gen2_x4` run (16× 1DW, finite credits, one idle user clock between beats) printed 83.333 MB/s. That run is not the payload curve.
 
