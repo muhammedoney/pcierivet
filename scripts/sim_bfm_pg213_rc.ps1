@@ -8,7 +8,9 @@
 #>
 param(
   [ValidateSet("all", "compile", "elaborate", "simulate")]
-  [string]$Step = "all"
+  [string]$Step = "all",
+  [ValidateSet(1, 3)]
+  [int]$Mode = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -204,7 +206,7 @@ Add-VlogBlock $sb "xil_defaultlib" ('"+incdir+{0}/pcie4_uscale_plus_0_ex.gen/sou
 [void]$sb.AppendLine("vlog -work xil_defaultlib \")
 [void]$sb.AppendLine(('"{0}/glbl.v"' -f $WorkUnix))
 [void]$sb.AppendLine("")
-Add-VlogBlock $sb "xil_defaultlib" ('-sv "+incdir+{0}" "+incdir+{1}/rtl/pcie_ctrl" "+incdir+{1}/third_party/ref/common_cells/include"' -f $imp213, $RepoUnix) $rivetSv
+Add-VlogBlock $sb "xil_defaultlib" ('-sv "+define+RIVET_BFM_MODE={0}" "+incdir+{1}" "+incdir+{2}/rtl/pcie_ctrl" "+incdir+{2}/third_party/ref/common_cells/include"' -f $Mode, $imp213, $RepoUnix) $rivetSv
 Set-Content -Path (Join-Path $WorkDir "compile.do") -Value $sb.ToString() -Encoding ASCII
 Copy-Item -Force (Join-Path $BfmRoot "questa\elaborate.do") (Join-Path $WorkDir "elaborate.do")
 Copy-Item -Force (Join-Path $BfmRoot "questa\simulate.do") (Join-Path $WorkDir "simulate.do")
@@ -253,16 +255,30 @@ if ($Step -eq "all" -or $Step -eq "simulate") {
     Invoke-VsimDo "simulate.do" "simulate.log"
   } finally { Pop-Location }
   $text = Get-Content (Join-Path $WorkDir "simulate.log") -Raw
-  $up = $text -match "PASS: Rivet RC \+ PG213 EP link_up"
-  $hr = $text -match "PASS: Rivet RC \+ PG213 EP hot reset"
-  $dis = $text -match "PASS: Rivet RC \+ PG213 EP link disable"
-  if ($up -and $hr -and $dis) {
-    Write-Host "PASS: Rivet RC + PG213 EP link_up"
-    Write-Host "PASS: Rivet RC + PG213 EP hot reset"
-    Write-Host "PASS: Rivet RC + PG213 EP link disable"
+  $role = if ($Mode -eq 3) { "DSP" } else { "RC" }
+  $up = $text -match "PASS: Rivet $role \+ PG213 EP link_up"
+  $hr = $text -match "PASS: Rivet $role \+ PG213 EP hot reset"
+  $dis = $text -match "PASS: Rivet $role \+ PG213 EP link disable"
+  if ($Mode -eq 3) {
+    $extra = ($text -match "PASS: Rivet DSP \+ PG213 EP type1") -and ($text -match "PASS: Rivet DSP \+ PG213 EP rq stall")
+  } else {
+    $extra = $text -match "PASS: Rivet RC \+ PG213 EP cfg rd0"
+  }
+  if ($up -and $hr -and $dis -and $extra) {
+    Write-Host "PASS: Rivet $role + PG213 EP link_up"
+    Write-Host "PASS: Rivet $role + PG213 EP hot reset"
+    Write-Host "PASS: Rivet $role + PG213 EP link disable"
+    if ($Mode -eq 3) {
+      Write-Host "PASS: Rivet DSP + PG213 EP type1"
+      Write-Host "PASS: Rivet DSP + PG213 EP rq stall"
+    } else {
+      Write-Host "PASS: Rivet RC + PG213 EP cfg rd0"
+    }
     exit 0
   }
   if (-not $up) { Fail "simulate did not reach link_up - see $WorkDir\simulate.log" }
   if (-not $hr) { Fail "simulate did not complete hot reset - see $WorkDir\simulate.log" }
-  Fail "simulate did not complete link disable - see $WorkDir\simulate.log"
+  if (-not $dis) { Fail "simulate did not complete link disable - see $WorkDir\simulate.log" }
+  if ($Mode -eq 3) { Fail "simulate did not check the DSP Type 1 header and RQ stall - see $WorkDir\simulate.log" }
+  Fail "simulate did not complete CfgRd0 - see $WorkDir\simulate.log"
 }
