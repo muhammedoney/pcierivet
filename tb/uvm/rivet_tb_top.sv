@@ -1,6 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
-// UVM testbench top — DUT = rivet_pcie_ctrl at PIPE (LANES via plusarg / define).
+// UVM testbench top — DUT = rivet_pcie_ctrl at PIPE.
+// LANES via RIVET_TB_LANES. MODE via RIVET_TB_MODE (0=EP default).
 
 `timescale 1ns/1ps
 
@@ -12,8 +13,12 @@ module rivet_tb_top;
 `ifndef RIVET_TB_LANES
   `define RIVET_TB_LANES 1
 `endif
+`ifndef RIVET_TB_MODE
+  `define RIVET_TB_MODE 0
+`endif
 
   localparam int unsigned LANES = `RIVET_TB_LANES;
+  localparam int unsigned MODE  = `RIVET_TB_MODE;
   localparam int unsigned AXI_W = 64;
   localparam int unsigned KEEP_W = AXI_W / 32;
 
@@ -74,7 +79,7 @@ module rivet_tb_top;
   end
 
   rivet_pcie_ctrl #(
-    .MODE(0),
+    .MODE(MODE),
     .GEN(2),
     .LANES(LANES),
     .AXI_DATA_WIDTH(AXI_W),

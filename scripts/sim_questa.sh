@@ -17,15 +17,17 @@ fi
 
 TESTNAME="${1:-smoke_gen2_x1}"
 LANES="${2:-${RIVET_TB_LANES:-1}}"
+MODE="${3:-0}"
 
 UVM_INC=()
 if [[ -n "${UVM_HOME:-}" && -d "${UVM_HOME}/src" ]]; then
   UVM_INC+=("+incdir+${UVM_HOME}/src")
 fi
 
-echo "Compiling Rivet UVM (test=${TESTNAME} lanes=${LANES})..."
+echo "Compiling Rivet UVM (test=${TESTNAME} lanes=${LANES} mode=${MODE})..."
 vlog -sv -work work \
   "+define+RIVET_TB_LANES=${LANES}" \
+  "+define+RIVET_TB_MODE=${MODE}" \
   +incdir+tb/uvm \
   +incdir+rtl/interfaces \
   +incdir+rtl/pcie_ctrl \

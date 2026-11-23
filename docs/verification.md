@@ -115,7 +115,7 @@ Phase 2 Full Gen2 EP (sim) **closed** when the table above is green @ ×4.
 
 Copy `scripts/local_paths.example.ps1` → `local_paths.ps1`, then run recipes above.
 
-Uses built-in `-L mtiUvm` (match `UVM_HOME` to uvm-1.1d). Lane width is compile-time `+define+RIVET_TB_LANES=N`.
+Uses built-in `-L mtiUvm` (match `UVM_HOME` to uvm-1.1d). Lane width is compile-time `+define+RIVET_TB_LANES=N`. DUT mode is `+define+RIVET_TB_MODE=M` (third script argument, default 0 = EP).
 
 | Tool | Version |
 |------|---------|

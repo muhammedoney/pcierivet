@@ -14,15 +14,17 @@ if (-not (Get-Command vsim -ErrorAction SilentlyContinue)) {
 
 $TestName = if ($args.Count -ge 1) { $args[0] } else { "smoke_gen2_x1" }
 $Lanes = if ($args.Count -ge 2) { $args[1] } else { "1" }
+$Mode = if ($args.Count -ge 3) { $args[2] } else { "0" }
 
 $UvmInc = @()
 if ($env:UVM_HOME -and (Test-Path (Join-Path $env:UVM_HOME "src"))) {
   $UvmInc += "+incdir+$env:UVM_HOME\src"
 }
 
-Write-Host "Compiling Rivet UVM (test=$TestName lanes=$Lanes)..."
+Write-Host "Compiling Rivet UVM (test=$TestName lanes=$Lanes mode=$Mode)..."
 & vlog -sv -work work `
   "+define+RIVET_TB_LANES=$Lanes" `
+  "+define+RIVET_TB_MODE=$Mode" `
   "+incdir+tb/uvm" `
   "+incdir+rtl/interfaces" `
   "+incdir+rtl/pcie_ctrl" `
