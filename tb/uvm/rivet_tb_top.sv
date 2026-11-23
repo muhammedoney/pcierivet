@@ -16,9 +16,17 @@ module rivet_tb_top;
 `ifndef RIVET_TB_MODE
   `define RIVET_TB_MODE 0
 `endif
+`ifndef RIVET_TB_GEN
+  `define RIVET_TB_GEN 2
+`endif
+`ifndef RIVET_TB_PIPE_W
+  `define RIVET_TB_PIPE_W 16
+`endif
 
-  localparam int unsigned LANES = `RIVET_TB_LANES;
-  localparam int unsigned MODE  = `RIVET_TB_MODE;
+  localparam int unsigned LANES  = `RIVET_TB_LANES;
+  localparam int unsigned MODE   = `RIVET_TB_MODE;
+  localparam int unsigned GEN    = `RIVET_TB_GEN;
+  localparam int unsigned PIPE_W = `RIVET_TB_PIPE_W;
   localparam int unsigned AXI_W = 64;
   localparam int unsigned KEEP_W = AXI_W / 32;
 
@@ -53,7 +61,7 @@ module rivet_tb_top;
     preset_n    = 1;
   end
 
-  rivet_pipe_if #(.LANES(LANES), .PIPE_DATA_WIDTH(16)) pipe_if (.pclk(pclk), .preset_n(preset_n));
+  rivet_pipe_if #(.LANES(LANES), .PIPE_DATA_WIDTH(PIPE_W)) pipe_if (.pclk(pclk), .preset_n(preset_n));
   rivet_link_status_if status_if (.pclk(pclk), .preset_n(preset_n));
   rivet_axi_st_if #(.DATA_WIDTH(AXI_W), .KEEP_WIDTH(KEEP_W), .USER_WIDTH(88), .READY_WIDTH(4))
     cq_if (.aclk(user_clk), .aresetn(user_resetn));
@@ -80,9 +88,10 @@ module rivet_tb_top;
 
   rivet_pcie_ctrl #(
     .MODE(MODE),
-    .GEN(2),
+    .GEN(GEN),
     .LANES(LANES),
     .AXI_DATA_WIDTH(AXI_W),
+    .PIPE_DATA_WIDTH(PIPE_W),
     .LTSSM_TIMER_SCALE(LTSSM_TIMER_SCALE),
     .N_TS1_POLLING(N_TS1_POLLING)
   ) dut (
@@ -221,6 +230,12 @@ module rivet_tb_top;
     status_if.rq_watch_arm     = 1'b0;
     status_if.rq_watch_b0      = 8'h00;
     status_if.rq_watch_hit     = 1'b0;
+    status_if.pipe_rate_force = 1'b0;
+    status_if.pipe_rate_value = 3'd0;
+    status_if.block_tx_go     = 1'b0;
+    status_if.block_tx_done   = 1'b0;
+    status_if.rx_word_vld     = 1'b0;
+    status_if.rx_word         = '0;
   end
 
   always @(posedge pclk) begin
@@ -338,6 +353,36 @@ module rivet_tb_top;
     if (status_if.link_disable_req === 1'b1) force dut.u_mac.link_disable_req = 1'b1;
     else                                     release dut.u_mac.link_disable_req;
   end
+
+  // Directed Gen3 block test. Class code must not hierarchical-reference this module.
+  always @(status_if.pipe_rate_force or status_if.pipe_rate_value) begin
+    if (status_if.pipe_rate_force === 1'b1)
+      force dut.u_mac.u_pipe_adapter.rate_i = status_if.pipe_rate_value;
+    else
+      release dut.u_mac.u_pipe_adapter.rate_i;
+  end
+
+  initial begin
+    forever begin
+      wait (status_if.block_tx_go === 1'b1);
+      @(posedge pclk);
+      force dut.u_mac.u_pipe_adapter.sym_tx_valid_i = 1'b1;
+      repeat (8) @(posedge pclk);
+      release dut.u_mac.u_pipe_adapter.sym_tx_valid_i;
+      status_if.block_tx_done = 1'b1;
+      wait (status_if.block_tx_go === 1'b0);
+      status_if.block_tx_done = 1'b0;
+    end
+  end
+
+  generate
+    if (PIPE_W >= 32) begin : g_gen3_word
+      always @(posedge pclk) begin
+        status_if.rx_word_vld <= dut.u_mac.sym_rx_valid_raw[0];
+        status_if.rx_word     <= dut.u_mac.sym_rx_data_raw[31:0];
+      end
+    end
+  endgenerate
 
   // Negotiated width ≈ Lanes not held in Electrical Idle by the MAC.
   always_comb begin

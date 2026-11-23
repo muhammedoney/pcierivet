@@ -9,7 +9,10 @@ package rivet_uvm_pkg;
 `ifndef RIVET_TB_LANES
   `define RIVET_TB_LANES 1
 `endif
-  typedef virtual rivet_pipe_if #(.LANES(`RIVET_TB_LANES), .PIPE_DATA_WIDTH(16)) rivet_pipe_vif;
+`ifndef RIVET_TB_PIPE_W
+  `define RIVET_TB_PIPE_W 16
+`endif
+  typedef virtual rivet_pipe_if #(.LANES(`RIVET_TB_LANES), .PIPE_DATA_WIDTH(`RIVET_TB_PIPE_W)) rivet_pipe_vif;
   typedef virtual rivet_link_status_if rivet_link_status_vif;
   typedef virtual rivet_axi_st_if #(
     .DATA_WIDTH(64), .KEEP_WIDTH(2), .USER_WIDTH(88), .READY_WIDTH(4)
@@ -87,6 +90,7 @@ package rivet_uvm_pkg;
   `include "seq/rivet_companion_vseq.svh"
   `include "env/rivet_perf_mon.svh"
   `include "seq/rivet_perf_vseq.svh"
+  `include "seq/rivet_gen3_block_seq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
   `include "env/rivet_env.svh"
@@ -127,5 +131,6 @@ package rivet_uvm_pkg;
   `include "tests/smoke_aer_gen2_x4.svh"
   `include "tests/smoke_companion_gen2_x4.svh"
   `include "tests/rivet_perf_gen2_x4.svh"
+  `include "tests/smoke_gen3_block_x4.svh"
 endpackage : rivet_uvm_pkg
 

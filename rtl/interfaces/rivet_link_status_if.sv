@@ -30,4 +30,13 @@ interface rivet_link_status_if (
   logic       rq_watch_arm;
   logic [7:0] rq_watch_b0;
   logic       rq_watch_hit;
+  // TB forces the PIPE adapter rate (rivet_tb_top owns the force).
+  logic       pipe_rate_force;
+  logic [2:0] pipe_rate_value;
+  // Pulse to emit eight Gen3 TX words (two 16-byte blocks) from the adapter.
+  logic       block_tx_go;
+  logic       block_tx_done;
+  // Accepted Gen3 block word, lane 0. Valid low means the byte stream held.
+  logic        rx_word_vld;
+  logic [31:0] rx_word;
 endinterface : rivet_link_status_if

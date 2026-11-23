@@ -105,6 +105,37 @@ module rivet_mac_pipe_adapter #(
   logic [LANES-1:0]                 rx_detected_d;
   logic [LANES-1:0]                 rx_detected_q;
 
+  // Gen3 block pipe. rate_q is the registered PIPE rate, so Gen1/Gen2 keeps
+  // the datak path. A low rxdata_valid does not advance a block. Start 2'b10
+  // is a Gen4 upper-half marker and is dropped here.
+  logic                    gen3_q;
+  logic [LANES-1:0]        rx_take_d;
+  logic [LANES-1:0]        rx_in_q;
+  logic [2*LANES-1:0]      rx_idx_q;
+  logic [PIPE_DATA_WIDTH*LANES-1:0] rx_acc_q;
+  logic [LANES-1:0]        rx_acc_v_q;
+  logic [1:0]              hdr_mem [0:3];
+  logic [1:0]              hdr_wr_q, hdr_rd_q;
+  logic [2:0]              hdr_n_q;
+  logic [1:0]              tx_word_q;
+  logic                    tx_start_q;
+  logic                    tx_dv_q;
+  logic [1:0]              tx_hdr_q;
+
+  assign gen3_q = (rate_q == RIVET_PIPE_RATE_GEN3) && (PIPE_DATA_WIDTH == 32);
+
+  always_comb begin
+    rx_take_d = '0;
+    if (PIPE_DATA_WIDTH == 32) begin
+      for (int unsigned l = 0; l < LANES; l++) begin
+        if (pipe_rxdata_valid_i[l] &&
+            (pipe_rxstart_block_i[2*l +: 2] != 2'b10) &&
+            ((pipe_rxstart_block_i[2*l +: 2] == 2'b01) || rx_in_q[l]))
+          rx_take_d[l] = 1'b1;
+      end
+    end
+  end
+
   always_comb begin
     rx_detected_d = '0;
     for (int unsigned l = 0; l < LANES; l++) begin
@@ -134,6 +165,17 @@ module rivet_mac_pipe_adapter #(
       phystatus_rst_q    <= {LANES{1'b1}};
       rxelecidle_q       <= {LANES{1'b1}};
       rx_detected_q      <= '0;
+      rx_in_q            <= '0;
+      rx_idx_q           <= '0;
+      rx_acc_q           <= '0;
+      rx_acc_v_q         <= '0;
+      hdr_wr_q           <= '0;
+      hdr_rd_q           <= '0;
+      hdr_n_q            <= '0;
+      tx_word_q          <= '0;
+      tx_start_q         <= 1'b0;
+      tx_dv_q            <= 1'b0;
+      tx_hdr_q           <= '0;
     end else begin
       txdata_q           <= sym_tx_data_i;
       txdatak_q          <= sym_tx_datak_i;
@@ -154,15 +196,86 @@ module rivet_mac_pipe_adapter #(
       phystatus_rst_q    <= pipe_phystatus_rst_i;
       rxelecidle_q       <= pipe_rxelecidle_i;
       rx_detected_q      <= rx_detected_d;
+
+      // 16-byte block = four 32-bit words. Headers accepted on RX come back
+      // on the next TX block start. MAC symbol valid low does not consume a word.
+      if (gen3_q) begin
+        logic [1:0] wr_b, rd_b, hdr_b;
+        logic [2:0] n_b;
+        logic       push_b, pop_b;
+        wr_b  = hdr_wr_q;
+        rd_b  = hdr_rd_q;
+        n_b   = hdr_n_q;
+        hdr_b = 2'b01;
+        push_b = rx_take_d[0] && (pipe_rxstart_block_i[1:0] == 2'b01);
+        pop_b  = sym_tx_valid_i && (tx_word_q == 2'd0) && (n_b != 3'd0);
+        if (pop_b) begin
+          hdr_b = hdr_mem[rd_b];
+          rd_b  = rd_b + 2'd1;
+          n_b   = n_b - 3'd1;
+        end
+        if (push_b && (n_b < 3'd4)) begin
+          hdr_mem[wr_b] <= pipe_rxsync_header_i[1:0];
+          wr_b = wr_b + 2'd1;
+          n_b  = n_b + 3'd1;
+        end
+        hdr_wr_q <= wr_b;
+        hdr_rd_q <= rd_b;
+        hdr_n_q  <= n_b;
+
+        rx_acc_v_q <= rx_take_d;
+        for (int unsigned l = 0; l < LANES; l++) begin
+          if (rx_take_d[l]) begin
+            rx_acc_q[PIPE_DATA_WIDTH*l +: PIPE_DATA_WIDTH] <=
+              pipe_rxdata_i[PIPE_DATA_WIDTH*l +: PIPE_DATA_WIDTH];
+            if (pipe_rxstart_block_i[2*l +: 2] == 2'b01) begin
+              rx_in_q[l] <= 1'b1;
+              rx_idx_q[2*l +: 2] <= 2'd1;
+            end else if (rx_idx_q[2*l +: 2] == 2'd3) begin
+              rx_in_q[l] <= 1'b0;
+              rx_idx_q[2*l +: 2] <= 2'd0;
+            end else begin
+              rx_idx_q[2*l +: 2] <= rx_idx_q[2*l +: 2] + 2'd1;
+            end
+          end
+        end
+
+        if (sym_tx_valid_i) begin
+          tx_dv_q <= 1'b1;
+          if (tx_word_q == 2'd0) begin
+            tx_start_q <= 1'b1;
+            tx_hdr_q   <= hdr_b;
+            tx_word_q  <= 2'd1;
+          end else begin
+            tx_start_q <= 1'b0;
+            tx_hdr_q   <= 2'b00;
+            tx_word_q  <= (tx_word_q == 2'd3) ? 2'd0 : (tx_word_q + 2'd1);
+          end
+        end else begin
+          tx_dv_q    <= 1'b0;
+          tx_start_q <= 1'b0;
+        end
+      end else begin
+        rx_in_q    <= '0;
+        rx_idx_q   <= '0;
+        rx_acc_v_q <= '0;
+        tx_word_q  <= '0;
+        tx_start_q <= 1'b0;
+        tx_dv_q    <= 1'b0;
+        tx_hdr_q   <= '0;
+        hdr_wr_q   <= '0;
+        hdr_rd_q   <= '0;
+        hdr_n_q    <= '0;
+      end
     end
   end
 
-  // Gen2 TX data path
+  // Gen2 keeps datak. Gen3 drives the low 32 bits of each lane and block sideband.
   assign pipe_txdata_o        = txdata_q;
-  assign pipe_txdatak_o       = txdatak_q;
-  assign pipe_txdata_valid_o  = '0; // Gen3+
-  assign pipe_txstart_block_o = '0;
-  assign pipe_txsync_header_o = '0;
+  assign pipe_txdatak_o       = gen3_q ? '0 : txdatak_q;
+  assign pipe_txdata_valid_o  = gen3_q ? {LANES{tx_dv_q}} : '0;
+  assign pipe_txstart_block_o = gen3_q ? {LANES{tx_start_q}} : '0;
+  assign pipe_txsync_header_o = gen3_q ? {LANES{tx_hdr_q}} : '0;
 
   assign pipe_txdetectrx_o       = txdetectrx_q;
   assign pipe_txelecidle_o       = txelecidle_q;
@@ -183,10 +296,10 @@ module rivet_mac_pipe_adapter #(
   assign pipe_as_mac_in_L0_o     = as_mac_in_L0_q;
   assign pipe_cfg_rx_pm_state_o  = 2'b00;
 
-  // RX toward OS RX (Gen2 uses rxvalid)
-  assign sym_rx_data_o  = rxdata_q;
-  assign sym_rx_datak_o = rxdatak_q;
-  assign sym_rx_valid_o = rxvalid_q;
+  // RX toward OS RX. Gen3 presents only accepted block words.
+  assign sym_rx_data_o  = gen3_q ? rx_acc_q : rxdata_q;
+  assign sym_rx_datak_o = gen3_q ? '0 : rxdatak_q;
+  assign sym_rx_valid_o = gen3_q ? rx_acc_v_q : rxvalid_q;
   assign rxstatus_o     = rxstatus_q;
 
   // Status toward the LTSSM
@@ -197,10 +310,7 @@ module rivet_mac_pipe_adapter #(
   assign rx_detected_o   = rx_detected_q;
 
   logic _unused_ok;
-  assign _unused_ok = sym_tx_valid_i ^
-                      (|pipe_rxdata_valid_i) ^ (|pipe_rxstart_block_i) ^
-                      (|pipe_rxsync_header_i) ^
-                      (|pipe_txeq_fs_i) ^ (|pipe_txeq_lf_i) ^
+  assign _unused_ok = (|pipe_txeq_fs_i) ^ (|pipe_txeq_lf_i) ^
                       (|pipe_txeq_new_coeff_i) ^ (|pipe_txeq_done_i) ^
                       (|pipe_rxeq_preset_sel_i) ^ (|pipe_rxeq_new_txcoeff_i) ^
                       (|pipe_rxeq_adapt_done_i) ^ (|pipe_rxeq_done_i);

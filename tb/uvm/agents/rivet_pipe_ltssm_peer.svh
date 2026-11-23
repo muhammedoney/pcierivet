@@ -18,6 +18,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            speed_change_enable = 0; // set TS rate-ID bit 7 in Recovery
   bit            hot_reset_enable = 0;    // set TS training-control Hot Reset
   bit            disable_link_enable = 0; // set TS training-control Disable Link
+  bit            gen3_block_only = 0;     // drive blocks, do not run the LTSSM
   logic [2:0]    rxstatus_err_code = 3'b100; // RxStatus injected by peer_rxstatus_err_go
   int unsigned   peer_lanes = 0;         // 0 = all DUT lanes; else narrower partner
   bit            peer_lane_reverse = 0;  // assign Lane# W-1..0 on phys 0..W-1
@@ -67,6 +68,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(this, "", "speed_change_enable", speed_change_enable));
     void'(uvm_config_db#(bit)::get(this, "", "hot_reset_enable", hot_reset_enable));
     void'(uvm_config_db#(bit)::get(this, "", "disable_link_enable", disable_link_enable));
+    void'(uvm_config_db#(bit)::get(this, "", "gen3_block_only", gen3_block_only));
     void'(uvm_config_db#(logic [2:0])::get(this, "", "rxstatus_err_code", rxstatus_err_code));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
     void'(uvm_config_db#(int unsigned)::get(this, "", "peer_lanes", peer_lanes));
@@ -237,6 +239,48 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     dllp_ap.write(item);
   endfunction
 
+  // One 16-byte Gen3 block on every lane. rxstart_block is 2'b01 on the first
+  // word only. A bubble holds rxdata_valid low and must not enter the stream.
+  // Gen2 tests must not call this.
+  task automatic drive_gen3_block(
+      input logic [1:0] sync_hdr,
+      input bit         bubble,
+      input logic [7:0] base
+  );
+    int unsigned w, l, b;
+    int unsigned nwords;
+    logic [31:0] word;
+    localparam int unsigned PW = `RIVET_TB_PIPE_W;
+    nwords = 128 / PW;
+    for (w = 0; w < nwords; w++) begin
+      @(posedge vif.pclk);
+      word = '0;
+      for (b = 0; b < (PW/8); b++)
+        word[8*b +: 8] = base + 8'(w*(PW/8) + b);
+      for (l = 0; l < lanes; l++) begin
+        vif.rxdata[l*PW +: PW]       <= word[PW-1:0];
+        vif.rxdatak[l*2 +: 2]        <= 2'b00;
+        vif.rxdata_valid[l]          <= 1'b1;
+        vif.rxstart_block[l*2 +: 2]  <= (w == 0) ? 2'b01 : 2'b00;
+        vif.rxsync_header[l*2 +: 2]  <= (w == 0) ? sync_hdr : 2'b00;
+        vif.rxelecidle[l]            <= 1'b1;
+        vif.rxvalid[l]               <= 1'b0;
+      end
+      if (bubble && (w == 0)) begin
+        @(posedge vif.pclk);
+        for (l = 0; l < lanes; l++) begin
+          vif.rxdata_valid[l]         <= 1'b0;
+          vif.rxdata[l*PW +: PW]      <= {PW{1'b1}};
+          vif.rxstart_block[l*2 +: 2] <= 2'b00;
+        end
+      end
+    end
+    @(posedge vif.pclk);
+    vif.rxdata_valid  <= '0;
+    vif.rxstart_block <= '0;
+    vif.rxsync_header <= '0;
+  endtask
+
   task run_phase(uvm_phase phase);
     peer_phase_e phase_q;
     logic [4:0]  peer_ptr;
@@ -294,6 +338,20 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     bit          cpld_auto;
 
     if (!enable) return;
+
+    if (gen3_block_only) begin
+      wait (vif.preset_n === 1'b1);
+      vif.rxdata        <= '0;
+      vif.rxdatak       <= '0;
+      vif.rxdata_valid  <= '0;
+      vif.rxstart_block <= '0;
+      vif.rxsync_header <= '0;
+      vif.rxvalid       <= '0;
+      vif.rxelecidle    <= '1;
+      vif.rxstatus      <= '0;
+      vif.phystatus     <= '0;
+      return;
+    end
 
     perf_rc = 1'b0;
     void'(uvm_config_db#(bit)::get(null, "*", "peer_perf_rc", perf_rc));

@@ -17,6 +17,9 @@ class rivet_pipe_item extends uvm_sequence_item;
   // MAC -> PHY (monitored)
   bit [15:0] txdata;
   bit [1:0]  txdatak;
+  bit        txdata_valid;
+  bit        txstart_block;
+  bit [1:0]  txsync_header;
   bit        txdetectrx;
   bit        txelecidle;
   bit [1:0]  powerdown;
