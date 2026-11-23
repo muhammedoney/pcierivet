@@ -66,13 +66,13 @@ Where each layer, interface, and vendor product sits in the stack:
 
 | Area | State |
 |------|--------|
-| Mode | EP development first (RC / USP / DSP reserved on `MODE`) |
-| Generation | **Gen2 active** → Gen3 → Gen4 → Gen5 ([evolution notes](docs/gen-evolution.md)) |
+| Mode | EP closed in sim. Next: RC Downstream, then USP/DSP aliases |
+| Generation | **Gen2 active.** Gen3 after port roles ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
 | Target FPGA | **VMK180** preferred, **VCU118** also in tree. VPK180 is the later Premium path |
 | Verification | Phase 1 MVP + Phase 2 Full Gen2 EP (sim) closed; Verilator CI; Vivado BFM side-path |
 
-Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen3 when link proof allows — not Gen3/4 protocol yet.
+Phase 1/2 Gen2 EP sim gates closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Phase 3 Gen2 Downstream port and Root Port. Gen3 stays deferred until those port roles close.
 
 ## Measured throughput
 

@@ -32,10 +32,10 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`
 
 | Mode | `MODE` | Status |
 |------|--------|--------|
-| Endpoint (EP) | 0 | Active — Upstream Port Config |
-| Root Complex / Root Port (RC) | 1 | Gen2 Config Downstream (BFM peer) |
-| Switch Upstream Port (USP) | 2 | Same Config path as EP (reserved otherwise) |
-| Switch Downstream Port (DSP) | 3 | Same Config path as RC (reserved otherwise) |
+| Endpoint (EP) | 0 | Active — Upstream Port, Type 0. Gen2 sim closed |
+| Root Complex / Root Port (RC) | 1 | Next — Downstream LTSSM, then Type 1, then config requester |
+| Switch Upstream Port (USP) | 2 | Alias of the Upstream port. Proved after RC |
+| Switch Downstream Port (DSP) | 3 | Alias of the Downstream port. No config master |
 
 Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
 
@@ -52,7 +52,7 @@ Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-
 
 | Parameter | Values | Notes |
 |-----------|--------|-------|
-| `MODE` | EP / RC (Config) | USP/DSP share UP/DP Config paths; full RC TL later |
+| `MODE` | EP / RC / USP / DSP | EP+USP Upstream Type 0; RC+DSP Downstream Type 1; RC requester is Phase 3 |
 | `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 3+ |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
 | `FPGA_FAMILY` | 0=US+, 1=US, 2=Versal | On `rivet_pcie` / PHY only. US+ bring-up **VCU118 / XCVU9P**. Versal bring-up **VMK180 / XCVM1802**. |

@@ -375,9 +375,10 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 
 ### Later phases
 
-- Gen2 TLP/DLL complete (Phase 2)  
-- VCU118 + real PG239 (Phase 2 HW)  
-- Gen3 EQ / 128b/130b (Phase 3)
+- Gen2 TLP/DLL complete (Phase 2, closed)
+- Gen2 Downstream / RC port roles (roadmap Phase 3; Gen3 waits on this)
+- VCU118 + real PG239 (lab backlog)
+- Gen3 EQ / 128b/130b (roadmap Phase 4)
 
 ---
 
