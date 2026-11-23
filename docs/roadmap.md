@@ -58,12 +58,14 @@ Every current Gen2 EP smoke stays green after each slice.
 
 - Both port roles already exist, so equalization can grow a master and a slave together.
 - 128b/130b, Recovery.Equalization, PG239 EQ/assist
-- Procedure: [2026-11-23-gen3-ep](superpowers/plans/2026-11-23-gen3-ep.md)
+- Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md) Tasks 1–6. The older Gen3-only file is superseded.
 - Details: [gen-evolution.md](gen-evolution.md)
 
 ## Phase 5 — EP Gen4
 
-- Gen4 rate / 64-bit US+ datapath; VCU118 constraints when HW available
+- Starts after Phase 4 L0 and one TLP each way. Same plan, Tasks 7–11.
+- 16 GT/s, 64-bit US+ datapath. No message-bus margining.
+- Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md)
 - Details: [gen-evolution.md](gen-evolution.md)
 
 ## Phase 6+ — Gen5
