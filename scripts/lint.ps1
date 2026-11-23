@@ -1,5 +1,9 @@
 # Copyright 2026 Rivet contributors
 # Verilator lint of rivet_pcie_ctrl (Windows PowerShell)
+param(
+  [ValidateSet(2, 3)]
+  [int]$Gen = 2
+)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -18,3 +22,16 @@ if (Get-Command verilator -ErrorAction SilentlyContinue) {
   if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: lint" }
 }
 Write-Host "PASS: Verilator lint (controller)"
+
+if ($Gen -eq 3) {
+  $Top = "tb/lint/rivet_gen3_lint_top.sv"
+  if (Get-Command verilator -ErrorAction SilentlyContinue) {
+    & verilator --lint-only --replication-limit 65536 $Warn.Split(" ") $Inc -f rtl/filelist_core.f $Top --top-module rivet_gen3_lint_top
+    if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: Gen3 lint" }
+  } else {
+    $WslRoot = (wsl wslpath -a ($Root -replace '\\', '/'))
+    wsl -e bash -lc "cd '$WslRoot' && verilator --lint-only --replication-limit 65536 $Warn $Inc -f rtl/filelist_core.f $Top --top-module rivet_gen3_lint_top"
+    if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: Gen3 lint" }
+  }
+  Write-Host "PASS: Verilator lint (Gen3 x4 width 32)"
+}

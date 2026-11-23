@@ -165,8 +165,11 @@ module rivet_pcie_ctrl #(
     if (!(MODE == RIVET_MODE_EP || MODE == RIVET_MODE_RC ||
           MODE == RIVET_MODE_USP || MODE == RIVET_MODE_DSP))
       $error("rivet_pcie_ctrl: MODE must be EP/RC/USP/DSP (got %0d)", MODE);
-    if (!(GEN == 1 || GEN == 2))
-      $error("rivet_pcie_ctrl Phase 1 supports GEN=1 or 2 only (got %0d)", GEN);
+    if (!(GEN == RIVET_GEN1 || GEN == RIVET_GEN2 || GEN == RIVET_GEN3))
+      $error("rivet_pcie_ctrl supports GEN=1, 2, or 3 only (got %0d)", GEN);
+    if (!rivet_pipe_width_ok(GEN, PIPE_DATA_WIDTH))
+      $error("rivet_pcie_ctrl: GEN=%0d does not allow PIPE_DATA_WIDTH=%0d",
+             GEN, PIPE_DATA_WIDTH);
     if (!(LANES == 1 || LANES == 2 || LANES == 4))
       $error("rivet_pcie_ctrl LANES must be 1, 2, or 4");
   end

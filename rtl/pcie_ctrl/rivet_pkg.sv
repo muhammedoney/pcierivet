@@ -20,6 +20,7 @@ package rivet_pkg;
   typedef enum int unsigned {
     RIVET_GEN1 = 1,
     RIVET_GEN2 = 2,
+    RIVET_GEN3 = 3,
     RIVET_GEN4 = 4,
     RIVET_GEN5 = 5
   } rivet_gen_e;
@@ -69,7 +70,8 @@ package rivet_pkg;
   // reached through Recovery.Speed (Base 2.1 §4.2.6.2.4).
   typedef enum logic [2:0] {
     RIVET_PIPE_RATE_GEN1 = 3'd0,
-    RIVET_PIPE_RATE_GEN2 = 3'd1
+    RIVET_PIPE_RATE_GEN2 = 3'd1,
+    RIVET_PIPE_RATE_GEN3 = 3'd2
   } rivet_pipe_rate_e;
 
   // PIPE RxStatus[2:0] per lane.
@@ -573,6 +575,16 @@ package rivet_pkg;
 
   function automatic bit rivet_lanes_legal(int unsigned lanes);
     return (lanes == 1) || (lanes == 2) || (lanes == 4);
+  endfunction
+
+  // Gen1/Gen2 share the 16-bit pipe. Gen3 is 32 bits per lane. Gen4 is rejected
+  // until that track opens.
+  function automatic bit rivet_pipe_width_ok(int unsigned gen, int unsigned width);
+    if (gen == RIVET_GEN1 || gen == RIVET_GEN2)
+      return (width == 16);
+    if (gen == RIVET_GEN3)
+      return (width == 32);
+    return 0;
   endfunction
 
   // LTSSM timeouts in pclk cycles at the 2.5 GT/s training rate (125 MHz with a

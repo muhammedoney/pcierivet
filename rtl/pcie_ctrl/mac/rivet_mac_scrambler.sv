@@ -28,8 +28,9 @@ module rivet_mac_scrambler #(
 
 `ifndef SYNTHESIS
   initial begin
-    if (PIPE_DATA_WIDTH != 16)
-      $error("rivet_mac_scrambler: only PIPE_DATA_WIDTH=16 (got %0d)", PIPE_DATA_WIDTH);
+    // 32 elaborates for Gen3. The 128b/130b LFSR is a later slice.
+    if (!(PIPE_DATA_WIDTH == 16 || PIPE_DATA_WIDTH == 32))
+      $error("rivet_mac_scrambler: PIPE_DATA_WIDTH must be 16 or 32 (got %0d)", PIPE_DATA_WIDTH);
   end
 `endif
 

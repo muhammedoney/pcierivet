@@ -34,8 +34,8 @@ module rivet_mac_lane_map #(
   initial begin
     if (!(LANES == 1 || LANES == 2 || LANES == 4))
       $error("rivet_mac_lane_map LANES must be 1, 2, or 4");
-    if (PIPE_DATA_WIDTH != 16)
-      $error("rivet_mac_lane_map: only PIPE_DATA_WIDTH=16 (got %0d)", PIPE_DATA_WIDTH);
+    if (!(PIPE_DATA_WIDTH == 16 || PIPE_DATA_WIDTH == 32))
+      $error("rivet_mac_lane_map: PIPE_DATA_WIDTH must be 16 or 32 (got %0d)", PIPE_DATA_WIDTH);
   end
 `endif
 

@@ -82,8 +82,9 @@ module rivet_mac_os_rx #(
 
 `ifndef SYNTHESIS
   initial begin
-    if (PIPE_DATA_WIDTH != 16)
-      $error("rivet_mac_os_rx: only PIPE_DATA_WIDTH=16 is implemented (got %0d)",
+    // 32 elaborates for Gen3. Ordered-set decode at that width is a later slice.
+    if (!(PIPE_DATA_WIDTH == 16 || PIPE_DATA_WIDTH == 32))
+      $error("rivet_mac_os_rx: PIPE_DATA_WIDTH must be 16 or 32 (got %0d)",
              PIPE_DATA_WIDTH);
     if (!rivet_lanes_legal(LANES))
       $error("rivet_mac_os_rx LANES must be 1, 2, or 4");
