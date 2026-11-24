@@ -725,7 +725,8 @@ module rivet_pcie_ctrl #(
         .rx_accept_o      (cr_rx_acc_rc),
         .rx_hdr0_o        (cr_rx_h0_rc),
         .rx_len_dw_o      (cr_rx_len_rc),
-        .tag_free_o       (rq_tag_free_p)
+        .tag_free_o       (rq_tag_free_p),
+        .rx_abort_i       (tl_rx_abort)
       );
     end
   endgenerate

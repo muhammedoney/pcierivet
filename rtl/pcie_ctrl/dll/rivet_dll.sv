@@ -729,9 +729,9 @@ module rivet_dll #(
         .ack_valid_o     (ack_valid),
         .ack_ready_i     (ack_ready),
         .last_good_seq_o (last_good),
-        .lcrc_err_o      (lcrc_err)
+        .lcrc_err_o      (lcrc_err),
+        .tl_abort_o      (tl_rx_abort_o)
       );
-      assign tl_rx_abort_o = 1'b0;
     end
   endgenerate
 

@@ -26,7 +26,9 @@ module rivet_tl_rc #(
   output logic [7:0]  rx_hdr0_o,
   output logic [9:0]  rx_len_dw_o,
   // Pulse when a completion descriptor is accepted on AXI-ST (frees RQ tag)
-  output logic        tag_free_o
+  output logic        tag_free_o,
+  // Cut-through playback failed LCRC. Drop the open completion.
+  input  logic        rx_abort_i = 1'b0
 );
 
   import rivet_pkg::*;
@@ -107,6 +109,10 @@ module rivet_tl_rc #(
       data_q       <= '0;
       has_data_q   <= 1'b0;
       has_more_q   <= 1'b0;
+    end else if (rx_abort_i) begin
+      st_q       <= ST_IDLE;
+      has_data_q <= 1'b0;
+      has_more_q <= 1'b0;
     end else begin
       unique case (st_q)
         ST_IDLE: begin

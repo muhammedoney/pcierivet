@@ -30,7 +30,10 @@ module rivet_dll_tlp_rx #(
   input  logic                       ack_ready_i,
 
   output logic [11:0] last_good_seq_o,
-  output logic        lcrc_err_o
+  output logic        lcrc_err_o,
+  // One cycle after a cut-through frame fails LCRC and some TLP bytes
+  // were already handed to TL.
+  output logic        tl_abort_o
 );
 
   import rivet_pkg::*;
@@ -97,6 +100,13 @@ module rivet_dll_tlp_rx #(
   logic [63:0]       tl_data_q;
   logic [7:0]        tl_keep_q;
   logic              tl_last_q;
+  // Playback started before LCRC. The last 4 frame bytes stay held.
+  logic              play_open_q;
+  logic [13:0]       pld_seen_q;
+  logic              tl_sent_q;
+  logic              tl_abort_q;
+  logic              words_ok;
+  logic              hold_tail;
 
   rivet_dllp_req_t   ack_slot_q [2];
   logic [1:0]        ack_n_q;
@@ -112,9 +122,12 @@ module rivet_dll_tlp_rx #(
   assign ack_req_o       = ack_slot_q[0];
   assign last_good_seq_o = last_good_q;
   assign lcrc_err_o      = lcrc_err_q;
+  assign tl_abort_o      = tl_abort_q;
 
+  // A live frame keeps accepting beats into the bank it is already playing.
   assign bank_blocked = bank_ready_q[cap_bank_q] ||
-                        ((play_st_q != PLAY_IDLE) && (play_bank_q == cap_bank_q));
+                        ((play_st_q != PLAY_IDLE) && (play_bank_q == cap_bank_q) &&
+                         !play_open_q);
   assign beat_ready_o = enable_i &&
                         ((cap_st_q == CAP_IDLE) || (cap_st_q == CAP_RUN)) &&
                         !bank_blocked;
@@ -185,8 +198,12 @@ module rivet_dll_tlp_rx #(
     can_send   = !tl_v_q || tl_ready_i;
     want       = (play_st_q == PLAY_RUN) && fresh_q && (pld_left_q != 14'd0) &&
                  (acc_n_q <= 5'd6);
-    play_stall = want && (((n_after >= 5'd8) ||
-                           ((left_after == 14'd0) && (n_after != 5'd0))) && !can_send);
+    words_ok   = !play_open_q || (play_bank_q != cap_bank_q) ||
+                 (word_idx_q < wr_idx_q);
+    hold_tail  = play_open_q && (pld_left_q != 14'd0) && (pld_left_q <= 14'(avail));
+    play_stall = want && (!words_ok || hold_tail ||
+                          (((n_after >= 5'd8) ||
+                            ((left_after == 14'd0) && (n_after != 5'd0))) && !can_send));
     play_consume = want && !play_stall;
     more_after = play_consume && (left_after != 14'd0);
     rd_issue   = (play_st_q == PLAY_PREP) || more_after;
@@ -226,6 +243,10 @@ module rivet_dll_tlp_rx #(
       tl_data_q      <= '0;
       tl_keep_q      <= '0;
       tl_last_q      <= 1'b0;
+      play_open_q    <= 1'b0;
+      pld_seen_q     <= '0;
+      tl_sent_q      <= 1'b0;
+      tl_abort_q     <= 1'b0;
       ack_slot_q[0]  <= '0;
       ack_slot_q[1]  <= '0;
       ack_n_q        <= 2'd0;
@@ -243,6 +264,15 @@ module rivet_dll_tlp_rx #(
       rivet_dllp_req_t   ack1;
       rivet_dllp_req_t   ack_new;
 
+      logic              launch_live;
+      logic              close_live;
+      logic              abort_live;
+      logic [12:0]       frame_vis;
+      logic [13:0]       pld_vis;
+      logic [13:0]       pld_delta;
+      logic [13:0]       pld_len;
+      logic [13:0]       left_add;
+
       ready_b0 = bank_ready_q[0];
       ready_b1 = bank_ready_q[1];
       blen0    = bank_len_q[0];
@@ -254,6 +284,14 @@ module rivet_dll_tlp_rx #(
       finish   = 1'b0;
       launch   = 1'b0;
       launch_b = 1'b0;
+      launch_live = 1'b0;
+      close_live  = 1'b0;
+      abort_live  = 1'b0;
+      frame_vis   = 13'd0;
+      pld_vis     = 14'd0;
+      pld_delta   = 14'd0;
+      pld_len     = 14'd0;
+      left_add    = 14'd0;
       ack0     = ack_slot_q[0];
       ack1     = ack_slot_q[1];
       ack_n    = ack_n_q;
@@ -264,6 +302,10 @@ module rivet_dll_tlp_rx #(
       end
 
       lcrc_err_q <= 1'b0;
+      tl_abort_q <= 1'b0;
+
+      frame_vis = (take_beat && !beat_i.eop) ? (len_next - 13'd4) : 13'd0;
+      pld_vis   = (frame_vis > 13'd2) ? 14'(frame_vis - 13'd2) : 14'd0;
 
       if (take_beat) begin
 `ifndef SYNTHESIS
@@ -282,7 +324,14 @@ module rivet_dll_tlp_rx #(
         end
         if (int'(len_next) > SLOT_BYTES)
           cap_ovf_q <= 1'b1;
+        // One full TL beat (8 bytes) is enough to start. The tail stays held.
+        if (!beat_i.eop && !play_open_q && (play_st_q == PLAY_IDLE) &&
+            (pld_vis >= 14'd8) && !bank_ready_q[0] && !bank_ready_q[1])
+          launch_live = 1'b1;
       end
+
+      if (take_beat && beat_i.eop && play_open_q)
+        cap_bank_q <= ~cap_bank_q;
 
       if (take_beat && beat_i.eop) begin
         cap_st_q <= CAP_DEC;
@@ -294,7 +343,6 @@ module rivet_dll_tlp_rx #(
           logic        seq_ok;
           logic        seq_dup;
           logic [11:0] seq_delta;
-          logic [13:0] pld_len;
           lcrc_ok  = (cap_crc_q == RIVET_LCRC32_RESIDUE) &&
                      (int'(cap_len_q) >= MIN_FR) && !cap_ovf_q;
           seq_ok   = (cap_seq_q == expect_q);
@@ -316,7 +364,9 @@ module rivet_dll_tlp_rx #(
             expect_q       <= cap_seq_q + 12'd1;
             ack_new.kind    = RIVET_DLLP_KIND_ACK;
             ack_new.ack_seq = cap_seq_q;
-            if (pld_len != 14'd0) begin
+            if (play_open_q) begin
+              close_live = 1'b1;
+            end else if (pld_len != 14'd0) begin
               bank_len_q[cap_bank_q]   <= cap_len_q;
               bank_seq_q[cap_bank_q]   <= cap_seq_q;
               bank_pld_q[cap_bank_q]   <= pld_len;
@@ -340,6 +390,8 @@ module rivet_dll_tlp_rx #(
             lcrc_err_q      <= !lcrc_ok;
             ack_new.kind    = RIVET_DLLP_KIND_NAK;
             ack_new.ack_seq = last_good_q;
+            if (play_open_q)
+              abort_live = 1'b1;
           end
           if (ack_n == 2'd0) ack0 = ack_new;
           else               ack1 = ack_new;
@@ -376,10 +428,10 @@ module rivet_dll_tlp_rx #(
           tl_data_q <= acc_t[63:0];
           tl_keep_q <= (emit_n == 4'd8) ? 8'hFF : (8'hFF >> (8 - emit_n));
           tl_v_q    <= 1'b1;
-          tl_last_q <= (left_t == 14'd0) && (5'(emit_n) == n_t);
+          tl_last_q <= (left_t == 14'd0) && (5'(emit_n) == n_t) && !play_open_q;
           acc_t = acc_t >> (8 * emit_n);
           n_t   = n_t - 5'(emit_n);
-          if ((left_t == 14'd0) && (n_t == 5'd0))
+          if ((left_t == 14'd0) && (n_t == 5'd0) && !play_open_q)
             finish = 1'b1;
         end else if (!play_stall && tl_v_q && tl_ready_i) begin
           tl_v_q <= 1'b0;
@@ -395,8 +447,9 @@ module rivet_dll_tlp_rx #(
           word_idx_q <= word_idx_q + IDX_W'(1);
           if (more_after)
             rd_addr_q <= rd_addr_q + IDX_W'(1);
+          tl_sent_q <= 1'b1;
         end
-        if (finish)
+        if (finish && !play_open_q)
           play_st_q <= PLAY_IDLE;
       end
 
@@ -423,8 +476,47 @@ module rivet_dll_tlp_rx #(
         play_st_q   <= PLAY_PREP;
         if (bank_ready_q[cap_bank_q] || (cap_bank_q == launch_b))
           cap_bank_q <= ~launch_b;
-      end else if (finish && bank_ready_q[cap_bank_q]) begin
+      end else if (finish && bank_ready_q[cap_bank_q] && !play_open_q) begin
         cap_bank_q <= ~cap_bank_q;
+      end
+
+      if (launch_live) begin
+        play_open_q <= 1'b1;
+        play_bank_q <= cap_bank_q;
+        play_len_q  <= frame_vis;
+        pld_left_q  <= pld_vis;
+        pld_seen_q  <= pld_vis;
+        seq_q       <= cap_seq_q;
+        acc_q       <= '0;
+        acc_n_q     <= '0;
+        word_idx_q  <= '0;
+        fresh_q     <= 1'b0;
+        rd_addr_q   <= '0;
+        tl_sent_q   <= 1'b0;
+        play_st_q   <= PLAY_PREP;
+      end else if (play_open_q && take_beat && !beat_i.eop && (pld_vis > pld_seen_q)) begin
+        pld_delta   = pld_vis - pld_seen_q;
+        pld_seen_q <= pld_vis;
+        play_len_q <= frame_vis;
+      end
+      if (close_live) begin
+        pld_delta   = pld_len - pld_seen_q;
+        play_open_q <= 1'b0;
+        play_len_q  <= cap_len_q;
+      end
+      if (abort_live) begin
+        play_open_q <= 1'b0;
+        play_st_q   <= PLAY_IDLE;
+        pld_left_q  <= '0;
+        tl_v_q      <= 1'b0;
+        tl_last_q   <= 1'b0;
+        tl_abort_q  <= tl_sent_q;
+      end
+      if ((pld_delta != 14'd0) &&
+          ((play_st_q == PLAY_RUN) || (play_st_q == PLAY_PREP))) begin
+        left_add = ((play_st_q == PLAY_RUN) && play_consume)
+                   ? (pld_left_q - 14'(take_n)) : pld_left_q;
+        pld_left_q <= left_add + pld_delta;
       end
 
       ack_slot_q[0] <= ack0;
