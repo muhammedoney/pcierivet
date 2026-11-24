@@ -9,15 +9,20 @@ module rivet_mac_descrambler #(
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
+  input  logic [2:0] rate_i = rivet_pkg::RIVET_PIPE_RATE_GEN2,
 
   input  logic [PIPE_DATA_WIDTH*LANES-1:0] data_i,
   input  logic [2*LANES-1:0]               datak_i,
   input  logic [LANES-1:0]                 valid_i,
   input  logic [LANES-1:0]                 lane_en_i,
+  input  logic [LANES-1:0]                 os_block_i = '0,
+  input  logic [LANES-1:0]                 block_start_i = '0,
 
   output logic [PIPE_DATA_WIDTH*LANES-1:0] data_o,
   output logic [2*LANES-1:0]               datak_o,
-  output logic [LANES-1:0]                 valid_o
+  output logic [LANES-1:0]                 valid_o,
+  output logic [LANES-1:0]                 os_block_o,
+  output logic [LANES-1:0]                 block_start_o
 );
 
   import rivet_pkg::*;
@@ -37,6 +42,12 @@ module rivet_mac_descrambler #(
   endfunction
 
   logic [15:0] lfsr_q     [LANES];
+  logic [22:0] lfsr23_q   [LANES];
+  logic [22:0] lfsr23_next [LANES];
+  logic [2:0]  skp_left_q [LANES];
+  logic [2:0]  skp_left_n [LANES];
+  logic [LANES-1:0] os_q;
+  logic [LANES-1:0] start_q;
   logic [4:0]  os_left_q  [LANES];
   logic        com_pend_q [LANES];
   logic [15:0] lfsr_next  [LANES];
@@ -52,10 +63,33 @@ module rivet_mac_descrambler #(
   always_comb begin
     data_d = data_i;
     for (int unsigned l = 0; l < LANES; l++) begin
-      lfsr_next[l]  = lfsr_q[l];
-      os_left_n[l]  = os_left_q[l];
-      com_pend_n[l] = com_pend_q[l];
-      if (valid_i[l] && lane_en_i[l]) begin
+      lfsr_next[l]   = lfsr_q[l];
+      lfsr23_next[l] = lfsr23_q[l];
+      os_left_n[l]   = os_left_q[l];
+      com_pend_n[l]  = com_pend_q[l];
+      skp_left_n[l]  = skp_left_q[l];
+      if ((rate_i == RIVET_PIPE_RATE_GEN3) && valid_i[l] && lane_en_i[l]) begin
+        automatic bit skp_word;
+        skp_word = (skp_left_q[l] != 3'd0) ||
+                   (block_start_i[l] && os_block_i[l] &&
+                    (data_i[PIPE_DATA_WIDTH*l +: 8] == RIVET_SYM_SKP_BLK));
+        if (os_block_i[l] && skp_word) begin
+          if (block_start_i[l])
+            skp_left_n[l] = 3'd3;
+          else
+            skp_left_n[l] = skp_left_q[l] - 3'd1;
+        end else begin
+          skp_left_n[l] = 3'd0;
+          for (int unsigned s = 0; s < SYMS; s++) begin
+            automatic logic [7:0]  din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+            automatic logic [30:0] step;
+            step = rivet_lfsr23_byte(lfsr23_next[l]);
+            lfsr23_next[l] = step[30:8];
+            if (!os_block_i[l])
+              data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = din ^ step[7:0];
+          end
+        end
+      end else if (valid_i[l] && lane_en_i[l]) begin
         for (int unsigned s = 0; s < SYMS; s++) begin
           automatic logic [7:0]  din   = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           automatic logic        is_k  = datak_i[SYMS*l + s];
@@ -110,25 +144,35 @@ module rivet_mac_descrambler #(
       data_q  <= '0;
       datak_q <= '0;
       valid_q <= '0;
+      os_q    <= '0;
+      start_q <= '0;
       for (int unsigned l = 0; l < LANES; l++) begin
         lfsr_q[l]     <= RIVET_LFSR_SEED;
+        lfsr23_q[l]   <= RIVET_LFSR23_SEED;
         os_left_q[l]  <= '0;
         com_pend_q[l] <= 1'b0;
+        skp_left_q[l] <= '0;
       end
     end else begin
       data_q  <= data_d;
       datak_q <= datak_i;
       valid_q <= valid_i;
+      os_q    <= os_block_i;
+      start_q <= block_start_i;
       for (int unsigned l = 0; l < LANES; l++) begin
         lfsr_q[l]     <= lfsr_next[l];
+        lfsr23_q[l]   <= lfsr23_next[l];
         os_left_q[l]  <= os_left_n[l];
         com_pend_q[l] <= com_pend_n[l];
+        skp_left_q[l] <= skp_left_n[l];
       end
     end
   end
 
-  assign data_o  = data_q;
-  assign datak_o = datak_q;
-  assign valid_o = valid_q;
+  assign data_o        = data_q;
+  assign datak_o       = datak_q;
+  assign valid_o       = valid_q;
+  assign os_block_o    = os_q;
+  assign block_start_o = start_q;
 
 endmodule : rivet_mac_descrambler

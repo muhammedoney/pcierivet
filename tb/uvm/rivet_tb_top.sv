@@ -236,6 +236,9 @@ module rivet_tb_top;
     status_if.block_tx_done   = 1'b0;
     status_if.rx_word_vld     = 1'b0;
     status_if.rx_word         = '0;
+    status_if.ts_lane_num     = '0;
+    status_if.ts_rate_id      = '0;
+    status_if.ts_link_num     = '0;
   end
 
   always @(posedge pclk) begin
@@ -356,10 +359,19 @@ module rivet_tb_top;
 
   // Directed Gen3 block test. Class code must not hierarchical-reference this module.
   always @(status_if.pipe_rate_force or status_if.pipe_rate_value) begin
-    if (status_if.pipe_rate_force === 1'b1)
+    if (status_if.pipe_rate_force === 1'b1) begin
       force dut.u_mac.u_pipe_adapter.rate_i = status_if.pipe_rate_value;
-    else
+      force dut.u_mac.u_os_tx.rate_i        = status_if.pipe_rate_value;
+      force dut.u_mac.u_os_rx.rate_i        = status_if.pipe_rate_value;
+      force dut.u_mac.u_scrambler.rate_i    = status_if.pipe_rate_value;
+      force dut.u_mac.u_descrambler.rate_i  = status_if.pipe_rate_value;
+    end else begin
       release dut.u_mac.u_pipe_adapter.rate_i;
+      release dut.u_mac.u_os_tx.rate_i;
+      release dut.u_mac.u_os_rx.rate_i;
+      release dut.u_mac.u_scrambler.rate_i;
+      release dut.u_mac.u_descrambler.rate_i;
+    end
   end
 
   initial begin
@@ -380,6 +392,9 @@ module rivet_tb_top;
       always @(posedge pclk) begin
         status_if.rx_word_vld <= dut.u_mac.sym_rx_valid_raw[0];
         status_if.rx_word     <= dut.u_mac.sym_rx_data_raw[31:0];
+        status_if.ts_lane_num <= dut.u_mac.rx_lane_num[31:0];
+        status_if.ts_rate_id  <= dut.u_mac.rx_rate_id;
+        status_if.ts_link_num <= dut.u_mac.rx_link_num;
       end
     end
   endgenerate

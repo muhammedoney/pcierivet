@@ -39,4 +39,8 @@ interface rivet_link_status_if (
   // Accepted Gen3 block word, lane 0. Valid low means the byte stream held.
   logic        rx_word_vld;
   logic [31:0] rx_word;
+  // Captured Gen3 TS fields (lane 0 in [7:0]). Scoreboard reads these.
+  logic [31:0] ts_lane_num;
+  logic [7:0]  ts_rate_id;
+  logic [7:0]  ts_link_num;
 endinterface : rivet_link_status_if

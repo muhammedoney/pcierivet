@@ -19,10 +19,13 @@ module rivet_mac_os_rx #(
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
+  input  logic [2:0] rate_i = rivet_pkg::RIVET_PIPE_RATE_GEN2,
 
   input  logic [PIPE_DATA_WIDTH*LANES-1:0] sym_data_i,
   input  logic [2*LANES-1:0]               sym_datak_i,
   input  logic [LANES-1:0]                 sym_valid_i,
+  input  logic [LANES-1:0]                 os_block_i = '0,
+  input  logic [LANES-1:0]                 block_start_i = '0,
   input  logic [3*LANES-1:0]               rxstatus_i,
 
   input  logic [LANES-1:0]                 lane_en_i,
@@ -93,6 +96,38 @@ module rivet_mac_os_rx #(
 
   // Symbol window per lane: {valid, is_k, symbol}; index 0 is the newest symbol.
   logic [9:0] win_q [LANES][WIN];
+  // First 12 bytes of a Gen3 ordered-set block. The last word is parsed live.
+  logic [7:0] blk_q [LANES][12];
+  logic [4:0] blk_n_q [LANES];
+
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      for (int unsigned l = 0; l < LANES; l++) begin
+        blk_n_q[l] <= '0;
+        for (int unsigned j = 0; j < 12; j++) blk_q[l][j] <= '0;
+      end
+    end else if (rate_i != RIVET_PIPE_RATE_GEN3) begin
+      for (int unsigned l = 0; l < LANES; l++) blk_n_q[l] <= '0;
+    end else begin
+      for (int unsigned l = 0; l < LANES; l++) begin
+        if (sym_valid_i[l] && os_block_i[l] && block_start_i[l]) begin
+          for (int unsigned s = 0; s < 4; s++) begin
+            if (s < SYMS)
+              blk_q[l][s] <= sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+          end
+          blk_n_q[l] <= 5'd4;
+        end else if (sym_valid_i[l] && os_block_i[l] && (blk_n_q[l] < 5'd12)) begin
+          for (int unsigned s = 0; s < 4; s++) begin
+            if ((s < SYMS) && ((blk_n_q[l] + 5'(s)) < 5'd12))
+              blk_q[l][blk_n_q[l] + s] <= sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+          end
+          blk_n_q[l] <= blk_n_q[l] + 5'(SYMS);
+        end else if (sym_valid_i[l] && os_block_i[l] && (blk_n_q[l] == 5'd12)) begin
+          blk_n_q[l] <= '0;
+        end
+      end
+    end
+  end
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -148,6 +183,29 @@ module rivet_mac_os_rx #(
       cap_rate_id[l]  = '0;
       cap_train[l]    = '0;
 
+      if ((rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_i[l] && os_block_i[l] &&
+          !block_start_i[l] && (blk_n_q[l] == 5'd12) &&
+          ((blk_q[l][0] == RIVET_SYM_TS1_BLK) || (blk_q[l][0] == RIVET_SYM_TS2_BLK))) begin
+        hit_any_ts[l]   = 1'b1;
+        cap_link_num[l] = blk_q[l][1];
+        cap_lane_num[l] = blk_q[l][2];
+        cap_n_fts[l]    = blk_q[l][3];
+        cap_rate_id[l]  = blk_q[l][4];
+        cap_train[l]    = blk_q[l][5];
+        if (blk_q[l][0] == RIVET_SYM_TS1_BLK) begin
+          if ((blk_q[l][1] == RIVET_SYM_PAD) && (blk_q[l][2] == RIVET_SYM_PAD))
+            hit_ts1_pad[l] = 1'b1;
+          else if ((blk_q[l][1] != RIVET_SYM_PAD) && (blk_q[l][2] == RIVET_SYM_PAD))
+            hit_ts1_link[l] = 1'b1;
+          else if ((blk_q[l][1] != RIVET_SYM_PAD) && (blk_q[l][2] != RIVET_SYM_PAD))
+            hit_ts1_lane[l] = 1'b1;
+        end else if ((blk_q[l][1] == RIVET_SYM_PAD) && (blk_q[l][2] == RIVET_SYM_PAD)) begin
+          hit_ts2_pad[l] = 1'b1;
+        end else if ((blk_q[l][1] != RIVET_SYM_PAD) && (blk_q[l][2] != RIVET_SYM_PAD)) begin
+          hit_ts2_cfg[l] = 1'b1;
+        end
+      end
+
       // Idle / K activity on the newest symbols of this lane.
       for (int unsigned s = 0; s < SYMS; s++) begin
         if (sym_valid_i[l]) begin
@@ -194,7 +252,7 @@ module rivet_mac_os_rx #(
           end
         end
 
-        if (all_valid && com_ok) begin
+        if ((rate_i != RIVET_PIPE_RATE_GEN3) && all_valid && com_ok) begin
           is_ts1 = id_ts1 || id_ts1_inv;
           is_ts2 = id_ts2 || id_ts2_inv;
 

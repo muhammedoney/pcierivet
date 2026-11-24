@@ -28,6 +28,7 @@ class rivet_scoreboard extends uvm_scoreboard;
   bit tlp_require_cc;
   bit tlp_require_rc;
   bit gen3_block_mode;
+  bit gen3_ts_mode;
   bit [1:0] blk_hdrs[8];
   int unsigned blk_hdr_n;
   int unsigned dllp_dut_fc, dllp_peer_fc, dllp_dut_init1, dllp_dut_init2;
@@ -60,6 +61,7 @@ class rivet_scoreboard extends uvm_scoreboard;
     void'(uvm_config_db#(bit)::get(this, "", "tlp_require_cc", tlp_require_cc));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_require_rc", tlp_require_rc));
     void'(uvm_config_db#(bit)::get(this, "", "gen3_block_mode", gen3_block_mode));
+    void'(uvm_config_db#(bit)::get(this, "", "gen3_ts_mode", gen3_ts_mode));
     pipe_imp = new("pipe_imp", this);
     axi_imp  = new("axi_imp", this);
     cfg_imp  = new("cfg_imp", this);
@@ -69,7 +71,7 @@ class rivet_scoreboard extends uvm_scoreboard;
 
   function void write_pipe(rivet_pipe_item t);
     pipe_sample_count++;
-    if (gen3_block_mode) begin
+    if (gen3_block_mode || gen3_ts_mode) begin
       pipe_checked = 1;
       if (t.txstart_block && (blk_hdr_n < 8)) begin
         blk_hdrs[blk_hdr_n] = t.txsync_header;
@@ -102,7 +104,7 @@ class rivet_scoreboard extends uvm_scoreboard;
     accepted = t.tvalid && ((t.tready & 4'hF) != 4'h0);
 
     if (tlp_mode || cfg_mgmt_mode || dllp_fc_mode || ltssm_l0_mode ||
-        companion_mode || gen3_block_mode) begin
+        companion_mode || gen3_block_mode || gen3_ts_mode) begin
       axi_checked = 1;
       if (accepted) begin
         axi_xfer_count++;
@@ -239,7 +241,7 @@ class rivet_scoreboard extends uvm_scoreboard;
       return;
     end
 
-    if (ltssm_l0_mode || dllp_fc_mode || gen3_block_mode) begin
+    if (ltssm_l0_mode || dllp_fc_mode || gen3_block_mode || gen3_ts_mode) begin
       cfg_checked = 1;
       return;
     end
@@ -260,7 +262,7 @@ class rivet_scoreboard extends uvm_scoreboard;
     comp_sample_count++;
     if (comp_sample_count < 5) return;
     if (ltssm_l0_mode || cfg_mgmt_mode || tlp_mode || dllp_fc_mode ||
-        companion_mode || gen3_block_mode) begin
+        companion_mode || gen3_block_mode || gen3_ts_mode) begin
       comp_checked = 1;
       return;
     end
@@ -301,6 +303,24 @@ class rivet_scoreboard extends uvm_scoreboard;
 
   function void check_phase(uvm_phase phase);
     super.check_phase(phase);
+
+    if (gen3_ts_mode) begin
+      rivet_link_status_vif status_vif;
+      if (!uvm_config_db#(rivet_link_status_vif)::get(null, "uvm_test_top", "status_vif", status_vif))
+        `uvm_fatal(get_type_name(), "gen3_ts mode: status_vif not set")
+      if (status_vif.ts_link_num !== 8'h07)
+        `uvm_error(get_type_name(),
+          $sformatf("Gen3 link number %h, expected 07", status_vif.ts_link_num))
+      if (status_vif.ts_rate_id !== 8'h0E)
+        `uvm_error(get_type_name(),
+          $sformatf("Gen3 rate id %h, expected 0E", status_vif.ts_rate_id))
+      if (status_vif.ts_lane_num !== 32'h03020100)
+        `uvm_error(get_type_name(),
+          $sformatf("Gen3 lane numbers %h, expected 03020100", status_vif.ts_lane_num))
+      else if ((status_vif.ts_link_num === 8'h07) && (status_vif.ts_rate_id === 8'h0E))
+        `uvm_info(get_type_name(), "Gen3 TS lane numbers and rate id 0E", UVM_LOW)
+      return;
+    end
 
     if (gen3_block_mode) begin
       if ((blk_hdr_n < 2) || (blk_hdrs[0] !== 2'b10) || (blk_hdrs[1] !== 2'b01))

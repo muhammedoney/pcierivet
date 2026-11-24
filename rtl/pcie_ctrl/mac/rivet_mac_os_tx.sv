@@ -19,6 +19,7 @@ module rivet_mac_os_tx #(
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
+  input  logic [2:0] rate_i = rivet_pkg::RIVET_PIPE_RATE_GEN2,
 
   input  rivet_pkg::rivet_mac_os_type_e os_req_i,
   input  logic                          os_req_valid_i,
@@ -86,6 +87,27 @@ module rivet_mac_os_tx #(
                                            input logic [7:0]         lane_num);
     logic [8:0] sym;
     sym = {1'b0, 8'h00};
+    if (rate_i == RIVET_PIPE_RATE_GEN3) begin
+      case (os_type)
+        RIVET_MAC_OS_TS1, RIVET_MAC_OS_TS2: begin
+          case (idx)
+            4'd0:    sym = (os_type == RIVET_MAC_OS_TS1) ? {1'b0, RIVET_SYM_TS1_BLK}
+                                                         : {1'b0, RIVET_SYM_TS2_BLK};
+            4'd1:    sym = tx_link_pad_i ? {1'b0, RIVET_SYM_PAD} : {1'b0, tx_link_num_i};
+            4'd2:    sym = tx_lane_pad_i ? {1'b0, RIVET_SYM_PAD} : {1'b0, lane_num};
+            4'd3:    sym = {1'b0, tx_n_fts_i};
+            4'd4:    sym = {1'b0, tx_rate_id_i};
+            4'd5:    sym = {1'b0, tx_train_ctrl_i};
+            default: sym = {1'b0, 8'h00};
+          endcase
+        end
+        RIVET_MAC_OS_SKP:  sym = {1'b1, RIVET_SYM_SKP_BLK};
+        RIVET_MAC_OS_EIOS: sym = {1'b0, RIVET_SYM_EIOS_BLK};
+        RIVET_MAC_OS_FTS:  sym = {1'b0, RIVET_SYM_FTS};
+        default:           sym = {1'b0, 8'h00};
+      endcase
+      return sym;
+    end
     case (os_type)
       RIVET_MAC_OS_TS1, RIVET_MAC_OS_TS2: begin
         case (idx)
@@ -108,6 +130,11 @@ module rivet_mac_os_tx #(
   endfunction
 
   function automatic logic [4:0] os_length(input rivet_mac_os_type_e os_type);
+    if ((rate_i == RIVET_PIPE_RATE_GEN3) &&
+        ((os_type == RIVET_MAC_OS_TS1) || (os_type == RIVET_MAC_OS_TS2) ||
+         (os_type == RIVET_MAC_OS_SKP) || (os_type == RIVET_MAC_OS_EIOS) ||
+         (os_type == RIVET_MAC_OS_FTS)))
+      return 5'd16;
     case (os_type)
       RIVET_MAC_OS_TS1,
       RIVET_MAC_OS_TS2:  return 5'(RIVET_TS_LEN);
@@ -191,6 +218,7 @@ module rivet_mac_os_tx #(
   logic                   in_pkt_emit;
   logic [PTR_W-1:0]       stream_idx;
   logic [SKP_CNT_W-1:0]   skp_sym_q;
+  logic [1:0]             word_q;
 
   // Block RAM: a 4 KB frame does not belong in the old 32-deep LUTRAM.
   (* ram_style = "block" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
@@ -235,7 +263,9 @@ module rivet_mac_os_tx #(
   assign transmitting = os_req_valid_i && (os_req_i != RIVET_MAC_OS_NONE);
   // L0: SKP preempts Idle/DLLP/TLP at OS boundaries (never mid-packet / mid-OS).
   assign skp_due  = pkt_en_i && skp_due_q;
-  assign want_skp = PKT_OK && skp_due && at_boundary;
+  // Gen3 SKP is one 16-byte block and starts only on a block boundary.
+  assign want_skp = skp_due && at_boundary &&
+                    (PKT_OK || ((rate_i == RIVET_PIPE_RATE_GEN3) && (word_q == 2'd0)));
   assign cur = at_boundary
       ? (want_skp ? RIVET_MAC_OS_SKP
                   : (transmitting ? os_req_i : RIVET_MAC_OS_NONE))
@@ -493,8 +523,10 @@ module rivet_mac_os_tx #(
           if (lane_en_i[l]) begin
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
             sym_datak_d[SYMS*l + s]                  = sym_tmp[8];
-            if (!sym_tmp[8] &&
-                ((cur == RIVET_MAC_OS_TS1) || (cur == RIVET_MAC_OS_TS2)))
+            if ((!sym_tmp[8] &&
+                 ((cur == RIVET_MAC_OS_TS1) || (cur == RIVET_MAC_OS_TS2))) ||
+                ((rate_i == RIVET_PIPE_RATE_GEN3) &&
+                 (cur != RIVET_MAC_OS_NONE) && (cur != RIVET_MAC_OS_IDLE)))
               sym_os_d_d[SYMS*l + s] = 1'b1;
           end
         end
@@ -516,6 +548,7 @@ module rivet_mac_os_tx #(
       pkt_ptr_q     <= '0;
       skp_sym_q     <= '0;
       skp_due_q     <= 1'b0;
+      word_q        <= '0;
       emit_buf_q    <= '0;
       emit_cnt_q    <= '0;
       tlp_wr_slot_q <= '0;
@@ -565,6 +598,9 @@ module rivet_mac_os_tx #(
 
       // L0 Symbol-Time counter for SKP scheduling. Reset outside L0 and after
       // each completed SKP OS so the next interval starts cleanly.
+      if ((rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_d)
+        word_q <= word_q + 2'd1;
+
       if (!pkt_en_i || skp_finishing) begin
         skp_sym_q <= '0;
         skp_due_q <= 1'b0;

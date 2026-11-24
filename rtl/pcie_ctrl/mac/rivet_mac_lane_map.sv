@@ -23,9 +23,13 @@ module rivet_mac_lane_map #(
   input  logic [PIPE_DATA_WIDTH*LANES-1:0] rx_data_i,
   input  logic [2*LANES-1:0]               rx_datak_i,
   input  logic [LANES-1:0]                 rx_valid_i,
+  input  logic [LANES-1:0]                 rx_os_i = '0,
+  input  logic [LANES-1:0]                 rx_start_i = '0,
   output logic [PIPE_DATA_WIDTH*LANES-1:0] rx_data_o,
   output logic [2*LANES-1:0]               rx_datak_o,
-  output logic [LANES-1:0]                 rx_valid_o
+  output logic [LANES-1:0]                 rx_valid_o,
+  output logic [LANES-1:0]                 rx_os_o,
+  output logic [LANES-1:0]                 rx_start_o
 );
 
   localparam int unsigned SYMS = PIPE_DATA_WIDTH / 8;
@@ -98,6 +102,8 @@ module rivet_mac_lane_map #(
     rx_data_o  = '0;
     rx_datak_o = '0;
     rx_valid_o = '0;
+    rx_os_o    = '0;
+    rx_start_o = '0;
     for (int unsigned phys = 0; phys < LANES; phys++) begin
       for (int unsigned log = 0; log < LANES; log++) begin
         if (map_log[phys] == 5'(log)) begin
@@ -105,6 +111,8 @@ module rivet_mac_lane_map #(
               rx_data_i[PIPE_DATA_WIDTH*phys +: PIPE_DATA_WIDTH];
           rx_datak_o[SYMS*log +: SYMS] = rx_datak_i[SYMS*phys +: SYMS];
           rx_valid_o[log] = rx_valid_i[phys];
+          rx_os_o[log]    = rx_os_i[phys];
+          rx_start_o[log] = rx_start_i[phys];
         end
       end
     end

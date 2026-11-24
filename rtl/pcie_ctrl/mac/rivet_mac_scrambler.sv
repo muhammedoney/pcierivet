@@ -10,6 +10,7 @@ module rivet_mac_scrambler #(
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
+  input  logic [2:0] rate_i = rivet_pkg::RIVET_PIPE_RATE_GEN2,
 
   input  logic [PIPE_DATA_WIDTH*LANES-1:0] data_i,
   input  logic [2*LANES-1:0]               datak_i,
@@ -36,6 +37,8 @@ module rivet_mac_scrambler #(
 
   logic [15:0] lfsr_q [LANES];
   logic [15:0] lfsr_next [LANES];
+  logic [22:0] lfsr23_q [LANES];
+  logic [22:0] lfsr23_next [LANES];
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_scr;
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_q;
   logic [2*LANES-1:0]               datak_q;
@@ -45,7 +48,23 @@ module rivet_mac_scrambler #(
     data_scr = data_i;
     for (int unsigned l = 0; l < LANES; l++) begin
       lfsr_next[l] = lfsr_q[l];
-      if (valid_i && lane_en_i[l]) begin
+      lfsr23_next[l] = lfsr23_q[l];
+      if ((rate_i == RIVET_PIPE_RATE_GEN3) && valid_i && lane_en_i[l]) begin
+        for (int unsigned s = 0; s < SYMS; s++) begin
+          automatic logic [7:0]  din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+          automatic logic        is_k = datak_i[SYMS*l + s];
+          automatic logic        os_d = os_d_i[SYMS*l + s];
+          automatic logic [30:0] step;
+          if (is_k && (din == RIVET_SYM_SKP_BLK)) begin
+            // SKP does not advance the 23-bit LFSR.
+          end else begin
+            step = rivet_lfsr23_byte(lfsr23_next[l]);
+            lfsr23_next[l] = step[30:8];
+            if (!os_d)
+              data_scr[PIPE_DATA_WIDTH*l + 8*s +: 8] = din ^ step[7:0];
+          end
+        end
+      end else if (valid_i && lane_en_i[l]) begin
         for (int unsigned s = 0; s < SYMS; s++) begin
           automatic logic [7:0]  din  = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           automatic logic        is_k = datak_i[SYMS*l + s];
@@ -69,12 +88,18 @@ module rivet_mac_scrambler #(
       data_q  <= '0;
       datak_q <= '0;
       valid_q <= 1'b0;
-      for (int unsigned l = 0; l < LANES; l++) lfsr_q[l] <= RIVET_LFSR_SEED;
+      for (int unsigned l = 0; l < LANES; l++) begin
+        lfsr_q[l]   <= RIVET_LFSR_SEED;
+        lfsr23_q[l] <= RIVET_LFSR23_SEED;
+      end
     end else begin
       data_q  <= data_scr;
       datak_q <= datak_i;
       valid_q <= valid_i;
-      for (int unsigned l = 0; l < LANES; l++) lfsr_q[l] <= lfsr_next[l];
+      for (int unsigned l = 0; l < LANES; l++) begin
+        lfsr_q[l]   <= lfsr_next[l];
+        lfsr23_q[l] <= lfsr23_next[l];
+      end
     end
   end
 

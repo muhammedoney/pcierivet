@@ -95,6 +95,14 @@ module rivet_mac #(
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_rx_data_raw;
   logic [2*LANES-1:0]               sym_rx_datak_raw;
   logic [LANES-1:0]                 sym_rx_valid_raw;
+  logic [LANES-1:0]                 sym_rx_os_raw;
+  logic [LANES-1:0]                 sym_rx_start_raw;
+  logic [LANES-1:0]                 map_rx_os;
+  logic [LANES-1:0]                 map_rx_start;
+  logic [LANES-1:0]                 map_rx_os_q;
+  logic [LANES-1:0]                 map_rx_start_q;
+  logic [LANES-1:0]                 dscr_os;
+  logic [LANES-1:0]                 dscr_start;
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_rx_data;
   logic [2*LANES-1:0]               sym_rx_datak;
   logic [LANES-1:0]                 sym_rx_valid;
@@ -284,6 +292,7 @@ module rivet_mac #(
     .tx_lane_pad_i   (tx_lane_pad),
     .tx_n_fts_i      (tx_n_fts),
     .tx_rate_id_i    (tx_rate_id),
+    .rate_i          (rate),
     .tx_train_ctrl_i (tx_train_ctrl),
     .dll_tx_beat_i   (dll_tx_beat_i),
     .dll_tx_valid_i  (dll_tx_valid_i),
@@ -304,6 +313,7 @@ module rivet_mac #(
     .data_i    (sym_tx_data),
     .datak_i   (sym_tx_datak),
     .os_d_i    (sym_tx_os_d),
+    .rate_i    (rate),
     .valid_i   (sym_tx_valid),
     .lane_en_i (lane_en_d),
     .data_o    (scr_tx_data),
@@ -328,9 +338,13 @@ module rivet_mac #(
     .rx_data_i  (sym_rx_data_raw),
     .rx_datak_i (sym_rx_datak_raw),
     .rx_valid_i (sym_rx_valid_raw),
+    .rx_os_i    (sym_rx_os_raw),
+    .rx_start_i (sym_rx_start_raw),
     .rx_data_o  (map_rx_data),
     .rx_datak_o (map_rx_datak),
-    .rx_valid_o (map_rx_valid)
+    .rx_valid_o (map_rx_valid),
+    .rx_os_o    (map_rx_os),
+    .rx_start_o (map_rx_start)
   );
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
@@ -338,6 +352,8 @@ module rivet_mac #(
       map_rx_data_q  <= '0;
       map_rx_datak_q <= '0;
       map_rx_valid_q <= '0;
+      map_rx_os_q    <= '0;
+      map_rx_start_q <= '0;
       lane_en_d      <= {LANES{1'b1}};
       lane_en_d2     <= {LANES{1'b1}};
       lane_rev_d     <= 1'b0;
@@ -364,6 +380,8 @@ module rivet_mac #(
       map_rx_data_q  <= map_rx_data;
       map_rx_datak_q <= map_rx_datak;
       map_rx_valid_q <= map_rx_valid;
+      map_rx_os_q    <= map_rx_os;
+      map_rx_start_q <= map_rx_start;
       lane_en_d      <= lane_en;
       lane_en_d2     <= lane_en_d;
       lane_rev_d     <= lane_reversed;
@@ -397,11 +415,16 @@ module rivet_mac #(
     .rst_ni    (rst_ni),
     .data_i    (map_rx_data_q),
     .datak_i   (map_rx_datak_q),
-    .valid_i   (map_rx_valid_q),
-    .lane_en_i (lane_en_d),
-    .data_o    (sym_rx_data),
-    .datak_o   (sym_rx_datak),
-    .valid_o   (sym_rx_valid)
+    .rate_i         (rate),
+    .valid_i        (map_rx_valid_q),
+    .lane_en_i      (lane_en_d),
+    .os_block_i     (map_rx_os_q),
+    .block_start_i  (map_rx_start_q),
+    .data_o         (sym_rx_data),
+    .datak_o        (sym_rx_datak),
+    .valid_o        (sym_rx_valid),
+    .os_block_o     (dscr_os),
+    .block_start_o  (dscr_start)
   );
 
   rivet_mac_os_rx #(
@@ -412,7 +435,10 @@ module rivet_mac #(
     .rst_ni                (rst_ni),
     .sym_data_i            (sym_rx_data),
     .sym_datak_i           (sym_rx_datak),
+    .rate_i                (rate),
     .sym_valid_i           (sym_rx_valid),
+    .os_block_i            (dscr_os),
+    .block_start_i         (dscr_start),
     .rxstatus_i            (rxstatus_d2),
     .lane_en_i             (lane_en_d2),
     .capture_clr_i         (capture_clr),
@@ -465,6 +491,8 @@ module rivet_mac #(
     .sym_rx_data_o           (sym_rx_data_raw),
     .sym_rx_datak_o          (sym_rx_datak_raw),
     .sym_rx_valid_o          (sym_rx_valid_raw),
+    .sym_rx_os_o             (sym_rx_os_raw),
+    .sym_rx_start_o          (sym_rx_start_raw),
     .rxstatus_o              (rxstatus),
     .phystatus_o             (phystatus),
     .phystatus_rst_o         (phystatus_rst),

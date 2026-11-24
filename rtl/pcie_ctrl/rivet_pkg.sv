@@ -115,6 +115,12 @@ package rivet_pkg;
   // Supported rates are advertised even while the link trains at 2.5 GT/s.
   localparam logic [7:0] RIVET_TS_RATE_GEN1  = 8'h02;
   localparam logic [7:0] RIVET_TS_RATE_GEN2  = 8'h06;
+  // 128b/130b ordered-set identifiers. Byte 1/2/4 stay the Gen2 field positions.
+  localparam logic [7:0] RIVET_SYM_TS1_BLK   = 8'h1E;
+  localparam logic [7:0] RIVET_SYM_TS2_BLK   = 8'h2D;
+  localparam logic [7:0] RIVET_SYM_SKP_BLK   = 8'hAA;
+  localparam logic [7:0] RIVET_SYM_EIOS_BLK  = 8'h66;
+  localparam logic [7:0] RIVET_TS_RATE_GEN3  = 8'h0E;
   localparam int unsigned RIVET_TS_RATE_SPEED_CHANGE_BIT = 7;
 
   // TS Training Control (Symbol 5) bit positions.
@@ -653,6 +659,24 @@ package rivet_pkg;
             lfsr[10],
             lfsr[9],
             lfsr[8]};
+    return {lfsr, pad};
+  endfunction
+
+  // 128b/130b scrambler: x^23 + x^21 + x^16 + x^8 + x^5 + x^2 + 1.
+  // One byte, bit 0 first. The 2-bit sync header is not in this function.
+  localparam logic [22:0] RIVET_LFSR23_SEED = 23'h7FFFFF;
+
+  function automatic logic [30:0] rivet_lfsr23_byte(input logic [22:0] lfsr_in);
+    logic [22:0] lfsr;
+    logic [7:0]  pad;
+    logic        fb;
+    int unsigned i;
+    lfsr = lfsr_in;
+    for (i = 0; i < 8; i++) begin
+      pad[i] = lfsr[22];
+      fb = lfsr[22] ^ lfsr[20] ^ lfsr[15] ^ lfsr[7] ^ lfsr[4] ^ lfsr[1];
+      lfsr = {lfsr[21:0], fb};
+    end
     return {lfsr, pad};
   endfunction
 

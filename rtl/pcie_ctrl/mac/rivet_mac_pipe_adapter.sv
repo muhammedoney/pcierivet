@@ -29,6 +29,8 @@ module rivet_mac_pipe_adapter #(
   output logic [PIPE_DATA_WIDTH*LANES-1:0] sym_rx_data_o,
   output logic [2*LANES-1:0]               sym_rx_datak_o,
   output logic [LANES-1:0]                 sym_rx_valid_o,
+  output logic [LANES-1:0]                 sym_rx_os_o,
+  output logic [LANES-1:0]                 sym_rx_start_o,
   output logic [3*LANES-1:0]               rxstatus_o,
 
   // To LTSSM: PHY handshake and receiver detection
@@ -114,6 +116,8 @@ module rivet_mac_pipe_adapter #(
   logic [2*LANES-1:0]      rx_idx_q;
   logic [PIPE_DATA_WIDTH*LANES-1:0] rx_acc_q;
   logic [LANES-1:0]        rx_acc_v_q;
+  logic [LANES-1:0]        rx_os_q;
+  logic [LANES-1:0]        rx_start_q;
   logic [1:0]              hdr_mem [0:3];
   logic [1:0]              hdr_wr_q, hdr_rd_q;
   logic [2:0]              hdr_n_q;
@@ -169,6 +173,8 @@ module rivet_mac_pipe_adapter #(
       rx_idx_q           <= '0;
       rx_acc_q           <= '0;
       rx_acc_v_q         <= '0;
+      rx_os_q            <= '0;
+      rx_start_q         <= '0;
       hdr_wr_q           <= '0;
       hdr_rd_q           <= '0;
       hdr_n_q            <= '0;
@@ -228,6 +234,9 @@ module rivet_mac_pipe_adapter #(
           if (rx_take_d[l]) begin
             rx_acc_q[PIPE_DATA_WIDTH*l +: PIPE_DATA_WIDTH] <=
               pipe_rxdata_i[PIPE_DATA_WIDTH*l +: PIPE_DATA_WIDTH];
+            rx_start_q[l] <= (pipe_rxstart_block_i[2*l +: 2] == 2'b01);
+            if (pipe_rxstart_block_i[2*l +: 2] == 2'b01)
+              rx_os_q[l] <= (pipe_rxsync_header_i[2*l +: 2] == 2'b10);
             if (pipe_rxstart_block_i[2*l +: 2] == 2'b01) begin
               rx_in_q[l] <= 1'b1;
               rx_idx_q[2*l +: 2] <= 2'd1;
@@ -259,6 +268,8 @@ module rivet_mac_pipe_adapter #(
         rx_in_q    <= '0;
         rx_idx_q   <= '0;
         rx_acc_v_q <= '0;
+        rx_os_q    <= '0;
+        rx_start_q <= '0;
         tx_word_q  <= '0;
         tx_start_q <= 1'b0;
         tx_dv_q    <= 1'b0;
@@ -300,6 +311,8 @@ module rivet_mac_pipe_adapter #(
   assign sym_rx_data_o  = gen3_q ? rx_acc_q : rxdata_q;
   assign sym_rx_datak_o = gen3_q ? '0 : rxdatak_q;
   assign sym_rx_valid_o = gen3_q ? rx_acc_v_q : rxvalid_q;
+  assign sym_rx_os_o    = gen3_q ? rx_os_q : '0;
+  assign sym_rx_start_o = gen3_q ? rx_start_q : '0;
   assign rxstatus_o     = rxstatus_q;
 
   // Status toward the LTSSM

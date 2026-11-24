@@ -281,6 +281,48 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     vif.rxsync_header <= '0;
   endtask
 
+  // One 16-byte Gen3 TS1 block on every lane. Byte 1 is the link number,
+  // byte 2 is that lane's number, byte 4 is the rate identifier. Sync header
+  // is an ordered set. Gen2 tests must not call this.
+  task automatic drive_gen3_ts1(
+      input logic [7:0] link_num,
+      input logic [7:0] rate_id
+  );
+    int unsigned w, l, b;
+    int unsigned nwords;
+    logic [7:0]  sym;
+    logic [31:0] word;
+    localparam int unsigned PW = `RIVET_TB_PIPE_W;
+    nwords = 128 / PW;
+    for (w = 0; w < nwords; w++) begin
+      @(posedge vif.pclk);
+      for (l = 0; l < lanes; l++) begin
+        word = '0;
+        for (b = 0; b < (PW/8); b++) begin
+          unique case (w*(PW/8) + b)
+            0: sym = 8'h1E;
+            1: sym = link_num;
+            2: sym = 8'(l);
+            4: sym = rate_id;
+            default: sym = 8'h00;
+          endcase
+          word[8*b +: 8] = sym;
+        end
+        vif.rxdata[l*PW +: PW]      <= word[PW-1:0];
+        vif.rxdatak[l*2 +: 2]       <= 2'b00;
+        vif.rxdata_valid[l]         <= 1'b1;
+        vif.rxstart_block[l*2 +: 2] <= (w == 0) ? 2'b01 : 2'b00;
+        vif.rxsync_header[l*2 +: 2] <= (w == 0) ? 2'b10 : 2'b00;
+        vif.rxelecidle[l]           <= 1'b1;
+        vif.rxvalid[l]              <= 1'b0;
+      end
+    end
+    @(posedge vif.pclk);
+    vif.rxdata_valid  <= '0;
+    vif.rxstart_block <= '0;
+    vif.rxsync_header <= '0;
+  endtask
+
   task run_phase(uvm_phase phase);
     peer_phase_e phase_q;
     logic [4:0]  peer_ptr;
