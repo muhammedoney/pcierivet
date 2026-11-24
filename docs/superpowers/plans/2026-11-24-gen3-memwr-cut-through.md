@@ -95,13 +95,13 @@ feat(dll): cut through Gen3 posted writes
 - Consumes: the cut-through TX from Task 1.
 - Produces: printed `PERF tag=rq64_dw*` lines. Chart Y stays `672 - mb_s * 0.15`.
 
-- [ ] **Step 1: Run the sweep**
+- [x] **Step 1: Run the sweep**
 
 The Questa library is Gen3 today (`build/questa_regr/work_recheck`). Do not delete it before this run. Do not run a second `vsim` or `wsl.exe` beside it.
 
 Run: `powershell -NoProfile -File scripts/sim_questa.ps1 perf_rq_memwr64_gen3_x4 4 0`
 
-- [ ] **Step 2: Check the gates**
+- [x] **Step 2: Check the gates**
 
 Expected in the log:
 
@@ -114,11 +114,11 @@ Expected in the log:
 
 A 64-byte point still under 2600 means the framer is still waiting for `tlast`. Do not add packer banks to hide it.
 
-- [ ] **Step 3: Update the chart from the printed lines**
+- [x] **Step 3: Update the chart from the printed lines**
 
 Replace only the Gen3 x4 MemWr64 series in `docs/perf-rq-sweep.svg` and the same sentence in `README.md`. Leave Gen2 and the Gen3 read series alone.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```text
 test(perf): plot the cut-through Gen3 MemWr64 sweep
