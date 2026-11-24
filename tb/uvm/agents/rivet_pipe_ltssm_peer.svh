@@ -211,6 +211,56 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     end
   endfunction
 
+  // Gen3 frame: STP, 2-byte little-endian DLL length, DLL bytes. A payload
+  // byte equal to STP, SDP, or END is data. st: 0 hunt, 1 len lo, 2 len hi,
+  // 3 TLP body, 4 DLLP body.
+  function automatic void dut_note_g3(
+      input logic [7:0] sym,
+      inout int unsigned st,
+      inout int unsigned n,
+      inout int unsigned left,
+      inout logic [7:0]  b0,
+      inout logic [7:0]  b1,
+      inout bit          pending,
+      inout logic [11:0] seq,
+      inout int unsigned tlp_ends
+  );
+    if (st == 0) begin
+      if (sym == rivet_pkg::RIVET_SYM_STP) begin
+        st   = 1;
+        n    = 0;
+        left = 0;
+      end else if (sym == rivet_pkg::RIVET_SYM_SDP) begin
+        st = 4;
+        n  = 0;
+      end
+    end else if (st == 1) begin
+      left = sym;
+      st   = 2;
+    end else if (st == 2) begin
+      left = (int'(sym) << 8) | (left & 8'hFF);
+      n    = 0;
+      st   = (left == 0) ? 0 : 3;
+    end else if (st == 3) begin
+      if (n == 0) b0 = sym;
+      else if (n == 1) b1 = sym;
+      else if (n == 8) seen_tag = sym;
+      n++;
+      if (n >= left) begin
+        seq     = {b0[3:0], b1};
+        pending = 1'b1;
+        tlp_ends++;
+        req_tag_q.push_back(seen_tag);
+        st = 0;
+      end
+    end else if (sym == rivet_pkg::RIVET_SYM_END) begin
+      st = 0;
+    end else begin
+      n++;
+      if (n >= 6) st = 0;
+    end
+  endfunction
+
 
   function automatic rivet_pkg::rivet_dllp_fc_kind_e fc_kind_at(input int unsigned idx);
     case (idx)
@@ -374,6 +424,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     logic [15:0] dut_lfsr[];
     int unsigned parse_st;
     int unsigned parse_n;
+    int unsigned g3_left;
     logic [7:0]  seq_b0, seq_b1;
     int unsigned ack_n;
     bit          tlp_memrd_done;
@@ -458,7 +509,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       g3_lfsr[l]    = 23'h7FFFFF;
       g3_rx_lfsr[l] = 23'h7FFFFF;
     end
-    parse_st = 0; parse_n = 0; seq_b0 = '0; seq_b1 = '0;
+    parse_st = 0; parse_n = 0; g3_left = 0; seq_b0 = '0; seq_b1 = '0;
     ack_pending = 1'b0; ack_inflight = 1'b0; ack_seq = '0; ack_n = 0;
 
     vif.rxdata        <= '0;
@@ -621,17 +672,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
               for (l = 0; l < peer_lanes; l++) begin
                 automatic logic [30:0] step;
                 automatic logic [7:0]  raw, sym;
-                automatic logic        is_k;
                 raw  = vif.txdata[l*PW + 8*s +: 8];
                 step = rivet_pkg::rivet_lfsr23_byte(g3_rx_lfsr[l]);
                 g3_rx_lfsr[l] = step[30:8];
                 sym  = data_hdr ? (raw ^ step[7:0]) : raw;
-                is_k = data_hdr && ((sym == rivet_pkg::RIVET_SYM_STP) ||
-                                    (sym == rivet_pkg::RIVET_SYM_SDP) ||
-                                    (sym == rivet_pkg::RIVET_SYM_END));
                 if ((phase_q == P_IDLE) && data_hdr)
-                  dut_note_sym(sym, is_k, parse_st, parse_n, seq_b0, seq_b1,
-                               ack_pending, ack_seq, tlp_ends);
+                  dut_note_g3(sym, parse_st, parse_n, g3_left, seq_b0, seq_b1,
+                              ack_pending, ack_seq, tlp_ends);
               end
             end
           end
@@ -656,8 +703,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       if (cpld_auto)
         cpld_owed += tlp_ends - ends_before;
       end
-      if (phase_q != P_IDLE)
+      if (phase_q != P_IDLE) begin
         parse_st = 0;
+        g3_left  = 0;
+      end
 
       // FC DLLP inject in L0: stripe SDP+6+END across peer_lanes (enabled width).
       // A performance RC answers TLPs before it spends the link on UpdateFC,
@@ -763,16 +812,15 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       vif.rxdatak <= '0;
       if (peer_active) begin
         if (tlp_sending) begin
+          automatic int unsigned ns;
+          // Match the DUT gearbox: two symbol times until it accepts 16 bytes.
+          ns = 2;
           for (l = 0; l < peer_lanes; l++) begin
             automatic int unsigned phys;
             automatic logic [15:0] lfsr;
             phys = peer_lane_reverse ? (peer_lanes - 1 - l) : l;
             lfsr = peer_lfsr[phys];
             begin
-              automatic int unsigned ns;
-              // Two symbol times carry the frame. The upper half of a Gen3
-              // word is logical idle so the 8-symbol gearbox stays in lockstep.
-              ns = 2;
               for (s = 0; s < ns; s++) begin
                 automatic int unsigned stream_idx = tlp_sym + s * peer_lanes + l;
                 automatic int unsigned framed_len;
@@ -911,7 +959,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           peer_lfsr[l] = 16'hFFFF;
           dut_lfsr[l]  = 16'hFFFF;
         end
-        parse_st = 0; ack_pending = 1'b0;
+        parse_st = 0; g3_left = 0; ack_pending = 1'b0;
         com_hold = 0;
       end else begin
         case (phase_q)

@@ -62,7 +62,7 @@
 - Consumes: the Task 2 frame.
 - Produces: the same 8-byte DLL beat stream the gearbox already accepts. Length bytes are stripped. The byte after the body is a synthetic END for that gearbox only.
 
-- [ ] **Step 1:** Walk symbol times 0..3 while `rate == GEN3`.
+- [ ] **Step 1:** Walk symbol times 0..3 while `rate == GEN3`. The RX gearbox still captures 8 bytes per cycle, so this step also has to write two 8-byte RAM words when a cycle carries 16 frame bytes. Until then, times 2 and 3 stay idle on RX and on the peer transmit path. The peer observer already counts a Gen3 TLP by its length prefix.
 - [ ] **Step 2:** Delete `work`, run `smoke_gen3_memwr_x4` and `smoke_gen3_cpld_x4`. Expected: `UVM_ERROR : 0` and `UVM_FATAL : 0` in both logs.
 - [ ] **Step 3:** Commit `feat(mac): parse a Gen3 TLP across four symbol times`.
 

@@ -569,8 +569,9 @@ module rivet_mac_os_rx #(
           automatic logic [7:0]  b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           automatic logic        k = (s < 2) ? sym_datak_i[2*l + s] : 1'b0;
           automatic logic        tok = k || (gen3_pkt && !os_block_i[l]);
-          // Symbol times 2 and 3 of a Gen3 word are logical idle, not frame
-          // bytes. The frame keeps the Gen2 8-symbol stripe in times 0 and 1.
+          // The gearbox captures 8 bytes per cycle, so a Gen3 frame still
+          // uses symbol times 0 and 1. Times 2 and 3 stay idle until that
+          // capture can take a full 16-byte word.
           automatic logic        e = ok && lane_en_i[l] && !(gen3_pkt && (s >= 2));
           en_t[p]   = e;
           sdp_t[p]  = e && tok && (b == RIVET_SYM_SDP);
@@ -592,10 +593,13 @@ module rivet_mac_os_rx #(
               left     = {8'd0, data_t[p]};
               en_t[p]  = 1'b0;
               stp_t[p] = 1'b0;
+              sdp_t[p] = 1'b0;
               st       = 2'd2;
             end else if (st == 2'd2) begin
               left     = {data_t[p], left[7:0]};
               en_t[p]  = 1'b0;
+              stp_t[p] = 1'b0;
+              sdp_t[p] = 1'b0;
               st       = 2'd3;
             end else if (left == 16'd0) begin
               end_t[p] = 1'b1;
@@ -606,6 +610,8 @@ module rivet_mac_os_rx #(
             end else begin
               end_t[p] = 1'b0;
               edb_t[p] = 1'b0;
+              stp_t[p] = 1'b0;
+              sdp_t[p] = 1'b0;
               left     = left - 16'd1;
             end
           end
