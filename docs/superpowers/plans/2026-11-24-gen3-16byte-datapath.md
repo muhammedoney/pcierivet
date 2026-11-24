@@ -92,15 +92,15 @@
 - Consumes: Gen3 AXI 128-bit beats, two dwords of keep.
 - Produces: 16-byte DLL beats (`keep == 16'hFFFF`) at Gen3. Gen2 still produces 8-byte beats.
 
-- [ ] **Step 1:** Add a data-width parameter. Gen2 elaborations pass 64. Gen3 testbench passes 128.
-- [ ] **Step 2:** A Gen3 posted write streams 16 payload bytes per accepted user beat after the header beat.
-- [ ] **Step 3:** Delete `work`. Run the three perf tests above. Gen3 logs must show `UVM_ERROR : 0` and `UVM_FATAL : 0`. The 4096-byte Gen3 MemWr64 `mb_s` must be greater than 1979.700.
-- [ ] **Step 4:** Commit `feat(tl): stream 16 bytes per cycle at Gen3`.
+- [x] **Step 1:** Add a data-width parameter. Gen2 elaborations pass 64. Gen3 testbench passes 128.
+- [x] **Step 2:** A Gen3 posted write streams 16 payload bytes per accepted user beat after the header beat.
+- [x] **Step 3:** Delete `work`. Run the three perf tests above. Gen3 logs must show `UVM_ERROR : 0` and `UVM_FATAL : 0`. The 4096-byte Gen3 MemWr64 `mb_s` must be greater than 1979.700.
+- [x] **Step 4:** Commit `feat(tl): stream 16 bytes per cycle at Gen3`.
 
 ### Task 6: Plot the new points
 
 **Files:**
 - Modify: `docs/perf-rq-sweep.svg`, `README.md`
 
-- [ ] **Step 1:** Copy `mb_s` only from the new PERF lines. Add Gen3 x4 MemWr64 and Gen3 x4 read. Keep the 500 MB/s grid and the 4000 MB/s axis.
-- [ ] **Step 2:** Commit `test(perf): plot the 16-byte Gen3 sweeps`.
+- [x] **Step 1:** Copy `mb_s` only from the new PERF lines. Add Gen3 x4 MemWr64 and Gen3 x4 read. Keep the 500 MB/s grid and the 4000 MB/s axis.
+- [x] **Step 2:** Commit `test(perf): plot the 16-byte Gen3 sweeps`.
