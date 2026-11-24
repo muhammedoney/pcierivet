@@ -63,23 +63,23 @@ Protocol ceiling for MemWr64, overhead = 16 header + 2 sequence + 4 LCRC + 3 (ST
 - Consumes: TL beats already produced by `rivet_tl_rq_wide` (`tx_tdata_o[127:0]`, `tx_tkeep_o[15:0]`, `tx_tlast_o`).
 - Produces: `tl_ready_o` high on every beat the framer can take, including beats before `tlast`. `m_valid_o` must not mean "whole TLP parked".
 
-- [ ] **Step 1: Accept a beat before the TLP is complete**
+- [x] **Step 1: Accept a beat before the TLP is complete**
 
 In `rivet_dll_tl_pack.sv`, stop gating the producer on a bank that becomes full only at `tlast`. A 16-byte beat may enter the framer on the cycle it is accepted. Keep the two word banks only as the replay image, written beside the live beat. `s_tready_o` goes low only when the framer's 16-byte hold is full, not when a second whole TLP is parked.
 
-- [ ] **Step 2: Start framing on the header beat**
+- [x] **Step 2: Start framing on the header beat**
 
 In `rivet_dll_tlp_tx16.sv`, replace the `tl_seen_q` plus `ST_PREP` startup. On the first valid beat, merge the 2 sequence bytes with that beat and present a MAC beat on the next cycle. Later payload beats refill the accumulator while a MAC beat leaves. The existing `crc_merge` path still appends LCRC onto a tail of 1..12 bytes so the last beat is not a 4-byte fragment.
 
 `tl_ready_o` must not include `cap_last_q`. Replay capture may copy the emitted bytes, and a full capture slot may pause the pipe, but capture of an earlier beat must not pause the current one.
 
-- [ ] **Step 3: Lint**
+- [x] **Step 3: Lint**
 
 Run: `powershell -NoProfile -File scripts/lint.ps1 -Gen 3`
 
 Expected: `PASS: Verilator lint (controller)` and `PASS: Verilator lint (Gen3 x4 width 32)`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```text
 feat(dll): cut through Gen3 posted writes

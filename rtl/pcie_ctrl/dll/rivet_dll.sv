@@ -141,7 +141,7 @@ module rivet_dll #(
   logic [11:0]            last_good;
   logic                   lcrc_err;
 
-  logic        whole_tx_v, whole_tx_r;
+  logic        whole_tx_v, whole_tx_r, whole_tx_last;
   logic [15:0] whole_tx_len;
 
   // Skid wires for TL <-> DLL streams
@@ -331,7 +331,8 @@ module rivet_dll #(
 
   rivet_dll_tl_pack #(
     .DATA_W     (TX_DATA_W),
-    .SLOT_BYTES (REPLAY_SLOT_BYTES)
+    .SLOT_BYTES (REPLAY_SLOT_BYTES),
+    .STREAM     (TX_DATA_W == 128)
   ) u_tl_pack (
     .clk_i      (pclk_i),
     .rst_ni     (rst_ni),
@@ -343,6 +344,7 @@ module rivet_dll #(
     .m_valid_o  (whole_tx_v),
     .m_ready_i  (whole_tx_r),
     .m_len_o    (whole_tx_len),
+    .m_last_o   (whole_tx_last),
     .rd_idx_i   (tx_word_idx),
     .rd_data_o  (tx_word)
   );
@@ -510,6 +512,7 @@ module rivet_dll #(
         .tl_valid_i      (whole_tx_v),
         .tl_ready_o      (whole_tx_r),
         .tl_len_i        (whole_tx_len),
+        .tl_last_i       (whole_tx_last),
         .tl_word_i       (tx_word),
         .tl_word_idx_o   (tx_word_idx),
         .replay_valid_i  (rep_v),
