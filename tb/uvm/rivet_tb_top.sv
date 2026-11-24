@@ -22,12 +22,17 @@ module rivet_tb_top;
 `ifndef RIVET_TB_PIPE_W
   `define RIVET_TB_PIPE_W 16
 `endif
+`ifdef RIVET_RQ_WIDE
+  `define RIVET_RQ_INST dut.g_rq128.u_tl_rq
+`else
+  `define RIVET_RQ_INST dut.g_rq64.u_tl_rq
+`endif
 
   localparam int unsigned LANES  = `RIVET_TB_LANES;
   localparam int unsigned MODE   = `RIVET_TB_MODE;
   localparam int unsigned GEN    = `RIVET_TB_GEN;
   localparam int unsigned PIPE_W = `RIVET_TB_PIPE_W;
-  localparam int unsigned AXI_W = 64;
+  localparam int unsigned AXI_W = (GEN >= 3) ? 128 : 64;
   localparam int unsigned KEEP_W = AXI_W / 32;
 
   logic user_clk;
@@ -244,17 +249,17 @@ module rivet_tb_top;
   always @(posedge pclk) begin
     if (!status_if.rq_watch_arm)
       status_if.rq_watch_hit <= 1'b0;
-    else if (dut.u_tl_rq.tx_tvalid_o &&
-             (dut.u_tl_rq.tx_hdr0_o == status_if.rq_watch_b0))
+    else if (`RIVET_RQ_INST.tx_tvalid_o &&
+             (`RIVET_RQ_INST.tx_hdr0_o == status_if.rq_watch_b0))
       status_if.rq_watch_hit <= 1'b1;
   end
 
   initial begin
     forever begin
       wait (status_if.rq_watch_arm === 1'b1);
-      force dut.u_tl_rq.tx_tready_i = 1'b1;
+      force `RIVET_RQ_INST.tx_tready_i = 1'b1;
       wait (status_if.rq_watch_arm === 1'b0);
-      release dut.u_tl_rq.tx_tready_i;
+      release `RIVET_RQ_INST.tx_tready_i;
     end
   end
 
@@ -304,9 +309,9 @@ module rivet_tb_top;
       @(posedge user_clk);
       force dut.s_axis_rq_tvalid = 1'b1;
       force dut.s_axis_rq_tlast  = 1'b0;
-      force dut.s_axis_rq_tkeep  = 2'b11;
+      force dut.s_axis_rq_tkeep  = KEEP_W'(2'b11);
       force dut.s_axis_rq_tuser  = 85'hF;
-      force dut.s_axis_rq_tdata  = 64'h0;
+      force dut.s_axis_rq_tdata  = AXI_W'(64'h0);
       guard = 0;
       while ((dut.s_axis_rq_tready == 4'h0) && (guard < 2000)) begin
         @(posedge user_clk);
@@ -316,7 +321,7 @@ module rivet_tb_top;
         pass = 1'b0;
       @(posedge user_clk);
       force dut.s_axis_rq_tlast = 1'b1;
-      force dut.s_axis_rq_tdata = 64'h0000_0000_0000_5801;
+      force dut.s_axis_rq_tdata = AXI_W'(64'h0000_0000_0000_5801);
       held = 0;
       repeat (50) begin
         @(posedge user_clk);
@@ -422,6 +427,7 @@ module rivet_tb_top;
     uvm_config_db#(rivet_companion_vif)::set(null, "uvm_test_top", "comp_vif", comp_if);
     uvm_config_db#(virtual rivet_interrupt_if)::set(null, "uvm_test_top", "intr_vif", intr_if);
     uvm_config_db#(int unsigned)::set(null, "*", "lanes", LANES);
+    uvm_config_db#(int unsigned)::set(null, "*", "axi_data_width", AXI_W);
     run_test();
   end
 endmodule : rivet_tb_top

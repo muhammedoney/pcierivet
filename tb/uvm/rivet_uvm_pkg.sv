@@ -12,10 +12,15 @@ package rivet_uvm_pkg;
 `ifndef RIVET_TB_PIPE_W
   `define RIVET_TB_PIPE_W 16
 `endif
+`ifndef RIVET_TB_GEN
+  `define RIVET_TB_GEN 2
+`endif
+  localparam int unsigned RIVET_UVM_AXI_W = (`RIVET_TB_GEN >= 3) ? 128 : 64;
   typedef virtual rivet_pipe_if #(.LANES(`RIVET_TB_LANES), .PIPE_DATA_WIDTH(`RIVET_TB_PIPE_W)) rivet_pipe_vif;
   typedef virtual rivet_link_status_if rivet_link_status_vif;
   typedef virtual rivet_axi_st_if #(
-    .DATA_WIDTH(64), .KEEP_WIDTH(2), .USER_WIDTH(88), .READY_WIDTH(4)
+    .DATA_WIDTH(RIVET_UVM_AXI_W), .KEEP_WIDTH(RIVET_UVM_AXI_W/32),
+    .USER_WIDTH(88), .READY_WIDTH(4)
   ) rivet_axi_st_vif;
   typedef virtual rivet_cfg_mgmt_if rivet_cfg_mgmt_vif;
   typedef virtual rivet_companion_if rivet_companion_vif;

@@ -230,14 +230,22 @@ module rivet_pcie_ctrl #(
   logic [7:0]  cr_cons_ph_a, cr_cons_nph_a, cr_cons_cplh_a;
   logic [11:0] cr_cons_pd_a, cr_cons_npd_a, cr_cons_cpld_a;
 
-  logic [63:0] tl_rx_tdata, tl_tx_tdata;
-  logic [7:0]  tl_rx_tkeep, tl_tx_tkeep;
+  // Gen3 user port is 128 bits and the DLL TX beat matches it. Gen2 stays 64.
+  localparam int unsigned TL_W = (AXI_DATA_WIDTH == 128) ? 128 : 64;
+  localparam int unsigned TL_K = TL_W / 8;
+
+  logic [63:0] tl_rx_tdata;
+  logic [7:0]  tl_rx_tkeep;
+  logic [TL_W-1:0] tl_tx_tdata;
+  logic [TL_K-1:0] tl_tx_tkeep;
   logic        tl_rx_tlast, tl_tx_tlast;
   logic        tl_rx_tvalid, tl_tx_tvalid;
   logic        tl_rx_tready, tl_tx_tready;
 
-  logic [63:0] cfg_rx_d, cq_rx_d, rc_rx_d, cfg_tx_d, cc_tx_d, rq_tx_d, msi_tx_d;
-  logic [7:0]  cfg_rx_k, cq_rx_k, rc_rx_k, cfg_tx_k, cc_tx_k, rq_tx_k, msi_tx_k;
+  logic [63:0] cfg_rx_d, cq_rx_d, rc_rx_d, cfg_tx_d, cc_tx_d, msi_tx_d;
+  logic [7:0]  cfg_rx_k, cq_rx_k, rc_rx_k, cfg_tx_k, cc_tx_k, msi_tx_k;
+  logic [TL_W-1:0] rq_tx_d;
+  logic [TL_K-1:0] rq_tx_k;
   logic        cfg_rx_l, cq_rx_l, rc_rx_l, cfg_tx_l, cc_tx_l, rq_tx_l, msi_tx_l;
   logic        cfg_rx_v, cq_rx_v, rc_rx_v, cfg_tx_v, cc_tx_v, rq_tx_v, msi_tx_v;
   logic        cfg_rx_r, cq_rx_r, rc_rx_r, cfg_tx_r, cc_tx_r, rq_tx_r, msi_tx_r;
@@ -550,10 +558,17 @@ module rivet_pcie_ctrl #(
            (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
   endfunction
 
-  // Config request types are only legal on the root port. The type is on
-  // descriptor beat 1, so beat 0 is still accepted and beat 1 holds tready.
-  assign rq_user_cfg_stall = (MODE != RIVET_MODE_RC) && (rq_ph_q == 2'd1) &&
-                             s_axis_rq_tvalid && rq_is_cfg(s_axis_rq_tdata[14:11]);
+  // Config request types are only legal on the root port. On the 64-bit
+  // port the type is descriptor beat 1. On the 128-bit port both halves
+  // ride in beat 0, with the type at [78:75].
+  // Zero-extend so the 128-bit descriptor index is legal when the port is 64.
+  wire [127:0] rq_desc_w = 128'(s_axis_rq_tdata);
+  wire [3:0] rq_req_now = (AXI_DATA_WIDTH == 128) ? rq_desc_w[78:75]
+                                                  : rq_desc_w[14:11];
+  wire       rq_desc_beat = (AXI_DATA_WIDTH == 128) ? (rq_ph_q == 2'd0)
+                                                    : (rq_ph_q == 2'd1);
+  assign rq_user_cfg_stall = (MODE != RIVET_MODE_RC) && rq_desc_beat &&
+                             s_axis_rq_tvalid && rq_is_cfg(rq_req_now);
   assign rq_user_fire = s_axis_rq_tvalid && rq_u_tready && !rq_user_cfg_stall;
 
   assign rq_u_tdata  = s_axis_rq_tdata;
@@ -569,6 +584,8 @@ module rivet_pcie_ctrl #(
     else if (rq_user_fire) begin
       if (s_axis_rq_tlast)
         rq_ph_q <= 2'd0;
+      else if (AXI_DATA_WIDTH == 128)
+        rq_ph_q <= 2'd2;
       else if (rq_ph_q == 2'd0)
         rq_ph_q <= 2'd1;
       else
@@ -600,32 +617,63 @@ module rivet_pcie_ctrl #(
     .m_tuser_o  (rq_p_tuser)
   );
 
-  rivet_tl_rq #(.MODE(MODE)) u_tl_rq (
-    .clk_i             (pclk),
-    .rst_ni            (pclk_rst_sync_n),
-    .bus_master_en_i   (bus_master_en),
-    .primary_bus_i     (primary_bus),
-    .s_axis_rq_tdata   (rq_p_tdata),
-    .s_axis_rq_tkeep   (rq_p_tkeep[1:0]),
-    .s_axis_rq_tlast   (rq_p_tlast),
-    .s_axis_rq_tvalid  (rq_p_tvalid),
-    .s_axis_rq_tready  (rq_p_tready),
-    .s_axis_rq_tuser   (rq_p_tuser),
-    .tx_tdata_o        (rq_tx_d),
-    .tx_tkeep_o        (rq_tx_k),
-    .tx_tlast_o        (rq_tx_l),
-    .tx_tvalid_o       (rq_tx_v),
-    .tx_tready_i       (rq_tx_r),
-    .tx_accept_o       (cr_tx_acc_rq),
-    .tx_hdr0_o         (cr_tx_h0_rq),
-    .tx_len_dw_o       (cr_tx_len_rq),
-    .rq_seq_num_o      (rq_seq_p),
-    .rq_seq_num_vld_o  (rq_seq_vld_p),
-    .rq_tag_o          (rq_tag_p),
-    .rq_tag_vld_o      (rq_tag_vld_p),
-    .rq_tag_av_o       (rq_tag_av_p),
-    .tag_free_i        (rq_tag_free_p)
-  );
+  generate
+    if (AXI_DATA_WIDTH == 128) begin : g_rq128
+      rivet_tl_rq_wide #(.MODE(MODE)) u_tl_rq (
+        .clk_i             (pclk),
+        .rst_ni            (pclk_rst_sync_n),
+        .bus_master_en_i   (bus_master_en),
+        .primary_bus_i     (primary_bus),
+        .s_axis_rq_tdata   (rq_p_tdata),
+        .s_axis_rq_tkeep   (rq_p_tkeep),
+        .s_axis_rq_tlast   (rq_p_tlast),
+        .s_axis_rq_tvalid  (rq_p_tvalid),
+        .s_axis_rq_tready  (rq_p_tready),
+        .s_axis_rq_tuser   (rq_p_tuser),
+        .tx_tdata_o        (rq_tx_d),
+        .tx_tkeep_o        (rq_tx_k),
+        .tx_tlast_o        (rq_tx_l),
+        .tx_tvalid_o       (rq_tx_v),
+        .tx_tready_i       (rq_tx_r),
+        .tx_accept_o       (cr_tx_acc_rq),
+        .tx_hdr0_o         (cr_tx_h0_rq),
+        .tx_len_dw_o       (cr_tx_len_rq),
+        .rq_seq_num_o      (rq_seq_p),
+        .rq_seq_num_vld_o  (rq_seq_vld_p),
+        .rq_tag_o          (rq_tag_p),
+        .rq_tag_vld_o      (rq_tag_vld_p),
+        .rq_tag_av_o       (rq_tag_av_p),
+        .tag_free_i        (rq_tag_free_p)
+      );
+    end else begin : g_rq64
+      rivet_tl_rq #(.MODE(MODE)) u_tl_rq (
+        .clk_i             (pclk),
+        .rst_ni            (pclk_rst_sync_n),
+        .bus_master_en_i   (bus_master_en),
+        .primary_bus_i     (primary_bus),
+        .s_axis_rq_tdata   (rq_p_tdata),
+        .s_axis_rq_tkeep   (rq_p_tkeep[1:0]),
+        .s_axis_rq_tlast   (rq_p_tlast),
+        .s_axis_rq_tvalid  (rq_p_tvalid),
+        .s_axis_rq_tready  (rq_p_tready),
+        .s_axis_rq_tuser   (rq_p_tuser),
+        .tx_tdata_o        (rq_tx_d),
+        .tx_tkeep_o        (rq_tx_k),
+        .tx_tlast_o        (rq_tx_l),
+        .tx_tvalid_o       (rq_tx_v),
+        .tx_tready_i       (rq_tx_r),
+        .tx_accept_o       (cr_tx_acc_rq),
+        .tx_hdr0_o         (cr_tx_h0_rq),
+        .tx_len_dw_o       (cr_tx_len_rq),
+        .rq_seq_num_o      (rq_seq_p),
+        .rq_seq_num_vld_o  (rq_seq_vld_p),
+        .rq_tag_o          (rq_tag_p),
+        .rq_tag_vld_o      (rq_tag_vld_p),
+        .rq_tag_av_o       (rq_tag_av_p),
+        .tag_free_i        (rq_tag_free_p)
+      );
+    end
+  endgenerate
 
   logic [AXI_DATA_WIDTH-1:0] rc_p_tdata, rc_u_tdata;
   logic [AXI_KEEP_WIDTH-1:0] rc_p_tkeep, rc_u_tkeep;
@@ -633,7 +681,7 @@ module rivet_pcie_ctrl #(
   logic                      rc_u_tlast, rc_u_tvalid;
   logic [AXI_RC_USER_W-1:0]  rc_p_tuser, rc_u_tuser;
 
-  rivet_tl_rc u_tl_rc (
+  rivet_tl_rc #(.DATA_W(AXI_DATA_WIDTH)) u_tl_rc (
     .clk_i            (pclk),
     .rst_ni           (pclk_rst_sync_n),
     .rx_tdata_i       (rc_rx_d),
@@ -812,21 +860,21 @@ module rivet_pcie_ctrl #(
     .src_i(rq_tag_av_p), .dst_o(pcie_rq_tag_av)
   );
 
-  rivet_tl_tx_mux u_tx_mux (
+  rivet_tl_tx_mux #(.DATA_W(TL_W)) u_tx_mux (
     .clk_i        (pclk),
     .rst_ni       (preset_n),
-    .cfg_tdata_i  (cfg_tx_d),
-    .cfg_tkeep_i  (cfg_tx_k),
+    .cfg_tdata_i  (TL_W'(cfg_tx_d)),
+    .cfg_tkeep_i  (TL_K'(cfg_tx_k)),
     .cfg_tlast_i  (cfg_tx_l),
     .cfg_tvalid_i (cfg_tx_v),
     .cfg_tready_o (cfg_tx_r),
-    .msi_tdata_i  (msi_tx_d),
-    .msi_tkeep_i  (msi_tx_k),
+    .msi_tdata_i  (TL_W'(msi_tx_d)),
+    .msi_tkeep_i  (TL_K'(msi_tx_k)),
     .msi_tlast_i  (msi_tx_l),
     .msi_tvalid_i (msi_tx_v),
     .msi_tready_o (msi_tx_r),
-    .cc_tdata_i   (cc_tx_d),
-    .cc_tkeep_i   (cc_tx_k),
+    .cc_tdata_i   (TL_W'(cc_tx_d)),
+    .cc_tkeep_i   (TL_K'(cc_tx_k)),
     .cc_tlast_i   (cc_tx_l),
     .cc_tvalid_i  (cc_tx_v),
     .cc_tready_o  (cc_tx_r),
@@ -910,7 +958,8 @@ module rivet_pcie_ctrl #(
 
   rivet_dll #(
     .LANES           (LANES),
-    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH),
+    .TX_DATA_W       (TL_W)
   ) u_dll (
     .pclk_i         (pclk),
     .rst_ni         (preset_n),

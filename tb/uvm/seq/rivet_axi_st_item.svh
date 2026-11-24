@@ -4,8 +4,8 @@
 class rivet_axi_st_item extends uvm_sequence_item;
   `uvm_object_utils(rivet_axi_st_item)
 
-  rand bit [63:0] tdata;
-  rand bit [1:0]  tkeep;   // Dword-granular @ 64-bit
+  rand bit [127:0] tdata;
+  rand bit [3:0]   tkeep;   // Dword keep. Gen2 uses the low 2 bits.
   rand bit        tlast;
   rand bit        tvalid;
   rand bit [3:0]  tready;
@@ -13,8 +13,8 @@ class rivet_axi_st_item extends uvm_sequence_item;
   string          channel; // "cq","cc","rq","rc"
   // One item, many beats, valid held across accepts. Default path is unchanged.
   bit             use_burst;
-  bit [63:0]      burst_data[$];
-  bit [1:0]       burst_keep[$];
+  bit [127:0]     burst_data[$];
+  bit [3:0]       burst_keep[$];
   bit             burst_last[$];
   bit [87:0]      burst_user;
 

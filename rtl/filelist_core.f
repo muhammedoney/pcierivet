@@ -12,6 +12,7 @@ rtl/pcie_ctrl/dll/rivet_dll_fc.sv
 rtl/pcie_ctrl/dll/rivet_dll_sm.sv
 rtl/pcie_ctrl/dll/rivet_dll_replay.sv
 rtl/pcie_ctrl/dll/rivet_dll_tlp_tx.sv
+rtl/pcie_ctrl/dll/rivet_dll_tlp_tx16.sv
 rtl/pcie_ctrl/dll/rivet_dll_tlp_rx.sv
 rtl/pcie_ctrl/dll/rivet_dll_tl_pack.sv
 rtl/pcie_ctrl/dll/rivet_dll_tl_unpack.sv
@@ -24,6 +25,7 @@ rtl/pcie_ctrl/tl/rivet_tl_rx_route.sv
 rtl/pcie_ctrl/tl/rivet_tl_cq.sv
 rtl/pcie_ctrl/tl/rivet_tl_cc.sv
 rtl/pcie_ctrl/tl/rivet_tl_rq.sv
+rtl/pcie_ctrl/tl/rivet_tl_rq_wide.sv
 rtl/pcie_ctrl/tl/rivet_tl_rc.sv
 rtl/pcie_ctrl/tl/rivet_tl_msi.sv
 rtl/pcie_ctrl/tl/rivet_tl_aer.sv

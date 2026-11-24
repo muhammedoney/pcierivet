@@ -3,7 +3,9 @@
 //
 // Pack wire Cpl/CplD into PG213-style 64-bit AXI-ST Requester Completion (RC).
 
-module rivet_tl_rc (
+module rivet_tl_rc #(
+  parameter int unsigned DATA_W = 64
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
 
@@ -13,8 +15,8 @@ module rivet_tl_rc (
   input  logic        rx_tvalid_i,
   output logic        rx_tready_o,
 
-  output logic [63:0] m_axis_rc_tdata,
-  output logic [1:0]  m_axis_rc_tkeep,
+  output logic [DATA_W-1:0]     m_axis_rc_tdata,
+  output logic [DATA_W/32-1:0] m_axis_rc_tkeep,
   output logic        m_axis_rc_tlast,
   output logic        m_axis_rc_tvalid,
   input  logic        m_axis_rc_tready,

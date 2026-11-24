@@ -33,15 +33,43 @@ class rivet_axi_rq_memwr32_seq extends uvm_sequence #(rivet_axi_st_item);
   task body();
     logic [63:0] b0, b1, b2;
     logic [87:0] u;
+    int unsigned axi_w;
+
+    if (!uvm_config_db#(int unsigned)::get(m_sequencer, "", "axi_data_width", axi_w))
+      axi_w = 64;
 
     rivet_axi_tlp_util::pack_mem_desc_2beat(
       addr, 11'd1, rivet_pkg::RIVET_CQ_REQ_MEMWR, tag, requester_id, b0, b1);
     b2 = {32'h0, data};
     u  = rivet_axi_tlp_util::rq_tuser(first_be, last_be);
 
-    send_beat(b0, 2'b11, 1'b0, u);
-    send_beat(b1, 2'b11, 1'b0, u);
-    send_beat(b2, 2'b01, 1'b1, u);
+    if (axi_w == 128) begin
+      rivet_axi_st_item item;
+      item = rivet_axi_st_item::type_id::create("rq_desc");
+      start_item(item);
+      item.channel = "rq";
+      item.tdata   = {b1, b0};
+      item.tkeep   = 4'hF;
+      item.tlast   = 1'b0;
+      item.tvalid  = 1'b1;
+      item.tuser   = u;
+      item.tready  = 4'hF;
+      finish_item(item);
+      item = rivet_axi_st_item::type_id::create("rq_data");
+      start_item(item);
+      item.channel = "rq";
+      item.tdata   = {96'h0, data};
+      item.tkeep   = 4'b0001;
+      item.tlast   = 1'b1;
+      item.tvalid  = 1'b1;
+      item.tuser   = u;
+      item.tready  = 4'hF;
+      finish_item(item);
+    end else begin
+      send_beat(b0, 2'b11, 1'b0, u);
+      send_beat(b1, 2'b11, 1'b0, u);
+      send_beat(b2, 2'b01, 1'b1, u);
+    end
 
     `uvm_info(get_type_name(),
       $sformatf("RQ MemWr32 addr=0x%08h data=0x%08h tag=0x%02h", addr, data, tag),

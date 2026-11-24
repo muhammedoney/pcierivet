@@ -52,8 +52,8 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
       if (req.burst_data.size() == 0)
         return;
       @(posedge vif.aclk);
-      vif.tdata  <= req.burst_data[0];
-      vif.tkeep  <= req.burst_keep[0];
+      vif.tdata  <= $bits(vif.tdata)'(req.burst_data[0]);
+      vif.tkeep  <= $bits(vif.tkeep)'(req.burst_keep[0]);
       vif.tlast  <= req.burst_last[0];
       vif.tuser  <= req.burst_user;
       vif.tvalid <= 1'b1;
@@ -68,8 +68,8 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
               $sformatf("RQ burst beat %0d waited 100000 cycles", i))
         end while ((vif.tready & 4'hF) == 4'h0);
         // Same edge that accepts the previous beat. NBA publishes the next one.
-        vif.tdata <= req.burst_data[i];
-        vif.tkeep <= req.burst_keep[i];
+        vif.tdata <= $bits(vif.tdata)'(req.burst_data[i]);
+        vif.tkeep <= $bits(vif.tkeep)'(req.burst_keep[i]);
         vif.tlast <= req.burst_last[i];
       end
       do
@@ -79,8 +79,8 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
       vif.tlast  <= 1'b0;
     end else if (is_master) begin
       @(posedge vif.aclk);
-      vif.tdata  <= req.tdata;
-      vif.tkeep  <= req.tkeep;
+      vif.tdata  <= $bits(vif.tdata)'(req.tdata);
+      vif.tkeep  <= $bits(vif.tkeep)'(req.tkeep);
       vif.tlast  <= req.tlast;
       vif.tvalid <= req.tvalid;
       vif.tuser  <= req.tuser;

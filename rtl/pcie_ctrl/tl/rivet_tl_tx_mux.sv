@@ -3,36 +3,38 @@
 //
 // Mux TL→DLL TX: priority Cfg > MSI > CC > RQ.
 
-module rivet_tl_tx_mux (
+module rivet_tl_tx_mux #(
+  parameter int unsigned DATA_W = 64
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
 
-  input  logic [63:0] cfg_tdata_i,
-  input  logic [7:0]  cfg_tkeep_i,
+  input  logic [DATA_W-1:0] cfg_tdata_i,
+  input  logic [DATA_W/8-1:0] cfg_tkeep_i,
   input  logic        cfg_tlast_i,
   input  logic        cfg_tvalid_i,
   output logic        cfg_tready_o,
 
-  input  logic [63:0] msi_tdata_i,
-  input  logic [7:0]  msi_tkeep_i,
+  input  logic [DATA_W-1:0] msi_tdata_i,
+  input  logic [DATA_W/8-1:0] msi_tkeep_i,
   input  logic        msi_tlast_i,
   input  logic        msi_tvalid_i,
   output logic        msi_tready_o,
 
-  input  logic [63:0] cc_tdata_i,
-  input  logic [7:0]  cc_tkeep_i,
+  input  logic [DATA_W-1:0] cc_tdata_i,
+  input  logic [DATA_W/8-1:0] cc_tkeep_i,
   input  logic        cc_tlast_i,
   input  logic        cc_tvalid_i,
   output logic        cc_tready_o,
 
-  input  logic [63:0] rq_tdata_i,
-  input  logic [7:0]  rq_tkeep_i,
+  input  logic [DATA_W-1:0] rq_tdata_i,
+  input  logic [DATA_W/8-1:0] rq_tkeep_i,
   input  logic        rq_tlast_i,
   input  logic        rq_tvalid_i,
   output logic        rq_tready_o,
 
-  output logic [63:0] m_tdata_o,
-  output logic [7:0]  m_tkeep_o,
+  output logic [DATA_W-1:0] m_tdata_o,
+  output logic [DATA_W/8-1:0] m_tkeep_o,
   output logic        m_tlast_o,
   output logic        m_tvalid_o,
   input  logic        m_tready_i

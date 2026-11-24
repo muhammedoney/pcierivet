@@ -36,8 +36,9 @@ class rivet_scoreboard extends uvm_scoreboard;
 
   // Per-channel packet assembly (accepted beats only).
   bit             pkt_active[string];
-  logic [63:0]    pkt_beat0[string];
-  logic [63:0]    pkt_beat1[string];
+  logic [127:0]   pkt_beat0[string];
+  logic [127:0]   pkt_beat1[string];
+  bit             pkt_wide[string];
   int unsigned    pkt_beats[string];
   bit [7:0]       pkt_tag[string];
   bit [15:0]      pkt_req_id[string];
@@ -137,14 +138,22 @@ class rivet_scoreboard extends uvm_scoreboard;
       pkt_active[ch] = 1'b1;
       pkt_beats[ch]  = 0;
       pkt_beat0[ch]  = t.tdata;
+      pkt_wide[ch]   = (t.tkeep[3:2] != 2'b00);
+      if ((ch == "rq") && pkt_wide[ch]) begin
+        rivet_axi_tlp_util::unpack_mem_desc_2beat(
+          t.tdata[63:0], t.tdata[127:64], addr_u, dcount, rtype, tag, rid);
+        pkt_tag[ch]      = tag;
+        pkt_req_id[ch]   = rid;
+        pkt_req_type[ch] = rtype;
+      end
     end
     pkt_beats[ch]++;
 
     if (pkt_beats[ch] == 2) begin
       pkt_beat1[ch] = t.tdata;
-      if (ch == "rq") begin
+      if ((ch == "rq") && !(pkt_wide.exists(ch) && pkt_wide[ch])) begin
         rivet_axi_tlp_util::unpack_mem_desc_2beat(
-          pkt_beat0[ch], t.tdata, addr_u, dcount, rtype, tag, rid);
+          pkt_beat0[ch][63:0], t.tdata[63:0], addr_u, dcount, rtype, tag, rid);
         pkt_tag[ch]      = tag;
         pkt_req_id[ch]   = rid;
         pkt_req_type[ch] = rtype;
@@ -199,9 +208,19 @@ class rivet_scoreboard extends uvm_scoreboard;
                   pkt_beats[ch] >= 2 ? pkt_req_type[ch] : 4'hX,
                   pkt_beats[ch] >= 2 ? pkt_tag[ch] : 8'h0,
                   pkt_beats[ch] >= 2 ? pkt_req_id[ch] : 16'h0), UVM_LOW)
-      if (pkt_beats[ch] >= 2) begin
+      if (pkt_wide.exists(ch) && pkt_wide[ch]) begin
+        if (pkt_req_type[ch] == rivet_pkg::RIVET_CQ_REQ_MEMRD) begin
+          key = {pkt_req_id[ch], pkt_tag[ch]};
+          outstanding_rq[key] = 1'b1;
+          tlp_rq_np_outstanding++;
+          `uvm_info(get_type_name(),
+            $sformatf("RQ MemRd outstanding tag=0x%02h req=0x%04h",
+                      pkt_tag[ch], pkt_req_id[ch]),
+            UVM_LOW)
+        end
+      end else if (pkt_beats[ch] >= 2) begin
         rivet_axi_tlp_util::unpack_mem_desc_2beat(
-          pkt_beat0[ch], pkt_beat1[ch], addr_u, dcount, rtype, tag, rid);
+          pkt_beat0[ch][63:0], pkt_beat1[ch][63:0], addr_u, dcount, rtype, tag, rid);
         if (rtype == rivet_pkg::RIVET_CQ_REQ_MEMRD) begin
           key = {rid, tag};
           outstanding_rq[key] = 1'b1;

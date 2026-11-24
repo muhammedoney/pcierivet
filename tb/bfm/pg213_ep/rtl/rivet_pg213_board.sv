@@ -626,8 +626,8 @@ module board;
   end
   // Class C/E: EP-originated MemWr on TL TX (RQ packer)
   always @(posedge EP.u_rivet_ep.pipe_clk_o) begin
-    if (EP.u_rivet_ep.u_ctrl.u_tl_rq.tx_accept_o &&
-        (EP.u_rivet_ep.u_ctrl.u_tl_rq.tx_hdr0_o == rivet_pkg::RIVET_TLP_B0_MEMWR32)) begin
+    if (EP.u_rivet_ep.u_ctrl.g_rq64.u_tl_rq.tx_accept_o &&
+        (EP.u_rivet_ep.u_ctrl.g_rq64.u_tl_rq.tx_hdr0_o == rivet_pkg::RIVET_TLP_B0_MEMWR32)) begin
       if (!saw_ep_rq_memwr)
         $display("[%t] : EP RQ MemWr32 accept data_tag", $realtime);
       saw_ep_rq_memwr <= 1'b1;

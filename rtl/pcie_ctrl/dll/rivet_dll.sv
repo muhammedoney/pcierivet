@@ -24,7 +24,9 @@ module rivet_dll #(
       2 * (((REPLAY_SLOT_BYTES + 7) / 8) +
            ((REPLAY_SLOT_BYTES + (LANES * 2) - 1) / (LANES * 2))) + 256,
   parameter int unsigned REPLAY_NUM_LIMIT  = 3,
-  parameter int unsigned TL_DATA_W         = rivet_pkg::RIVET_TL_DLL_DATA_W
+  parameter int unsigned TL_DATA_W         = rivet_pkg::RIVET_TL_DLL_DATA_W,
+  // TX beat width. 64 keeps the 8-byte transmitter. 128 streams 16 bytes.
+  parameter int unsigned TX_DATA_W         = rivet_pkg::RIVET_TL_DLL_DATA_W
 ) (
   input  logic pclk_i,
   input  logic rst_ni,
@@ -42,8 +44,8 @@ module rivet_dll #(
   output rivet_pkg::rivet_dll_tl_fc_sb_t    dll_to_tl_fc_o,
 
   // TL <-> DLL TLP stream (payload only; seq/LCRC added/stripped in DLL)
-  input  logic [TL_DATA_W-1:0]              tl_tx_tdata_i,
-  input  logic [TL_DATA_W/8-1:0]            tl_tx_tkeep_i,
+  input  logic [TX_DATA_W-1:0]              tl_tx_tdata_i,
+  input  logic [TX_DATA_W/8-1:0]            tl_tx_tkeep_i,
   input  logic                              tl_tx_tlast_i,
   input  logic                              tl_tx_tvalid_i,
   output logic                              tl_tx_tready_o,
@@ -59,6 +61,7 @@ module rivet_dll #(
   import rivet_pkg::*;
 
   localparam int unsigned TL_KEEP_W = TL_DATA_W / 8;
+  localparam int unsigned TX_KEEP_W = TX_DATA_W / 8;
 
 `ifndef SYNTHESIS
   initial begin
@@ -102,7 +105,9 @@ module rivet_dll #(
   logic [15:0]                    rep_word_idx;
   logic [15:0]                    rep_len;
   logic [15:0]                    tx_word_idx;
-  logic [63:0]                    tx_word;
+  logic [TX_DATA_W-1:0]           tx_word;
+  logic                           cap_hi_v;
+  logic [63:0]                    cap_hi_d;
   logic                           rep_full, rep_empty;
   logic [15:0]                    rep_occ;
 
@@ -140,8 +145,8 @@ module rivet_dll #(
   logic [15:0] whole_tx_len;
 
   // Skid wires for TL <-> DLL streams
-  logic [TL_DATA_W-1:0]  tl_tx_s_tdata;
-  logic [TL_KEEP_W-1:0]  tl_tx_s_tkeep;
+  logic [TX_DATA_W-1:0]  tl_tx_s_tdata;
+  logic [TX_KEEP_W-1:0]  tl_tx_s_tkeep;
   logic                  tl_tx_s_tlast, tl_tx_s_tvalid, tl_tx_s_tready;
 
   logic [TL_DATA_W-1:0]  tl_rx_u_tdata;
@@ -274,8 +279,8 @@ module rivet_dll #(
   // 2-entry skid buffer on tl_tx -> u_tl_pack
   // -------------------------------------------------------------------------
   typedef struct packed {
-    logic [TL_DATA_W-1:0] data;
-    logic [TL_KEEP_W-1:0] keep;
+    logic [TX_DATA_W-1:0] data;
+    logic [TX_KEEP_W-1:0] keep;
     logic                 last;
   } tl_tx_beat_t;
 
@@ -325,7 +330,7 @@ module rivet_dll #(
   end
 
   rivet_dll_tl_pack #(
-    .DATA_W     (TL_DATA_W),
+    .DATA_W     (TX_DATA_W),
     .SLOT_BYTES (REPLAY_SLOT_BYTES)
   ) u_tl_pack (
     .clk_i      (pclk_i),
@@ -420,6 +425,8 @@ module rivet_dll #(
     .cap_last_i      (cap_last),
     .cap_seq_i       (cap_seq),
     .cap_len_i       (cap_len),
+    .cap_hi_valid_i  (cap_hi_v),
+    .cap_hi_data_i   (cap_hi_d),
     .ack_valid_i     (ack_to_buf),
     .ack_seq_i       (ack_seq_to_buf),
     .replay_start_i  (rep_start),
@@ -493,34 +500,71 @@ module rivet_dll #(
     .beat_ready_i (dllp_r)
   );
 
-  rivet_dll_tlp_tx #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_tx (
-    .clk_i           (pclk_i),
-    .rst_ni          (rst_ni),
-    .enable_i        (tlp_tx_en && !rep_full && !rep_active && !replay_req),
-    .replay_en_i     (rep_active),
-    .tl_valid_i      (whole_tx_v),
-    .tl_ready_o      (whole_tx_r),
-    .tl_len_i        (whole_tx_len),
-    .tl_word_i       (tx_word),
-    .tl_word_idx_o   (tx_word_idx),
-    .replay_valid_i  (rep_v),
-    .replay_ready_o  (rep_r),
-    .replay_seq_i    (rep_seq),
-    .replay_len_i    (rep_len),
-    .replay_word_i   (rep_word),
-    .replay_word_idx_o(rep_word_idx),
-    .cap_valid_o     (cap_v),
-    .cap_ready_i     (cap_r),
-    .cap_data_o      (cap_data),
-    .cap_last_o      (cap_last),
-    .cap_seq_o       (cap_seq),
-    .cap_len_o       (cap_len),
-    .beat_o          (tlp_beat),
-    .beat_valid_o    (tlp_v),
-    .beat_ready_i    (tlp_r),
-    .idle_o          (tx_idle),
-    .next_tx_seq_o   (next_tx_seq)
-  );
+  generate
+    if (TX_DATA_W == 128) begin : g_tx16
+      rivet_dll_tlp_tx16 #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_tx (
+        .clk_i           (pclk_i),
+        .rst_ni          (rst_ni),
+        .enable_i        (tlp_tx_en && !rep_full && !rep_active && !replay_req),
+        .replay_en_i     (rep_active),
+        .tl_valid_i      (whole_tx_v),
+        .tl_ready_o      (whole_tx_r),
+        .tl_len_i        (whole_tx_len),
+        .tl_word_i       (tx_word),
+        .tl_word_idx_o   (tx_word_idx),
+        .replay_valid_i  (rep_v),
+        .replay_ready_o  (rep_r),
+        .replay_seq_i    (rep_seq),
+        .replay_len_i    (rep_len),
+        .replay_word_i   (rep_word),
+        .replay_word_idx_o(rep_word_idx),
+        .cap_valid_o     (cap_v),
+        .cap_ready_i     (cap_r),
+        .cap_data_o      (cap_data),
+        .cap_last_o      (cap_last),
+        .cap_seq_o       (cap_seq),
+        .cap_len_o       (cap_len),
+        .cap_hi_valid_o  (cap_hi_v),
+        .cap_hi_data_o   (cap_hi_d),
+        .beat_o          (tlp_beat),
+        .beat_valid_o    (tlp_v),
+        .beat_ready_i    (tlp_r),
+        .idle_o          (tx_idle),
+        .next_tx_seq_o   (next_tx_seq)
+      );
+    end else begin : g_tx8
+      assign cap_hi_v = 1'b0;
+      assign cap_hi_d = '0;
+      rivet_dll_tlp_tx #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_tx (
+        .clk_i           (pclk_i),
+        .rst_ni          (rst_ni),
+        .enable_i        (tlp_tx_en && !rep_full && !rep_active && !replay_req),
+        .replay_en_i     (rep_active),
+        .tl_valid_i      (whole_tx_v),
+        .tl_ready_o      (whole_tx_r),
+        .tl_len_i        (whole_tx_len),
+        .tl_word_i       (tx_word),
+        .tl_word_idx_o   (tx_word_idx),
+        .replay_valid_i  (rep_v),
+        .replay_ready_o  (rep_r),
+        .replay_seq_i    (rep_seq),
+        .replay_len_i    (rep_len),
+        .replay_word_i   (rep_word),
+        .replay_word_idx_o(rep_word_idx),
+        .cap_valid_o     (cap_v),
+        .cap_ready_i     (cap_r),
+        .cap_data_o      (cap_data),
+        .cap_last_o      (cap_last),
+        .cap_seq_o       (cap_seq),
+        .cap_len_o       (cap_len),
+        .beat_o          (tlp_beat),
+        .beat_valid_o    (tlp_v),
+        .beat_ready_i    (tlp_r),
+        .idle_o          (tx_idle),
+        .next_tx_seq_o   (next_tx_seq)
+      );
+    end
+  endgenerate
 
   assign mux_tx_v    = present_dllp || tlp_v;
   assign mux_tx_beat = present_dllp ? dllp_beat : tlp_beat;
