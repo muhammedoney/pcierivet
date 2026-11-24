@@ -228,6 +228,9 @@ module rivet_mac_os_tx #(
   logic [PTR_W-1:0]       stream_idx;
   logic [SKP_CNT_W-1:0]   skp_sym_q;
   logic [1:0]             word_q;
+  // Gen3 may start the next TLP in the middle of a data block. Waiting
+  // for word 0 inserts idle tokens between posted writes.
+  logic                   tlp_follow_q;
 
   // Block RAM: a 4 KB frame does not belong in the old 32-deep LUTRAM.
   (* ram_style = "block" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
@@ -315,9 +318,11 @@ module rivet_mac_os_tx #(
   // byte is not a K-symbol; Gen2 STP/END stay on the K path.
   wire pkt_rate_ok = PKT_OK ||
                      ((rate_i == RIVET_PIPE_RATE_GEN3) && (word_q == 2'd0));
+  wire tlp_rate_ok = pkt_rate_ok ||
+                     ((rate_i == RIVET_PIPE_RATE_GEN3) && tlp_follow_q);
   assign want_pkt = pkt_rate_ok && pkt_en_i && at_boundary && !want_skp &&
                     (cur == RIVET_MAC_OS_IDLE) && dllp_ok;
-  assign want_tlp = pkt_rate_ok && pkt_en_i && at_boundary && !want_skp &&
+  assign want_tlp = tlp_rate_ok && pkt_en_i && at_boundary && !want_skp &&
                     (cur == RIVET_MAC_OS_IDLE) && tlp_ok && dll_tx_beat_i.sop &&
                     !dllp_ok;
   assign take_dllp      = want_pkt;
@@ -717,6 +722,7 @@ module rivet_mac_os_tx #(
       skp_sym_q     <= '0;
       skp_due_q     <= 1'b0;
       word_q        <= '0;
+      tlp_follow_q  <= 1'b0;
       emit_buf_q    <= '0;
       emit_cnt_q    <= '0;
       tlp_wr_slot_q <= '0;
@@ -775,6 +781,13 @@ module rivet_mac_os_tx #(
         word_q <= 2'd0;
       else
         word_q <= word_q + 2'd1;
+
+      // Keep the data block open for one idle cycle after a Gen3 TLP so
+      // the next frame can start before the following block boundary.
+      if (tlp_em_done && (rate_i == RIVET_PIPE_RATE_GEN3))
+        tlp_follow_q <= 1'b1;
+      else if ((mode_q == ST_OS) && (word_q == 2'd0) && !take_tlp_start)
+        tlp_follow_q <= 1'b0;
 
       if (!pkt_en_i || skp_finishing) begin
         skp_sym_q <= '0;
