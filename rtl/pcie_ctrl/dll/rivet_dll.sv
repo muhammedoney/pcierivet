@@ -685,25 +685,49 @@ module rivet_dll #(
     .dec_ready_i  (dec_ready)
   );
 
-  rivet_dll_tlp_rx #(.SLOT_BYTES(RX_SLOT_BYTES)) u_tlp_rx (
-    .clk_i           (pclk_i),
-    .rst_ni          (rst_ni),
-    .enable_i        (rx_enable_q),
-    .beat_i          (rx_skid_beat),
-    .beat_valid_i    (tlp_rx_v),
-    .beat_ready_o    (tlp_rx_r),
-    .tl_valid_o      (tl_rx_u_tvalid),
-    .tl_ready_i      (tl_rx_u_tready),
-    .tl_data_o       (tl_rx_u_tdata),
-    .tl_keep_o       (tl_rx_u_tkeep),
-    .tl_last_o       (tl_rx_u_tlast),
-    .tl_seq_o        (tl_rx_u_seq),
-    .ack_req_o       (ack_req),
-    .ack_valid_o     (ack_valid),
-    .ack_ready_i     (ack_ready),
-    .last_good_seq_o (last_good),
-    .lcrc_err_o      (lcrc_err)
-  );
+  generate
+    if (TL_DATA_W == 128) begin : g_rx16
+      rivet_dll_tlp_rx16 #(.SLOT_BYTES(RX_SLOT_BYTES)) u_tlp_rx (
+        .clk_i           (pclk_i),
+        .rst_ni          (rst_ni),
+        .enable_i        (rx_enable_q),
+        .beat_i          (rx_skid_beat),
+        .beat_valid_i    (tlp_rx_v),
+        .beat_ready_o    (tlp_rx_r),
+        .tl_valid_o      (tl_rx_u_tvalid),
+        .tl_ready_i      (tl_rx_u_tready),
+        .tl_data_o       (tl_rx_u_tdata),
+        .tl_keep_o       (tl_rx_u_tkeep),
+        .tl_last_o       (tl_rx_u_tlast),
+        .tl_seq_o        (tl_rx_u_seq),
+        .ack_req_o       (ack_req),
+        .ack_valid_o     (ack_valid),
+        .ack_ready_i     (ack_ready),
+        .last_good_seq_o (last_good),
+        .lcrc_err_o      (lcrc_err)
+      );
+    end else begin : g_rx8
+      rivet_dll_tlp_rx #(.SLOT_BYTES(RX_SLOT_BYTES)) u_tlp_rx (
+        .clk_i           (pclk_i),
+        .rst_ni          (rst_ni),
+        .enable_i        (rx_enable_q),
+        .beat_i          (rx_skid_beat),
+        .beat_valid_i    (tlp_rx_v),
+        .beat_ready_o    (tlp_rx_r),
+        .tl_valid_o      (tl_rx_u_tvalid),
+        .tl_ready_i      (tl_rx_u_tready),
+        .tl_data_o       (tl_rx_u_tdata),
+        .tl_keep_o       (tl_rx_u_tkeep),
+        .tl_last_o       (tl_rx_u_tlast),
+        .tl_seq_o        (tl_rx_u_seq),
+        .ack_req_o       (ack_req),
+        .ack_valid_o     (ack_valid),
+        .ack_ready_i     (ack_ready),
+        .last_good_seq_o (last_good),
+        .lcrc_err_o      (lcrc_err)
+      );
+    end
+  endgenerate
 
   logic _unused;
   assign _unused = |PIPE_DATA_WIDTH | (|next_tx_seq) | (|last_good) | lcrc_err |

@@ -508,6 +508,9 @@ module rivet_mac_os_rx #(
   // stall the wire for a second copy.
   // ---------------------------------------------------------------------------
   localparam bit PKT_RX_OK           = (PIPE_DATA_WIDTH == 16);
+  // A 32-bit PIPE symbol time is 16 bytes. Playback hands the DLL that
+  // much per beat. The 16-bit PIPE stays at 8 bytes.
+  localparam bit RX_PLAY_WIDE        = (PIPE_DATA_WIDTH == 32);
   localparam int unsigned TLP_FRAME_MAX = RIVET_MAC_TLP_BUF_BYTES;
   // Eight max-payload frames in flight. Playback cannot drain while the
   // DLL is still presenting the previous frame, so the wire runs ahead.
@@ -669,6 +672,7 @@ module rivet_mac_os_rx #(
   logic [TLP_AW-1:0]       tlp_ram_waddr2;
   logic [63:0]             tlp_ram_wdata2;
   logic [63:0]             tlp_ram_rd_q;
+  logic [63:0]             tlp_ram_rd_hi_q;
   logic                    tlp_rd_issue;
 
   logic [55:0]             tlp_acc_q, tlp_acc_d;
@@ -692,7 +696,7 @@ module rivet_mac_os_rx #(
   logic                    rd_sop_q, rd_sop_d;
   logic                    rd_err_q, rd_err_d;
   logic [TLP_AW-1:0]       rd_addr_q, rd_addr_d;
-  logic                    rd_took;
+  logic [1:0]              rd_words;
   logic [11:0]             rd_drop;
   logic [12:0]             used_q;
   // A finished DLLP waits here when the beat slot is busy. Framing stays in
@@ -717,10 +721,14 @@ module rivet_mac_os_rx #(
 
   // Synchronous read-data reset so Versal does not see an async BRAM reset.
   always_ff @(posedge pclk_i) begin
-    if (!rst_ni)
-      tlp_ram_rd_q <= '0;
-    else if (tlp_rd_issue)
+    if (!rst_ni) begin
+      tlp_ram_rd_q    <= '0;
+      tlp_ram_rd_hi_q <= '0;
+    end else if (tlp_rd_issue) begin
       tlp_ram_rd_q <= tlp_ram[rd_addr_q];
+      if (RX_PLAY_WIDE)
+        tlp_ram_rd_hi_q <= tlp_ram[rd_addr_q + TLP_AW'(1)];
+    end
   end
 
   always_comb begin
@@ -747,7 +755,7 @@ module rivet_mac_os_rx #(
     rd_err_d         = rd_err_q;
     rd_addr_d        = rd_addr_q;
     rd_pop           = 1'b0;
-    rd_took          = 1'b0;
+    rd_words         = 2'd0;
     rd_drop          = '0;
     tlp_rd_issue     = 1'b0;
     dllp_park_d      = dllp_park_q;
@@ -1187,33 +1195,38 @@ module rivet_mac_os_rx #(
         end
       end else begin
         tlp_rd_issue = 1'b1;
-        rd_addr_d    = rd_addr_q + 11'd1;
+        rd_addr_d    = rd_addr_q + (RX_PLAY_WIDE ? 11'd2 : 11'd1);
         rd_ph_d      = 2'd2;
       end
     end else if (!dll_beat_valid_d) begin
       if (rd_rem_q != 13'd0) begin
-        automatic logic [3:0] n;
-        n = (rd_rem_q >= 13'd8) ? 4'd8 : rd_rem_q[3:0];
+        automatic logic [4:0] n;
+        automatic logic [4:0] nmax;
+        nmax = RX_PLAY_WIDE ? 5'd16 : 5'd8;
+        n = (rd_rem_q >= 13'(nmax)) ? nmax : rd_rem_q[4:0];
         dll_beat_d          = '0;
         dll_beat_d.pkt_type = RIVET_MAC_PKT_TLP;
         dll_beat_d.sop      = rd_sop_q;
-        for (int unsigned i = 0; i < 8; i++) begin
-          if (4'(i) < n) begin
-            dll_beat_d.data[8*i +: 8] = tlp_ram_rd_q[8*i +: 8];
-            dll_beat_d.keep[i]        = 1'b1;
+        for (int unsigned i = 0; i < 16; i++) begin
+          if (5'(i) < n) begin
+            if (i < 8)
+              dll_beat_d.data[8*i +: 8] = tlp_ram_rd_q[8*i +: 8];
+            else
+              dll_beat_d.data[8*i +: 8] = tlp_ram_rd_hi_q[8*(i-8) +: 8];
+            dll_beat_d.keep[i] = 1'b1;
           end
         end
-        dll_beat_d.eop   = (rd_rem_q <= 13'd8);
+        dll_beat_d.eop   = (rd_rem_q <= 13'(n));
         dll_beat_d.err   = 1'b0;
         dll_beat_valid_d = 1'b1;
         rd_sop_d         = 1'b0;
-        rd_took          = 1'b1;
-        if (rd_rem_q <= 13'd8) begin
+        rd_words         = (n > 5'd8) ? 2'd2 : 2'd1;
+        if (rd_rem_q <= 13'(n)) begin
           rd_rem_d = 13'd0;
           rd_ph_d  = 2'd0;
         end else begin
-          rd_rem_d     = rd_rem_q - 13'd8;
-          rd_addr_d    = rd_addr_q + 11'd1;
+          rd_rem_d     = rd_rem_q - 13'(n);
+          rd_addr_d    = rd_addr_q + (RX_PLAY_WIDE ? 11'd2 : 11'd1);
           tlp_rd_issue = 1'b1;
         end
       end else begin
@@ -1290,8 +1303,12 @@ module rivet_mac_os_rx #(
         used_next = used_next + 12'd1;
       if (tlp_ram_we2)
         used_next = used_next + 12'd1;
-      if (rd_took && (used_next != 12'd0))
-        used_next = used_next - 12'd1;
+      if (rd_words != 2'd0) begin
+        if (13'(rd_words) >= used_next)
+          used_next = 13'd0;
+        else
+          used_next = used_next - 13'(rd_words);
+      end
       if (rd_drop != 12'd0) begin
         if (rd_drop >= used_next)
           used_next = 12'd0;

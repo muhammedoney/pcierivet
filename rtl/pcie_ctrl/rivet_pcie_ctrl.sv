@@ -234,16 +234,18 @@ module rivet_pcie_ctrl #(
   localparam int unsigned TL_W = (AXI_DATA_WIDTH == 128) ? 128 : 64;
   localparam int unsigned TL_K = TL_W / 8;
 
-  logic [63:0] tl_rx_tdata;
-  logic [7:0]  tl_rx_tkeep;
+  logic [TL_W-1:0] tl_rx_tdata;
+  logic [TL_K-1:0] tl_rx_tkeep;
   logic [TL_W-1:0] tl_tx_tdata;
   logic [TL_K-1:0] tl_tx_tkeep;
   logic        tl_rx_tlast, tl_tx_tlast;
   logic        tl_rx_tvalid, tl_tx_tvalid;
   logic        tl_rx_tready, tl_tx_tready;
 
-  logic [63:0] cfg_rx_d, cq_rx_d, rc_rx_d, cfg_tx_d, cc_tx_d, msi_tx_d;
-  logic [7:0]  cfg_rx_k, cq_rx_k, rc_rx_k, cfg_tx_k, cc_tx_k, msi_tx_k;
+  logic [63:0] cfg_rx_d, cq_rx_d, cfg_tx_d, cc_tx_d, msi_tx_d;
+  logic [7:0]  cfg_rx_k, cq_rx_k, cfg_tx_k, cc_tx_k, msi_tx_k;
+  logic [TL_W-1:0] rc_rx_d;
+  logic [TL_K-1:0] rc_rx_k;
   logic [TL_W-1:0] rq_tx_d;
   logic [TL_K-1:0] rq_tx_k;
   logic        cfg_rx_l, cq_rx_l, rc_rx_l, cfg_tx_l, cc_tx_l, rq_tx_l, msi_tx_l;
@@ -356,7 +358,7 @@ module rivet_pcie_ctrl #(
     .link_width_i                 ({3'b0, mac_to_dll_sb.negotiated_width})
   );
 
-  rivet_tl_rx_route u_rx_route (
+  rivet_tl_rx_route #(.DATA_W(TL_W)) u_rx_route (
     .clk_i       (pclk),
     .rst_ni      (preset_n),
     .s_tdata_i   (tl_rx_tdata),
@@ -681,25 +683,49 @@ module rivet_pcie_ctrl #(
   logic                      rc_u_tlast, rc_u_tvalid;
   logic [AXI_RC_USER_W-1:0]  rc_p_tuser, rc_u_tuser;
 
-  rivet_tl_rc #(.DATA_W(AXI_DATA_WIDTH)) u_tl_rc (
-    .clk_i            (pclk),
-    .rst_ni           (pclk_rst_sync_n),
-    .rx_tdata_i       (rc_rx_d),
-    .rx_tkeep_i       (rc_rx_k),
-    .rx_tlast_i       (rc_rx_l),
-    .rx_tvalid_i      (rc_rx_v),
-    .rx_tready_o      (rc_rx_r),
-    .m_axis_rc_tdata  (rc_p_tdata),
-    .m_axis_rc_tkeep  (rc_p_tkeep),
-    .m_axis_rc_tlast  (rc_p_tlast),
-    .m_axis_rc_tvalid (rc_p_tvalid),
-    .m_axis_rc_tready (rc_p_tready),
-    .m_axis_rc_tuser  (rc_p_tuser),
-    .rx_accept_o      (cr_rx_acc_rc),
-    .rx_hdr0_o        (cr_rx_h0_rc),
-    .rx_len_dw_o      (cr_rx_len_rc),
-    .tag_free_o       (rq_tag_free_p)
-  );
+  generate
+    if (AXI_DATA_WIDTH == 128) begin : g_rc128
+      rivet_tl_rc_wide #(.DATA_W(AXI_DATA_WIDTH)) u_tl_rc (
+        .clk_i            (pclk),
+        .rst_ni           (pclk_rst_sync_n),
+        .rx_tdata_i       (128'(rc_rx_d)),
+        .rx_tkeep_i       (16'(rc_rx_k)),
+        .rx_tlast_i       (rc_rx_l),
+        .rx_tvalid_i      (rc_rx_v),
+        .rx_tready_o      (rc_rx_r),
+        .m_axis_rc_tdata  (rc_p_tdata),
+        .m_axis_rc_tkeep  (rc_p_tkeep),
+        .m_axis_rc_tlast  (rc_p_tlast),
+        .m_axis_rc_tvalid (rc_p_tvalid),
+        .m_axis_rc_tready (rc_p_tready),
+        .m_axis_rc_tuser  (rc_p_tuser),
+        .rx_accept_o      (cr_rx_acc_rc),
+        .rx_hdr0_o        (cr_rx_h0_rc),
+        .rx_len_dw_o      (cr_rx_len_rc),
+        .tag_free_o       (rq_tag_free_p)
+      );
+    end else begin : g_rc64
+      rivet_tl_rc #(.DATA_W(AXI_DATA_WIDTH)) u_tl_rc (
+        .clk_i            (pclk),
+        .rst_ni           (pclk_rst_sync_n),
+        .rx_tdata_i       (rc_rx_d[63:0]),
+        .rx_tkeep_i       (rc_rx_k[7:0]),
+        .rx_tlast_i       (rc_rx_l),
+        .rx_tvalid_i      (rc_rx_v),
+        .rx_tready_o      (rc_rx_r),
+        .m_axis_rc_tdata  (rc_p_tdata),
+        .m_axis_rc_tkeep  (rc_p_tkeep),
+        .m_axis_rc_tlast  (rc_p_tlast),
+        .m_axis_rc_tvalid (rc_p_tvalid),
+        .m_axis_rc_tready (rc_p_tready),
+        .m_axis_rc_tuser  (rc_p_tuser),
+        .rx_accept_o      (cr_rx_acc_rc),
+        .rx_hdr0_o        (cr_rx_h0_rc),
+        .rx_len_dw_o      (cr_rx_len_rc),
+        .tag_free_o       (rq_tag_free_p)
+      );
+    end
+  endgenerate
 
   rivet_cdc_axis #(
     .DATA_W (AXI_DATA_WIDTH),
@@ -959,6 +985,7 @@ module rivet_pcie_ctrl #(
   rivet_dll #(
     .LANES           (LANES),
     .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH),
+    .TL_DATA_W       (TL_W),
     .TX_DATA_W       (TL_W)
   ) u_dll (
     .pclk_i         (pclk),
