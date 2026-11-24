@@ -119,6 +119,8 @@ package rivet_uvm_pkg;
   `include "tests/smoke_recovery_l0_gen2_x4.svh"
   `include "tests/smoke_recovery_speed_gen2_x4.svh"
   `include "tests/smoke_gen3_l0_x4.svh"
+  `include "tests/smoke_gen3_memwr_x4.svh"
+  `include "tests/smoke_gen3_cpld_x4.svh"
   `include "tests/smoke_recovery_downshift_gen2_x4.svh"
   `include "tests/smoke_aspm_l0s_gen2_x4.svh"
   `include "tests/smoke_aspm_l1_gen2_x4.svh"

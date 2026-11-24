@@ -532,6 +532,11 @@ module rivet_mac_os_rx #(
   logic [NSYM-1:0]  p0_edb_q;
   logic [NSYM-1:0]  p0_k_q;
   logic [7:0]       p0_data_q [0:NSYM-1];
+  // Gen3 TLP: STP, then a 2-byte length, then that many DLL bytes. The length
+  // is stripped here and the following idle byte is presented as END so the
+  // Gen2 gearbox can run. A payload byte may equal FD or FE.
+  logic [1:0]       gf_st_q;
+  logic [15:0]      gf_left_q;
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -542,25 +547,82 @@ module rivet_mac_os_rx #(
       p0_end_q      <= '0;
       p0_edb_q      <= '0;
       p0_k_q        <= '0;
+      gf_st_q       <= '0;
+      gf_left_q     <= '0;
       for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= '0;
     end else begin
-      automatic logic ok = PKT_RX_OK && sym_valid_i[0] && lane_en_i[0];
+      // Width 32 is a Gen3 data block. Tokens are the same byte values with
+      // no K bit, and only inside a data block (sync header is not OS).
+      automatic logic gen3_pkt = (PIPE_DATA_WIDTH == 32) &&
+                                 (rate_i == RIVET_PIPE_RATE_GEN3);
+      automatic logic ok = (PKT_RX_OK || gen3_pkt) && sym_valid_i[0] && lane_en_i[0];
+      automatic logic [NSYM-1:0] en_t, sdp_t, stp_t, end_t, edb_t, k_t;
+      automatic logic [7:0] data_t [0:NSYM-1];
+      automatic logic [1:0]  st;
+      automatic logic [15:0] left;
+      en_t = '0; sdp_t = '0; stp_t = '0; end_t = '0; edb_t = '0; k_t = '0;
+      for (int unsigned p = 0; p < NSYM; p++) data_t[p] = '0;
       p0_lanes_ok_q <= ok;
       for (int unsigned s = 0; s < SYMS; s++) begin
         for (int unsigned l = 0; l < LANES; l++) begin
           automatic int unsigned p = s * LANES + l;
           automatic logic [7:0]  b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           automatic logic        k = (s < 2) ? sym_datak_i[2*l + s] : 1'b0;
-          automatic logic        e = ok && lane_en_i[l];
-          p0_en_q[p]   <= e;
-          p0_sdp_q[p]  <= e && k && (b == RIVET_SYM_SDP);
-          p0_stp_q[p]  <= e && k && (b == RIVET_SYM_STP);
-          p0_end_q[p]  <= e && k && (b == RIVET_SYM_END);
-          p0_edb_q[p]  <= e && k && (b == RIVET_SYM_EDB);
-          p0_k_q[p]    <= e && k;
-          p0_data_q[p] <= b;
+          automatic logic        tok = k || (gen3_pkt && !os_block_i[l]);
+          // Symbol times 2 and 3 of a Gen3 word are logical idle, not frame
+          // bytes. The frame keeps the Gen2 8-symbol stripe in times 0 and 1.
+          automatic logic        e = ok && lane_en_i[l] && !(gen3_pkt && (s >= 2));
+          en_t[p]   = e;
+          sdp_t[p]  = e && tok && (b == RIVET_SYM_SDP);
+          stp_t[p]  = e && tok && (b == RIVET_SYM_STP);
+          end_t[p]  = e && tok && (b == RIVET_SYM_END);
+          edb_t[p]  = e && tok && (b == RIVET_SYM_EDB);
+          k_t[p]    = e && k;
+          data_t[p] = b;
         end
       end
+      st   = gf_st_q;
+      left = gf_left_q;
+      if (gen3_pkt) begin
+        for (int unsigned p = 0; p < NSYM; p++) begin
+          if (en_t[p]) begin
+            if (st == 2'd0) begin
+              if (stp_t[p]) st = 2'd1;
+            end else if (st == 2'd1) begin
+              left     = {8'd0, data_t[p]};
+              en_t[p]  = 1'b0;
+              stp_t[p] = 1'b0;
+              st       = 2'd2;
+            end else if (st == 2'd2) begin
+              left     = {data_t[p], left[7:0]};
+              en_t[p]  = 1'b0;
+              st       = 2'd3;
+            end else if (left == 16'd0) begin
+              end_t[p] = 1'b1;
+              edb_t[p] = 1'b0;
+              stp_t[p] = 1'b0;
+              sdp_t[p] = 1'b0;
+              st       = 2'd0;
+            end else begin
+              end_t[p] = 1'b0;
+              edb_t[p] = 1'b0;
+              left     = left - 16'd1;
+            end
+          end
+        end
+      end else begin
+        st   = 2'd0;
+        left = 16'd0;
+      end
+      gf_st_q   <= st;
+      gf_left_q <= left;
+      p0_en_q   <= en_t;
+      p0_sdp_q  <= sdp_t;
+      p0_stp_q  <= stp_t;
+      p0_end_q  <= end_t;
+      p0_edb_q  <= edb_t;
+      p0_k_q    <= k_t;
+      for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= data_t[p];
     end
   end
 

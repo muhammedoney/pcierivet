@@ -403,6 +403,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     int unsigned g3_off;
     int unsigned g3_sets;
     int unsigned com_hold;
+    logic [22:0] g3_lfsr[];
+    logic [7:0]  g3_plain[0:3][0:3];
+    bit          g3_frame_beat;
 
     if (!enable) return;
 
@@ -424,6 +427,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(null, "*", "peer_perf_rc", perf_rc));
     peer_lfsr = new[lanes];
     dut_lfsr  = new[lanes];
+    g3_lfsr   = new[lanes];
     wait (vif.preset_n === 1'b1);
 
     phase_q      = P_TS1_PAD;
@@ -440,13 +444,14 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     tlp_sym = 0; tlp_nbytes = 0; tlp_frame = '0;
     recovery_go = 1'b0; recovery_pulse = 1'b0;
     last_rate = 3'd0; rate_ack_left = 0; peer_rate_byte = PEER_RATE;
-    g3_off = 0; g3_sets = 0; com_hold = 0;
+    g3_off = 0; g3_sets = 0; com_hold = 0; g3_frame_beat = 1'b0;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
     rxstatus_err_go = 1'b0; rxstatus_err_left = 0;
     for (l = 0; l < lanes; l++) begin
       peer_lfsr[l] = 16'hFFFF;
       dut_lfsr[l]  = 16'hFFFF;
+      g3_lfsr[l]   = 23'h7FFFFF;
     end
     parse_st = 0; parse_n = 0; seq_b0 = '0; seq_b1 = '0;
     ack_pending = 1'b0; ack_inflight = 1'b0; ack_seq = '0; ack_n = 0;
@@ -468,6 +473,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
 
     forever begin
       @(posedge vif.pclk);
+      g3_frame_beat = 1'b0;
+      for (l = 0; l < 4; l++)
+        for (s = 0; s < 4; s++)
+          g3_plain[l][s] = 8'h00;
       cpld_auto = 1'b0;
       void'(uvm_config_db#(bit)::get(null, "*", "peer_cpld_auto", cpld_auto));
 
@@ -720,31 +729,63 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             automatic logic [15:0] lfsr;
             phys = peer_lane_reverse ? (peer_lanes - 1 - l) : l;
             lfsr = peer_lfsr[phys];
-            for (s = 0; s < 2; s++) begin
-              automatic int unsigned stream_idx = tlp_sym + s * peer_lanes + l;
-              automatic int unsigned framed_len = tlp_nbytes + 2;
-              if (stream_idx < framed_len) begin
-                if (tlp_large) begin
+            begin
+              automatic int unsigned ns;
+              // Two symbol times carry the frame. The upper half of a Gen3
+              // word is logical idle so the 8-symbol gearbox stays in lockstep.
+              ns = 2;
+              for (s = 0; s < ns; s++) begin
+                automatic int unsigned stream_idx = tlp_sym + s * peer_lanes + l;
+                automatic int unsigned framed_len;
+                automatic bit          g3_tlp;
+                g3_tlp = peer_gen3 && (vif.rate == 3'd2);
+                // Gen3 inserts a 2-byte length after STP and drops END.
+                framed_len = g3_tlp ? (tlp_nbytes + 3) : (tlp_nbytes + 2);
+                if (g3_tlp) begin
                   if (stream_idx == 0)
-                    tlp_sym9 = {1'b1, rivet_pkg::RIVET_SYM_STP};
-                  else if (stream_idx == tlp_nbytes + 1)
-                    tlp_sym9 = {1'b1, rivet_pkg::RIVET_SYM_END};
-                  else
-                    tlp_sym9 = {1'b0, cpld_mem[stream_idx - 1]};
+                    tlp_sym9 = {1'b0, rivet_pkg::RIVET_SYM_STP};
+                  else if (stream_idx == 1)
+                    tlp_sym9 = {1'b0, tlp_nbytes[7:0]};
+                  else if (stream_idx == 2)
+                    tlp_sym9 = {1'b0, tlp_nbytes[15:8]};
+                  else if (stream_idx < framed_len) begin
+                    if (tlp_large)
+                      tlp_sym9 = {1'b0, cpld_mem[stream_idx - 3]};
+                    else
+                      tlp_sym9 = rivet_axi_tlp_util::framed_tlp_sym(
+                          stream_idx - 2, tlp_frame, tlp_nbytes);
+                  end else
+                    tlp_sym9 = {1'b0, 8'h00};
+                end else if (stream_idx < framed_len) begin
+                  if (tlp_large) begin
+                    if (stream_idx == 0)
+                      tlp_sym9 = {1'b1, rivet_pkg::RIVET_SYM_STP};
+                    else if (stream_idx == tlp_nbytes + 1)
+                      tlp_sym9 = {1'b1, rivet_pkg::RIVET_SYM_END};
+                    else
+                      tlp_sym9 = {1'b0, cpld_mem[stream_idx - 1]};
+                  end else
+                    tlp_sym9 = rivet_axi_tlp_util::framed_tlp_sym(
+                        stream_idx, tlp_frame, tlp_nbytes);
                 end else
-                  tlp_sym9 = rivet_axi_tlp_util::framed_tlp_sym(
-                      stream_idx, tlp_frame, tlp_nbytes);
-              end else
-                tlp_sym9 = {1'b0, 8'h00};
-              peer_tmp = tlp_sym9;
-              peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
-              vif.rxdata[phys*PW + 8*s +: 8] <= peer_out;
-              vif.rxdatak[2*phys + s]        <= peer_tmp[8];
+                  tlp_sym9 = {1'b0, 8'h00};
+                peer_tmp = tlp_sym9;
+                if (g3_tlp) begin
+                  if (phys < 4)
+                    g3_plain[phys][s] = peer_tmp[7:0];
+                  g3_frame_beat = 1'b1;
+                end else begin
+                  peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
+                  vif.rxdata[phys*PW + 8*s +: 8] <= peer_out;
+                  vif.rxdatak[2*phys + s]        <= peer_tmp[8];
+                end
+              end
             end
             peer_lfsr[phys] = lfsr;
           end
           tlp_sym += peer_lanes * 2;
-          if (tlp_sym >= (tlp_nbytes + 2))
+          if (tlp_sym >= ((peer_gen3 && (vif.rate == 3'd2))
+                          ? (tlp_nbytes + 3) : (tlp_nbytes + 2)))
             tlp_sending = 1'b0;
         end else if (fc_sending) begin
           for (l = 0; l < peer_lanes; l++) begin
@@ -752,20 +793,30 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             automatic logic [15:0] lfsr;
             phys = peer_lane_reverse ? (peer_lanes - 1 - l) : l;
             lfsr = peer_lfsr[phys];
-            for (s = 0; s < 2; s++) begin
-              automatic int unsigned stream_idx = fc_sym + s * peer_lanes + l;
-              if (stream_idx < 8) begin
-                fc_sym9  = rivet_dllp_util::framed_sym(stream_idx, fc_wire);
-                peer_tmp = fc_sym9;
-              end else
-                peer_tmp = {1'b0, 8'h00};
-              peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
-              vif.rxdata[phys*PW + 8*s +: 8] <= peer_out;
-              vif.rxdatak[2*phys + s]        <= peer_tmp[8];
+            begin
+              automatic int unsigned ns;
+              ns = (peer_gen3 && (vif.rate == 3'd2)) ? 4 : 2;
+              for (s = 0; s < ns; s++) begin
+                automatic int unsigned stream_idx = fc_sym + s * peer_lanes + l;
+                if (stream_idx < 8) begin
+                  fc_sym9  = rivet_dllp_util::framed_sym(stream_idx, fc_wire);
+                  peer_tmp = fc_sym9;
+                end else
+                  peer_tmp = {1'b0, 8'h00};
+                if (peer_gen3 && (vif.rate == 3'd2)) begin
+                  if (phys < 4)
+                    g3_plain[phys][s] = peer_tmp[7:0];
+                  g3_frame_beat = 1'b1;
+                end else begin
+                  peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
+                  vif.rxdata[phys*PW + 8*s +: 8] <= peer_out;
+                  vif.rxdatak[2*phys + s]        <= peer_tmp[8];
+                end
+              end
             end
             peer_lfsr[phys] = lfsr;
           end
-          fc_sym += peer_lanes * 2;
+          fc_sym += peer_lanes * ((peer_gen3 && (vif.rate == 3'd2)) ? 4 : 2);
           if (fc_sym >= 8) begin
             fc_sending = 1'b0;
             if (ack_inflight) begin
@@ -877,16 +928,30 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         vif.rxdatak       <= '0;
         vif.rxdata_valid  <= '1;
         for (l = 0; l < lanes; l++) begin
+          automatic logic [22:0] lfsr;
+          lfsr = g3_lfsr[l];
           vif.rxstart_block[2*l +: 2] <= (g3_off == 0) ? 2'b01 : 2'b00;
           vif.rxsync_header[2*l +: 2] <= data_blk ? 2'b01 : 2'b10;
           for (s = 0; s < 4; s++) begin
-            if (data_blk)
-              vif.rxdata[l*PW + 8*s +: 8] <= 8'h00;
+            automatic logic [7:0]  plain;
+            automatic logic [30:0] step;
+            if (!data_blk)
+              plain = gen3_ts_byte(g3_off + s, ts2, 8'(l), eqc, eqd);
+            else if (g3_frame_beat)
+              plain = g3_plain[l][s];
             else
-              vif.rxdata[l*PW + 8*s +: 8] <= gen3_ts_byte(
-                  g3_off + s, ts2, 8'(l), eqc, eqd);
+              plain = 8'h00;
+            // Same 23-bit step as the DUT descrambler. OS advances only.
+            // Data is XORed so a logical idle is 00 after descramble.
+            step = rivet_pkg::rivet_lfsr23_byte(lfsr);
+            lfsr = step[30:8];
+            if (data_blk)
+              plain = plain ^ step[7:0];
+            vif.rxdata[l*PW + 8*s +: 8] <= plain;
           end
+          g3_lfsr[l] = lfsr;
         end
+        g3_frame_beat = 1'b0;
         g3_off = g3_off + 4;
         if (g3_off >= 16) begin
           g3_off  = 0;
@@ -897,6 +962,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       end else if (peer_gen3) begin
         g3_off = 0;
         g3_sets = 0;
+        if (vif.rate != 3'd2) begin
+          for (l = 0; l < lanes; l++)
+            g3_lfsr[l] = 23'h7FFFFF;
+        end
         vif.rxdata_valid  <= '0;
         vif.rxstart_block <= '0;
         vif.rxsync_header <= '0;

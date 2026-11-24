@@ -44,6 +44,10 @@ module rivet_mac_descrambler #(
   logic [15:0] lfsr_q     [LANES];
   logic [22:0] lfsr23_q   [LANES];
   logic [22:0] lfsr23_next [LANES];
+  // Stay at the seed until the first Gen3 block. The PIPE rate leads the
+  // block data by the adapter registers, and those early bytes are not the
+  // peer's first block.
+  logic        lfsr23_arm_q, lfsr23_arm_n;
   logic [2:0]  skp_left_q [LANES];
   logic [2:0]  skp_left_n [LANES];
   logic [LANES-1:0] os_q;
@@ -62,14 +66,19 @@ module rivet_mac_descrambler #(
 
   always_comb begin
     data_d = data_i;
+    lfsr23_arm_n = lfsr23_arm_q;
     for (int unsigned l = 0; l < LANES; l++) begin
       lfsr_next[l]   = lfsr_q[l];
       lfsr23_next[l] = lfsr23_q[l];
       os_left_n[l]   = os_left_q[l];
       com_pend_n[l]  = com_pend_q[l];
       skp_left_n[l]  = skp_left_q[l];
-      if ((rate_i == RIVET_PIPE_RATE_GEN3) && valid_i[l] && lane_en_i[l]) begin
+      if ((rate_i == RIVET_PIPE_RATE_GEN3) && valid_i[l] && lane_en_i[l] &&
+          (lfsr23_arm_q || block_start_i[l])) begin
         automatic bit skp_word;
+        if (!lfsr23_arm_q)
+          lfsr23_next[l] = RIVET_LFSR23_SEED;
+        lfsr23_arm_n = 1'b1;
         skp_word = (skp_left_q[l] != 3'd0) ||
                    (block_start_i[l] && os_block_i[l] &&
                     (data_i[PIPE_DATA_WIDTH*l +: 8] == RIVET_SYM_SKP_BLK));
@@ -159,6 +168,7 @@ module rivet_mac_descrambler #(
         com_pend_q[l] <= 1'b0;
         skp_left_q[l] <= '0;
       end
+      lfsr23_arm_q <= 1'b0;
     end else begin
       data_q  <= data_d;
       datak_q <= datak_i;
@@ -171,6 +181,13 @@ module rivet_mac_descrambler #(
         os_left_q[l]  <= os_left_n[l];
         com_pend_q[l] <= com_pend_n[l];
         skp_left_q[l] <= skp_left_n[l];
+      end
+      if (rate_i != RIVET_PIPE_RATE_GEN3) begin
+        lfsr23_arm_q <= 1'b0;
+        for (int unsigned l = 0; l < LANES; l++)
+          lfsr23_q[l] <= RIVET_LFSR23_SEED;
+      end else begin
+        lfsr23_arm_q <= lfsr23_arm_n;
       end
     end
   end

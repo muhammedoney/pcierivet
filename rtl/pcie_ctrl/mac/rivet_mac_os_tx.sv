@@ -292,9 +292,13 @@ module rivet_mac_os_tx #(
                   (dll_tx_beat_i.keep != 8'h00);
 
   // Insert DLLP only between Idle OS boundaries while packet-enabled (SKP first).
-  assign want_pkt = PKT_OK && pkt_en_i && at_boundary && !want_skp &&
+  // Gen3 uses the same beat stream inside a 128b/130b data block. The token
+  // byte is not a K-symbol; Gen2 STP/END stay on the K path.
+  wire pkt_rate_ok = PKT_OK ||
+                     ((rate_i == RIVET_PIPE_RATE_GEN3) && (word_q == 2'd0));
+  assign want_pkt = pkt_rate_ok && pkt_en_i && at_boundary && !want_skp &&
                     (cur == RIVET_MAC_OS_IDLE) && dllp_ok;
-  assign want_tlp = PKT_OK && pkt_en_i && at_boundary && !want_skp &&
+  assign want_tlp = pkt_rate_ok && pkt_en_i && at_boundary && !want_skp &&
                     (cur == RIVET_MAC_OS_IDLE) && tlp_ok && dll_tx_beat_i.sop &&
                     !dllp_ok;
   assign take_dllp      = want_pkt;
@@ -494,7 +498,11 @@ module rivet_mac_os_tx #(
             else
               sym_tmp = pkt_symbol(stream_idx[6:0], pkt_q);
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
-            sym_datak_d[SYMS*l + s]                  = sym_tmp[8];
+            // Gen3 frame token is a data byte. datak is 2 bits per lane.
+            if (rate_i == RIVET_PIPE_RATE_GEN3)
+              sym_tmp[8] = 1'b0;
+            if (s < 2)
+              sym_datak_d[2*l + s] = sym_tmp[8];
             ord++;
           end
         end
@@ -520,7 +528,10 @@ module rivet_mac_os_tx #(
               sym_tmp = {1'b0, 8'h00};
             end
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
-            sym_datak_d[SYMS*l + s]                  = sym_tmp[8];
+            if (rate_i == RIVET_PIPE_RATE_GEN3)
+              sym_tmp[8] = 1'b0;
+            if (s < 2)
+              sym_datak_d[2*l + s] = sym_tmp[8];
             ord++;
           end
         end
