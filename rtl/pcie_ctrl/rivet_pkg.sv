@@ -71,7 +71,8 @@ package rivet_pkg;
   typedef enum logic [2:0] {
     RIVET_PIPE_RATE_GEN1 = 3'd0,
     RIVET_PIPE_RATE_GEN2 = 3'd1,
-    RIVET_PIPE_RATE_GEN3 = 3'd2
+    RIVET_PIPE_RATE_GEN3 = 3'd2,
+    RIVET_PIPE_RATE_GEN4 = 3'd3
   } rivet_pipe_rate_e;
 
   // PIPE RxStatus[2:0] per lane.
@@ -585,13 +586,15 @@ package rivet_pkg;
     return (lanes == 1) || (lanes == 2) || (lanes == 4);
   endfunction
 
-  // Gen1/Gen2 share the 16-bit pipe. Gen3 is 32 bits per lane. Gen4 is rejected
-  // until that track opens.
+  // Gen1/Gen2 share the 16-bit pipe. Gen3 is 32 bits per lane. Gen4 is 64.
+  // Gen5 stays rejected.
   function automatic bit rivet_pipe_width_ok(int unsigned gen, int unsigned width);
     if (gen == RIVET_GEN1 || gen == RIVET_GEN2)
       return (width == 16);
     if (gen == RIVET_GEN3)
       return (width == 32);
+    if (gen == RIVET_GEN4)
+      return (width == 64);
     return 0;
   endfunction
 

@@ -1,7 +1,7 @@
 # Copyright 2026 Rivet contributors
 # Verilator lint of rivet_pcie_ctrl (Windows PowerShell)
 param(
-  [ValidateSet(2, 3)]
+  [ValidateSet(2, 3, 4)]
   [int]$Gen = 2
 )
 
@@ -26,6 +26,8 @@ if ($UseWsl) {
   $Cmd = "cd '$WslRoot' && $Lint --top-module rivet_pcie_ctrl"
   if ($Gen -eq 3) {
     $Cmd += " && $Lint tb/lint/rivet_gen3_lint_top.sv --top-module rivet_gen3_lint_top"
+  } elseif ($Gen -eq 4) {
+    $Cmd += " && $Lint tb/lint/rivet_gen4_lint_top.sv --top-module rivet_gen4_lint_top"
   }
   wsl.exe -e bash -lc $Cmd
   if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: lint" }
@@ -36,9 +38,14 @@ if ($UseWsl) {
   if ($Gen -eq 3) {
     & verilator --lint-only --replication-limit 65536 $Warn.Split(" ") $Inc -f rtl/filelist_core.f tb/lint/rivet_gen3_lint_top.sv --top-module rivet_gen3_lint_top
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: Gen3 lint" }
+  } elseif ($Gen -eq 4) {
+    & verilator --lint-only --replication-limit 65536 $Warn.Split(" ") $Inc -f rtl/filelist_core.f tb/lint/rivet_gen4_lint_top.sv --top-module rivet_gen4_lint_top
+    if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: Gen4 lint" }
   }
 }
 Write-Host "PASS: Verilator lint (controller)"
 if ($Gen -eq 3) {
   Write-Host "PASS: Verilator lint (Gen3 x4 width 32)"
+} elseif ($Gen -eq 4) {
+  Write-Host "PASS: Verilator lint (Gen4 x4 width 64)"
 }
