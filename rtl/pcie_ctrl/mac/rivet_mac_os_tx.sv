@@ -234,9 +234,11 @@ module rivet_mac_os_tx #(
   logic [TLP_AW-1:0]      tlp_ram_waddr;
   logic [63:0]            tlp_ram_wdata;
   logic [63:0]            tlp_ram_rdata;
+  logic [63:0]            tlp_ram_rdata_b;
 
-  logic [127:0]           emit_buf_q, emit_buf_d;
-  logic [4:0]             emit_cnt_q, emit_cnt_d;
+  // 32-byte window. Gen3 reads two 8-byte RAM words per cycle.
+  logic [255:0]           emit_buf_q, emit_buf_d;
+  logic [5:0]             emit_cnt_q, emit_cnt_d;
   logic [TLP_AW-1:0]      tlp_wr_slot_q, tlp_wr_slot_d;
   logic [TLP_AW-1:0]      tlp_rd_slot_q, tlp_rd_slot_d;
   logic [15:0]            tlp_len_q, tlp_len_d;
@@ -244,10 +246,15 @@ module rivet_mac_os_tx #(
   logic                   tlp_em_done;
   // Flow: STP is already on the wire while later beats of this TLP are accepted.
   logic                   tlp_flow_q, tlp_flow_d;
-  // Closed: the EOP beat has been accepted, so END is at tlp_len+1.
+  // Closed: the EOP beat has been accepted.
+  // Gen2 END is at tlp_len+1. Gen3 has no END; the frame is STP + length + tlp_len.
   logic                   tlp_closed_q, tlp_closed_d;
   logic                   emit_fire;
-  logic [3:0]             take_b_c;
+  logic [4:0]             take_b_c;
+  logic                   gen3_pkt;
+  logic [4:0]             slot_b;
+  logic [15:0]            pay_sent;
+  logic [15:0]            pay_left;
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_data_d, sym_data_q;
   logic [2*LANES-1:0]               sym_datak_d, sym_datak_q;
@@ -260,7 +267,8 @@ module rivet_mac_os_tx #(
   end
 `endif
 
-  assign tlp_ram_rdata = tlp_ram[tlp_rd_slot_q];
+  assign tlp_ram_rdata   = tlp_ram[tlp_rd_slot_q];
+  assign tlp_ram_rdata_b = tlp_ram[tlp_rd_slot_q + TLP_AW'(1)];
 
   always_ff @(posedge pclk_i) begin
     if (tlp_ram_we)
@@ -320,10 +328,21 @@ module rivet_mac_os_tx #(
   end
 
   assign pkt_done    = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
-  assign take_b_c    = (tlp_pos_q == 16'd0) ? (sym_step[3:0] - 4'd1) : sym_step[3:0];
+  // Gen3 frame is STP + 2 length bytes + DLL bytes. Gen2 is STP + bytes + END.
+  assign gen3_pkt = (rate_i == RIVET_PIPE_RATE_GEN3);
+  assign slot_b   = (tlp_pos_q == 16'd0)
+                  ? ((sym_step > 5'd3) ? (sym_step - 5'd3) : 5'd0)
+                  : sym_step;
+  assign pay_sent = (tlp_pos_q == 16'd0) ? 16'd0 : (tlp_pos_q - 16'd3);
+  assign pay_left = (tlp_len_q > pay_sent) ? (tlp_len_q - pay_sent) : 16'd0;
+  assign take_b_c = gen3_pkt
+      ? ((tlp_closed_q && ({11'd0, slot_b} > pay_left)) ? pay_left[4:0] : slot_b)
+      : ((tlp_pos_q == 16'd0) ? {1'b0, (sym_step[3:0] - 4'd1)}
+                              : {1'b0, sym_step[3:0]});
   // END exists only after EOP. Until then the length is still growing.
   assign tlp_em_done = tlp_closed_q &&
-                       ((tlp_pos_q + 16'(sym_step)) >= (tlp_len_q + 16'd2));
+                       ((tlp_pos_q + 16'(sym_step)) >=
+                        (tlp_len_q + (gen3_pkt ? 16'd3 : 16'd2)));
   assign emit_fire   = (tlp_flow_q || (mode_q == ST_TLP_EM)) && !tlp_em_done &&
                        ({1'b0, take_b_c} <= emit_cnt_q);
   assign in_pkt_emit = take_dllp || (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) ||
@@ -334,9 +353,10 @@ module rivet_mac_os_tx #(
   always_comb begin
     logic [63:0]  masked_beat;
     logic [7:0]   beat_n;
-    logic [3:0]   take_b;
+    logic [4:0]   take_b;
     logic [127:0] shifted;
-    logic [4:0]   rem_cnt;
+    logic [255:0] wide;
+    logic [5:0]   rem_cnt;
 
     tlp_ram_we    = 1'b0;
     tlp_ram_waddr = tlp_wr_slot_q;
@@ -354,7 +374,8 @@ module rivet_mac_os_tx #(
     tlp_len_d     = tlp_len_q;
     beat_n        = keep_nbytes(dll_tx_beat_i.keep);
     take_b        = '0;
-    shifted       = emit_buf_q;
+    shifted       = emit_buf_q[127:0];
+    wide          = emit_buf_q;
     rem_cnt       = emit_cnt_q;
 
     if (take_tlp_start) begin
@@ -383,15 +404,36 @@ module rivet_mac_os_tx #(
       end
     end
     if (emit_fire && !take_tlp_start) begin
-      // Every non-final emit cycle consumes sym_step-1 bytes on the STP beat
-      // and sym_step bytes thereafter ({1,2,3,4,7,8} only).
+      // Gen2 consumes sym_step-1 bytes on the STP beat and sym_step thereafter.
+      // Gen3 consumes sym_step-3 on the length beat, then sym_step.
       take_b = take_b_c;
+      if (gen3_pkt) begin
+        wide    = emit_buf_q >> (8 * int'(take_b));
+        rem_cnt = emit_cnt_q - {1'b0, take_b};
+        if ((rem_cnt + 6'd16 <= 6'd32) &&
+            ((tlp_rd_slot_q + TLP_AW'(1)) < tlp_wr_slot_q)) begin
+          emit_buf_d = wide;
+          emit_buf_d[8*int'(rem_cnt) +: 64]      = tlp_ram_rdata;
+          emit_buf_d[8*int'(rem_cnt + 6'd8) +: 64] = tlp_ram_rdata_b;
+          emit_cnt_d    = rem_cnt + 6'd16;
+          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(2);
+        end else if ((rem_cnt + 6'd8 <= 6'd32) &&
+                     (tlp_rd_slot_q < tlp_wr_slot_q)) begin
+          emit_buf_d = wide;
+          emit_buf_d[8*int'(rem_cnt) +: 64] = tlp_ram_rdata;
+          emit_cnt_d    = rem_cnt + 6'd8;
+          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(1);
+        end else begin
+          emit_buf_d = wide;
+          emit_cnt_d = rem_cnt;
+        end
+      end else begin
       unique case (take_b)
-        4'd1:    shifted = { 8'd0, emit_buf_q[127: 8]};
-        4'd2:    shifted = {16'd0, emit_buf_q[127:16]};
-        4'd3:    shifted = {24'd0, emit_buf_q[127:24]};
-        4'd4:    shifted = {32'd0, emit_buf_q[127:32]};
-        4'd7:    shifted = {56'd0, emit_buf_q[127:56]};
+        5'd1:    shifted = { 8'd0, emit_buf_q[127: 8]};
+        5'd2:    shifted = {16'd0, emit_buf_q[127:16]};
+        5'd3:    shifted = {24'd0, emit_buf_q[127:24]};
+        5'd4:    shifted = {32'd0, emit_buf_q[127:32]};
+        5'd7:    shifted = {56'd0, emit_buf_q[127:56]};
         default: shifted = {64'd0, emit_buf_q[127:64]};
       endcase
       rem_cnt = emit_cnt_q - {1'b0, take_b};
@@ -412,6 +454,7 @@ module rivet_mac_os_tx #(
       end else begin
         emit_buf_d = shifted;
         emit_cnt_d = rem_cnt;
+      end
       end
     end
   end
@@ -454,7 +497,9 @@ module rivet_mac_os_tx #(
         end
       end
       ST_TLP_COL: begin
-        if (take_tlp_col && (tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop)
+        // Gen3 waits for EOP so the dump never inserts idle inside the length.
+        if (take_tlp_col && (tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop &&
+            !gen3_pkt)
           tlp_flow_d = 1'b1;
         if (take_tlp_col && dll_tx_beat_i.eop) begin
           mode_d       = ST_TLP_EM;
@@ -522,7 +567,21 @@ module rivet_mac_os_tx #(
             automatic int unsigned sym_i;
             sym_i = s * int'(n_en) + ord;
             idx   = tlp_pos_q + 16'(sym_i);
-            if (idx == 16'd0) begin
+            if (gen3_pkt) begin
+              if (idx == 16'd0) begin
+                sym_tmp = {1'b0, RIVET_SYM_STP};
+              end else if (idx == 16'd1) begin
+                sym_tmp = {1'b0, tlp_len_q[7:0]};
+              end else if (idx == 16'd2) begin
+                sym_tmp = {1'b0, tlp_len_q[15:8]};
+              end else if (idx < (tlp_len_q + 16'd3)) begin
+                automatic logic [15:0] poff;
+                poff = (tlp_pos_q == 16'd0) ? (idx - 16'd3) : (idx - tlp_pos_q);
+                sym_tmp = {1'b0, emit_buf_q[8*int'(poff[4:0]) +: 8]};
+              end else begin
+                sym_tmp = {1'b0, 8'h00};
+              end
+            end else if (idx == 16'd0) begin
               sym_tmp = {1'b1, RIVET_SYM_STP};
             end else if (tlp_closed_q && (idx == (tlp_len_q + 16'd1))) begin
               sym_tmp = {1'b1, RIVET_SYM_END};

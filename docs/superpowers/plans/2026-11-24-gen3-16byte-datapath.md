@@ -32,10 +32,10 @@
 - Consumes: existing 8-byte beats (`keep[7:0] == 8'hFF`, high data zero).
 - Produces: `data[127:0]`, `keep[15:0]`. Gen2 assignments zero-extend.
 
-- [ ] **Step 1:** Change both beat structs to 128-bit `data` and 16-bit `keep`.
-- [ ] **Step 2:** Count keep nibbles across 16 bits. A DLLP is still legal only when `keep[7:0] == 8'hFF` and `keep[15:8] == 8'h00`.
-- [ ] **Step 3:** Run `scripts/lint.ps1`. Expected: `PASS: Verilator lint (controller)`.
-- [ ] **Step 4:** Commit `refactor(dll): widen the MAC beat to 16 bytes`.
+- [x] **Step 1:** Change both beat structs to 128-bit `data` and 16-bit `keep`.
+- [x] **Step 2:** Count keep nibbles across 16 bits. A DLLP is still legal only when `keep[7:0] == 8'hFF` and `keep[15:8] == 8'h00`.
+- [x] **Step 3:** Run `scripts/lint.ps1`. Expected: `PASS: Verilator lint (controller)`.
+- [x] **Step 4:** Commit `refactor(dll): widen the MAC beat to 16 bytes`.
 
 ### Task 2: Gen3 TX uses four symbol times and a length
 
@@ -47,10 +47,10 @@
 - Consumes: Task 1 beat. Gen3 x4 `sym_step` is 16.
 - Produces: on a Gen3 data block, symbol order is STP, length low, length high, then DLL bytes. No END byte. Gen2 STP/END K path is unchanged.
 
-- [ ] **Step 1:** On the first Gen3 beat, consume `sym_step - 3` payload bytes (13 at x4). Later beats consume `sym_step` bytes. Add shift cases for 5, 6, 8, 12, 13, 15, and 16.
-- [ ] **Step 2:** Done when `tlp_pos + sym_step` reaches `tlp_len + 3`.
-- [ ] **Step 3:** Lint Gen2 and Gen3. Both PASS lines required.
-- [ ] **Step 4:** Commit `feat(mac): send a Gen3 TLP in all four symbol times`.
+- [x] **Step 1:** On the first Gen3 beat, consume `sym_step - 3` payload bytes (13 at x4). Later beats consume `sym_step` bytes. Add shift cases for 5, 6, 8, 12, 13, 15, and 16.
+- [x] **Step 2:** Done when `tlp_pos + sym_step` reaches `tlp_len + 3`.
+- [x] **Step 3:** Lint Gen2 and Gen3. Both PASS lines required.
+- [x] **Step 4:** Commit `feat(mac): send a Gen3 TLP in all four symbol times`.
 
 ### Task 3: Gen3 RX parses four symbol times
 
