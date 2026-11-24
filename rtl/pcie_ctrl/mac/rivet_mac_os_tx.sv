@@ -150,9 +150,12 @@ module rivet_mac_os_tx #(
     endcase
   endfunction
 
-  function automatic logic [7:0] keep_nbytes(input logic [7:0] k);
-    return 8'(k[0]) + 8'(k[1]) + 8'(k[2]) + 8'(k[3]) +
-           8'(k[4]) + 8'(k[5]) + 8'(k[6]) + 8'(k[7]);
+  function automatic logic [7:0] keep_nbytes(input logic [15:0] k);
+    logic [7:0] n;
+    n = '0;
+    for (int unsigned i = 0; i < 16; i++)
+      n += 8'(k[i]);
+    return n;
   endfunction
 
   // Framed DLLP stream: [0]=SDP, [1..6]=bytes, [7]=END; else Logical Idle.
@@ -283,10 +286,12 @@ module rivet_mac_os_tx #(
   assign set_done     = (ptr_q + os_step) >= len;
   assign ptr_next     = set_done ? 5'd0 : (ptr_q + os_step);
 
+  // A DLLP is one 8-byte beat. A TLP may use the high half at Gen3.
   assign dllp_ok = dll_tx_valid_i &&
                    (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_DLLP) &&
                    dll_tx_beat_i.sop && dll_tx_beat_i.eop &&
-                   (dll_tx_beat_i.keep == 8'hFF);
+                   (dll_tx_beat_i.keep[7:0] == 8'hFF) &&
+                   (dll_tx_beat_i.keep[15:8] == 8'h00);
   assign tlp_ok = dll_tx_valid_i &&
                   (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_TLP) &&
                   (dll_tx_beat_i.keep != 8'h00);

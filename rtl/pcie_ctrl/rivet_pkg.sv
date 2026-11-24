@@ -164,18 +164,19 @@ package rivet_pkg;
   } rivet_mac_os_type_e;
 
   // DLL -> MAC TX payload beat (AXI-ST-like; not user AXI-ST).
+  // 16 bytes per beat. Gen2 fills data[63:0] and keep[7:0] only.
   typedef struct packed {
-    logic [63:0]          data;
-    logic [7:0]           keep;
+    logic [127:0]         data;
+    logic [15:0]          keep;
     logic                 sop;
     logic                 eop;
     rivet_mac_pkt_type_e  pkt_type;
   } rivet_dll_mac_tx_beat_t;
 
-  // MAC -> DLL RX payload beat.
+  // MAC -> DLL RX payload beat. Same 16-byte layout as the TX beat.
   typedef struct packed {
-    logic [63:0]          data;
-    logic [7:0]           keep;
+    logic [127:0]         data;
+    logic [15:0]          keep;
     logic                 sop;
     logic                 eop;
     logic                 err;
