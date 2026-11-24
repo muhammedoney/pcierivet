@@ -16,6 +16,8 @@ module rivet_mac_pipe_adapter #(
   input  logic [PIPE_DATA_WIDTH*LANES-1:0] sym_tx_data_i,
   input  logic [2*LANES-1:0]               sym_tx_datak_i,
   input  logic                             sym_tx_valid_i,
+  input  logic                             sym_tx_os_i = 1'b0,
+  input  logic                             sym_tx_start_i = 1'b0,
   input  logic                             txdetectrx_i,
   input  logic [LANES-1:0]                 txelecidle_i,
   input  logic [LANES-1:0]                 rxpolarity_i,
@@ -253,14 +255,23 @@ module rivet_mac_pipe_adapter #(
 
         if (sym_tx_valid_i) begin
           tx_dv_q <= 1'b1;
-          if (tx_word_q == 2'd0) begin
-            tx_start_q <= 1'b1;
-            tx_hdr_q   <= hdr_b;
-            tx_word_q  <= 2'd1;
+          if (as_mac_in_detect_i) begin
+            if (tx_word_q == 2'd0) begin
+              tx_start_q <= 1'b1;
+              tx_hdr_q   <= hdr_b;
+              tx_word_q  <= 2'd1;
+            end else begin
+              tx_start_q <= 1'b0;
+              tx_hdr_q   <= 2'b00;
+              tx_word_q  <= (tx_word_q == 2'd3) ? 2'd0 : (tx_word_q + 2'd1);
+            end
           end else begin
-            tx_start_q <= 1'b0;
-            tx_hdr_q   <= 2'b00;
-            tx_word_q  <= (tx_word_q == 2'd3) ? 2'd0 : (tx_word_q + 2'd1);
+            // Outside Detect, os_tx marks word 0 and OS vs Data directly so
+            // Gen3 block starts stay aligned with the scrambler reseed and SKP.
+            tx_start_q <= sym_tx_start_i;
+            tx_hdr_q   <= sym_tx_start_i ? (sym_tx_os_i ? 2'b10 : 2'b01) : 2'b00;
+            tx_word_q  <= sym_tx_start_i ? 2'd1 :
+                          ((tx_word_q == 2'd3) ? 2'd0 : (tx_word_q + 2'd1));
           end
         end else begin
           tx_dv_q    <= 1'b0;

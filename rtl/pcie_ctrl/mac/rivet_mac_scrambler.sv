@@ -16,11 +16,14 @@ module rivet_mac_scrambler #(
   input  logic [2*LANES-1:0]               datak_i,
   input  logic [2*LANES-1:0]               os_d_i,
   input  logic                             valid_i,
+  input  logic                             blk_start_i = 1'b0,
   input  logic [LANES-1:0]                 lane_en_i,
 
   output logic [PIPE_DATA_WIDTH*LANES-1:0] data_o,
   output logic [2*LANES-1:0]               datak_o,
-  output logic                             valid_o
+  output logic                             valid_o,
+  output logic                             os_o,
+  output logic                             blk_start_o
 );
 
   import rivet_pkg::*;
@@ -46,6 +49,8 @@ module rivet_mac_scrambler #(
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_q;
   logic [2*LANES-1:0]               datak_q;
   logic                             valid_q;
+  logic                             os_q;
+  logic                             blk_start_q;
 
   always_comb begin
     data_scr = data_i;
@@ -101,16 +106,20 @@ module rivet_mac_scrambler #(
     if (!rst_ni) begin
       data_q  <= '0;
       datak_q <= '0;
-      valid_q <= 1'b0;
+      valid_q     <= 1'b0;
+      os_q        <= 1'b0;
+      blk_start_q <= 1'b0;
       for (int unsigned l = 0; l < LANES; l++) begin
         lfsr_q[l]   <= RIVET_LFSR_SEED;
         lfsr23_q[l] <= RIVET_LFSR23_SEED;
       end
       lfsr23_data_q <= 1'b0;
     end else begin
-      data_q  <= data_scr;
-      datak_q <= datak_i;
-      valid_q <= valid_i;
+      data_q      <= data_scr;
+      datak_q     <= datak_i;
+      valid_q     <= valid_i;
+      os_q        <= (rate_i == RIVET_PIPE_RATE_GEN3) ? (|os_d_i) : 1'b0;
+      blk_start_q <= (rate_i == RIVET_PIPE_RATE_GEN3) ? blk_start_i : 1'b0;
       for (int unsigned l = 0; l < LANES; l++) begin
         lfsr_q[l]   <= lfsr_next[l];
         lfsr23_q[l] <= lfsr23_next[l];
@@ -122,8 +131,10 @@ module rivet_mac_scrambler #(
     end
   end
 
-  assign data_o  = data_q;
-  assign datak_o = datak_q;
-  assign valid_o = valid_q;
+  assign data_o      = data_q;
+  assign datak_o     = datak_q;
+  assign valid_o     = valid_q;
+  assign os_o        = os_q;
+  assign blk_start_o = blk_start_q;
 
 endmodule : rivet_mac_scrambler

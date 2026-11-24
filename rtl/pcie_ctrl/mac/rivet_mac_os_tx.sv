@@ -49,6 +49,7 @@ module rivet_mac_os_tx #(
   output logic [2*LANES-1:0]               sym_datak_o,
   output logic [2*LANES-1:0]               sym_os_d_o, // 1 = Ordered-Set D (scramble bypass)
   output logic                             sym_valid_o,
+  output logic                             sym_blk_start_o,
 
   // Ordered sets completed (Idle counts symbols) since os_cnt_clr_i
   output logic [11:0]                      os_sent_cnt_o
@@ -260,6 +261,7 @@ module rivet_mac_os_tx #(
   logic [2*LANES-1:0]               sym_datak_d, sym_datak_q;
   logic [2*LANES-1:0]               sym_os_d_d, sym_os_d_q;
   logic                             sym_valid_d, sym_valid_q;
+  logic                             sym_blk_start_d, sym_blk_start_q;
 
 `ifndef SYNTHESIS
   initial begin
@@ -625,6 +627,8 @@ module rivet_mac_os_tx #(
   assign sym_valid_d = take_dllp ||
                        (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) || tlp_flow_q ||
                        (cur != RIVET_MAC_OS_NONE);
+  assign sym_blk_start_d = (rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_d &&
+                           (word_q == 2'd0);
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -647,24 +651,26 @@ module rivet_mac_os_tx #(
       tlp_closed_q  <= 1'b0;
       sym_data_q    <= '0;
       sym_datak_q   <= '0;
-      sym_os_d_q    <= '0;
-      sym_valid_q   <= 1'b0;
+      sym_os_d_q      <= '0;
+      sym_valid_q     <= 1'b0;
+      sym_blk_start_q <= 1'b0;
     end else begin
-      mode_q        <= mode_d;
-      pkt_q         <= pkt_d;
-      pkt_ptr_q     <= pkt_ptr_d;
-      emit_buf_q    <= emit_buf_d;
-      emit_cnt_q    <= emit_cnt_d;
-      tlp_wr_slot_q <= tlp_wr_slot_d;
-      tlp_rd_slot_q <= tlp_rd_slot_d;
-      tlp_len_q     <= tlp_len_d;
-      tlp_pos_q     <= tlp_pos_d;
-      tlp_flow_q    <= tlp_flow_d;
-      tlp_closed_q  <= tlp_closed_d;
-      sym_data_q    <= sym_data_d;
-      sym_datak_q   <= sym_datak_d;
-      sym_os_d_q    <= sym_os_d_d;
-      sym_valid_q   <= sym_valid_d;
+      mode_q          <= mode_d;
+      pkt_q           <= pkt_d;
+      pkt_ptr_q       <= pkt_ptr_d;
+      emit_buf_q      <= emit_buf_d;
+      emit_cnt_q      <= emit_cnt_d;
+      tlp_wr_slot_q   <= tlp_wr_slot_d;
+      tlp_rd_slot_q   <= tlp_rd_slot_d;
+      tlp_len_q       <= tlp_len_d;
+      tlp_pos_q       <= tlp_pos_d;
+      tlp_flow_q      <= tlp_flow_d;
+      tlp_closed_q    <= tlp_closed_d;
+      sym_data_q      <= sym_data_d;
+      sym_datak_q     <= sym_datak_d;
+      sym_os_d_q      <= sym_os_d_d;
+      sym_valid_q     <= sym_valid_d;
+      sym_blk_start_q <= sym_blk_start_d;
 
       if (in_pkt_emit) begin
         // Freeze OS pointer while framing a packet.
@@ -684,9 +690,12 @@ module rivet_mac_os_tx #(
         if (sent_q != CNT_MAX) sent_q <= sent_q + 1'b1;
       end
 
-      // L0 Symbol-Time counter for SKP scheduling. Reset outside L0 and after
-      // each completed SKP OS so the next interval starts cleanly.
-      if ((rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_d)
+      // L0 Symbol-Time counter for SKP scheduling. Reset outside Gen3 and
+      // while idle/silent in Recovery.Speed so word 0 aligns with the first
+      // Gen3 block emitted after the rate change.
+      if ((rate_i != RIVET_PIPE_RATE_GEN3) || !sym_valid_d)
+        word_q <= 2'd0;
+      else
         word_q <= word_q + 2'd1;
 
       if (!pkt_en_i || skp_finishing) begin
@@ -708,10 +717,11 @@ module rivet_mac_os_tx #(
     end
   end
 
-  assign sym_data_o    = sym_data_q;
-  assign sym_datak_o   = sym_datak_q;
-  assign sym_os_d_o    = sym_os_d_q;
-  assign sym_valid_o   = sym_valid_q;
-  assign os_sent_cnt_o = sent_q;
+  assign sym_data_o      = sym_data_q;
+  assign sym_datak_o     = sym_datak_q;
+  assign sym_os_d_o      = sym_os_d_q;
+  assign sym_valid_o     = sym_valid_q;
+  assign sym_blk_start_o = sym_blk_start_q;
+  assign os_sent_cnt_o   = sent_q;
 
 endmodule : rivet_mac_os_tx

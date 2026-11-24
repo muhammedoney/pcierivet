@@ -534,8 +534,10 @@ module rivet_mac_os_rx #(
   logic [7:0]       p0_data_q [0:NSYM-1];
   // Gen3 TLP: STP, then a 2-byte length, then that many DLL bytes. The length
   // is stripped here and the following idle byte is presented as END so the
-  // Gen2 gearbox can run. A payload byte may equal FD or FE.
-  logic [1:0]       gf_st_q;
+  // Gen2 gearbox can run. Gen3 DLLP: SDP, then 6 payload bytes, then END.
+  // Payload and CRC bytes may equal FB, 5C, FD, or FE, so both framing bodies
+  // mask token detection until their byte counts expire.
+  logic [2:0]       gf_st_q;
   logic [15:0]      gf_left_q;
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
@@ -558,7 +560,7 @@ module rivet_mac_os_rx #(
       automatic logic ok = (PKT_RX_OK || gen3_pkt) && sym_valid_i[0] && lane_en_i[0];
       automatic logic [NSYM-1:0] en_t, sdp_t, stp_t, end_t, edb_t, k_t;
       automatic logic [7:0] data_t [0:NSYM-1];
-      automatic logic [1:0]  st;
+      automatic logic [2:0]  st;
       automatic logic [15:0] left;
       en_t = '0; sdp_t = '0; stp_t = '0; end_t = '0; edb_t = '0; k_t = '0;
       for (int unsigned p = 0; p < NSYM; p++) data_t[p] = '0;
@@ -571,7 +573,7 @@ module rivet_mac_os_rx #(
           automatic logic        tok = k || (gen3_pkt && !os_block_i[l]);
           // Gen3 data blocks carry four symbol times. A cycle that holds
           // more than eight frame bytes writes a second RAM word below.
-          automatic logic        e = ok && lane_en_i[l];
+          automatic logic        e = ok && lane_en_i[l] && !(gen3_pkt && os_block_i[l]);
           en_t[p]   = e;
           sdp_t[p]  = e && tok && (b == RIVET_SYM_SDP);
           stp_t[p]  = e && tok && (b == RIVET_SYM_STP);
@@ -586,26 +588,45 @@ module rivet_mac_os_rx #(
       if (gen3_pkt) begin
         for (int unsigned p = 0; p < NSYM; p++) begin
           if (en_t[p]) begin
-            if (st == 2'd0) begin
-              if (stp_t[p]) st = 2'd1;
-            end else if (st == 2'd1) begin
+            if (st == 3'd0) begin
+              if (stp_t[p]) begin
+                st = 3'd1;
+              end else if (sdp_t[p]) begin
+                st   = 3'd4;
+                left = 16'(RIVET_DLLP_WIRE_BYTES);
+              end
+            end else if (st == 3'd1) begin
               left     = {8'd0, data_t[p]};
               en_t[p]  = 1'b0;
               stp_t[p] = 1'b0;
               sdp_t[p] = 1'b0;
-              st       = 2'd2;
-            end else if (st == 2'd2) begin
+              end_t[p] = 1'b0;
+              edb_t[p] = 1'b0;
+              st       = 3'd2;
+            end else if (st == 3'd2) begin
               left     = {data_t[p], left[7:0]};
               en_t[p]  = 1'b0;
               stp_t[p] = 1'b0;
               sdp_t[p] = 1'b0;
-              st       = 2'd3;
+              end_t[p] = 1'b0;
+              edb_t[p] = 1'b0;
+              st       = 3'd3;
+            end else if (st == 3'd4) begin
+              stp_t[p] = 1'b0;
+              sdp_t[p] = 1'b0;
+              if (left == 16'd0) begin
+                st = 3'd0;
+              end else begin
+                end_t[p] = 1'b0;
+                edb_t[p] = 1'b0;
+                left     = left - 16'd1;
+              end
             end else if (left == 16'd0) begin
               end_t[p] = 1'b1;
               edb_t[p] = 1'b0;
               stp_t[p] = 1'b0;
               sdp_t[p] = 1'b0;
-              st       = 2'd0;
+              st       = 3'd0;
             end else begin
               end_t[p] = 1'b0;
               edb_t[p] = 1'b0;
@@ -616,7 +637,7 @@ module rivet_mac_os_rx #(
           end
         end
       end else begin
-        st   = 2'd0;
+        st   = 3'd0;
         left = 16'd0;
       end
       gf_st_q   <= st;

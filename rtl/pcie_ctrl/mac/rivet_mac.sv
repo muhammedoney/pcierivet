@@ -89,9 +89,12 @@ module rivet_mac #(
   logic [2*LANES-1:0]               sym_tx_datak;
   logic [2*LANES-1:0]               sym_tx_os_d;
   logic                             sym_tx_valid;
+  logic                             sym_tx_blk_start;
   logic [PIPE_DATA_WIDTH*LANES-1:0] scr_tx_data;
   logic [2*LANES-1:0]               scr_tx_datak;
   logic                             scr_tx_valid;
+  logic                             scr_tx_os;
+  logic                             scr_tx_blk_start;
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_rx_data_raw;
   logic [2*LANES-1:0]               sym_rx_datak_raw;
   logic [LANES-1:0]                 sym_rx_valid_raw;
@@ -315,6 +318,7 @@ module rivet_mac #(
     .sym_datak_o     (sym_tx_datak),
     .sym_os_d_o      (sym_tx_os_d),
     .sym_valid_o     (sym_tx_valid),
+    .sym_blk_start_o (sym_tx_blk_start),
     .os_sent_cnt_o   (os_sent_cnt)
   );
 
@@ -322,17 +326,20 @@ module rivet_mac #(
     .LANES           (LANES),
     .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
   ) u_scrambler (
-    .pclk_i    (pclk_i),
-    .rst_ni    (rst_ni),
-    .data_i    (sym_tx_data),
-    .datak_i   (sym_tx_datak),
-    .os_d_i    (sym_tx_os_d),
-    .rate_i    (rate),
-    .valid_i   (sym_tx_valid),
-    .lane_en_i (lane_en_d),
-    .data_o    (scr_tx_data),
-    .datak_o   (scr_tx_datak),
-    .valid_o   (scr_tx_valid)
+    .pclk_i      (pclk_i),
+    .rst_ni      (rst_ni),
+    .data_i      (sym_tx_data),
+    .datak_i     (sym_tx_datak),
+    .os_d_i      (sym_tx_os_d),
+    .rate_i      (rate_d1),
+    .valid_i     (sym_tx_valid),
+    .blk_start_i (sym_tx_blk_start),
+    .lane_en_i   (lane_en_d),
+    .data_o      (scr_tx_data),
+    .datak_o     (scr_tx_datak),
+    .valid_o     (scr_tx_valid),
+    .os_o        (scr_tx_os),
+    .blk_start_o (scr_tx_blk_start)
   );
 
   // Logical ↔ physical remap after reverse is adopted (TX after scramble, RX
@@ -496,6 +503,8 @@ module rivet_mac #(
     .sym_tx_data_i           (map_tx_data),
     .sym_tx_datak_i          (map_tx_datak),
     .sym_tx_valid_i          (map_tx_valid),
+    .sym_tx_os_i             (scr_tx_os),
+    .sym_tx_start_i          (scr_tx_blk_start),
     .txdetectrx_i            (txdetectrx_d2),
     .txelecidle_i            (txelecidle_d2),
     .rxpolarity_i            (rxpolarity_d2),
