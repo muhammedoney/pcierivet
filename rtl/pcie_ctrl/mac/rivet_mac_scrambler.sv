@@ -39,6 +39,9 @@ module rivet_mac_scrambler #(
   logic [15:0] lfsr_next [LANES];
   logic [22:0] lfsr23_q [LANES];
   logic [22:0] lfsr23_next [LANES];
+  // First Gen3 data word reloads the seed. Training blocks advance a
+  // different count than the bytes a partner sees on the pipe.
+  logic        lfsr23_data_q, lfsr23_data_n;
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_scr;
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_q;
   logic [2*LANES-1:0]               datak_q;
@@ -46,6 +49,7 @@ module rivet_mac_scrambler #(
 
   always_comb begin
     data_scr = data_i;
+    lfsr23_data_n = lfsr23_data_q;
     for (int unsigned l = 0; l < LANES; l++) begin
       lfsr_next[l] = lfsr_q[l];
       lfsr23_next[l] = lfsr23_q[l];
@@ -55,6 +59,10 @@ module rivet_mac_scrambler #(
         automatic logic skp_word = os_word &&
                                    (data_i[PIPE_DATA_WIDTH*l +: 8] == RIVET_SYM_SKP_BLK);
         if (!skp_word) begin
+          if (!os_word && !lfsr23_data_q)
+            lfsr23_next[l] = RIVET_LFSR23_SEED;
+          if (!os_word)
+            lfsr23_data_n = 1'b1;
           for (int unsigned s = 0; s < SYMS; s++) begin
             automatic logic [7:0]  din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
             automatic logic [30:0] step;
@@ -98,6 +106,7 @@ module rivet_mac_scrambler #(
         lfsr_q[l]   <= RIVET_LFSR_SEED;
         lfsr23_q[l] <= RIVET_LFSR23_SEED;
       end
+      lfsr23_data_q <= 1'b0;
     end else begin
       data_q  <= data_scr;
       datak_q <= datak_i;
@@ -106,6 +115,10 @@ module rivet_mac_scrambler #(
         lfsr_q[l]   <= lfsr_next[l];
         lfsr23_q[l] <= lfsr23_next[l];
       end
+      if (rate_i != RIVET_PIPE_RATE_GEN3)
+        lfsr23_data_q <= 1'b0;
+      else
+        lfsr23_data_q <= lfsr23_data_n;
     end
   end
 

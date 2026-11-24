@@ -30,6 +30,8 @@ Posted-write payload sweep, test `perf_rq_sweep_gen2_x4`, 8 MemWr32 TLPs per siz
 
 `perf_rq_memwr64_gen2_x4` is the same sweep with `addr[63:32]=1`, so the TLP type is MemWr64 (0x60). UVM reported 0 errors. Ten sizes printed the same cycles, stalls, and `mb_s` as the MemWr32 table. The 64-byte point printed `cycles=95`, `rq_stall=7`, `mb_s=1347.368`, `pct_gen2x4=67.368`. The 4096-byte point is again 1979.700 MB/s.
 
+`perf_rq_sweep_gen3_x4` is the same 8-TLP MemWr32 sweep after L0 at 8 GT/s. UVM reported 0 errors. Printed `mb_s`: 250.000, 500.000, 800.000, 1084.746, 1280.000, 1488.372, 1651.613, 1815.603, 1896.296, 1943.074, 1967.339. The 4096-byte point is 1967.339 MB/s (`cycles=4164`, `rq_stall=44`, `pct_gen2x4=98.367`). Those points are the teal squares on the same chart.
+
 `perf_rq_memrd_gen2_x4` sends eight MemRd32 at each size, then the same sizes as MemRd64. The byte count is CplD payload on RC. The peer returns one completion per request, with the request's tag, and advertises infinite credits. UVM reported 0 errors and 0 fatals. MemRd64 printed the same `cycles`, `mb_s`, and latency as MemRd32 at every size. Every size printed `rq_stall=0`, `credit_stall=0`, `tfc_zero=0`, and `tfc_nph_min=15`.
 
 | Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | MB/s | % of 2000 MB/s | lat min / avg / max |

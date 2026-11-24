@@ -34,6 +34,10 @@ PERF tag=rq64_dw16 bytes=512 cycles=95 rq_stall=7 rq_tlast=8 mb_s=1347.368 pct_g
 
 The 4096-byte MemWr64 point printed 1979.700 MB/s again.
 
+`perf_rq_sweep_gen3_x4` repeats the MemWr32 sweep after L0 at 8 GT/s. UVM reported 0 errors. Printed `mb_s` from 4 bytes through 4096 bytes: 250.000, 500.000, 800.000, 1084.746, 1280.000, 1488.372, 1651.613, 1815.603, 1896.296, 1943.074, 1967.339. The 4096-byte point printed `cycles=4164`, `rq_stall=44`, `pct_gen2x4=98.367`.
+
+Re-run cpld to confirm the scrambler reseed didn't break the completion, then commit. The work lib is gen3 so incremental is fine.
+
 ## Requester reads versus payload size
 
 `perf_rq_memrd_gen2_x4` sends 8 MemRd32 TLPs at each size from 1 DW through 1024 DW, then the same sizes as MemRd64. The monitor counts CplD payload bytes on RC and stays armed until `rc_tlast=8`. The peer returns one completion per request and advertises infinite credits. UVM reported 0 errors and 0 fatals. MemRd64 printed the same cycles and `mb_s` as MemRd32 at every size. Every size printed `rq_stall=0`, `credit_stall=0`, and `tfc_nph_min=15`.

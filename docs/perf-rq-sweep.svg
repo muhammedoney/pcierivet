@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 490" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 520" role="img" aria-labelledby="title desc">
   <title id="title">Throughput versus payload size</title>
-  <desc id="desc">Gen2 x4. Rivet MemWr32 rates, 8 TLPs per size on a 4 ns user clock, are 250.000, 500.000, 800.000, 1122.807, 1333.333, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. MemWr64 matches those rates except 1347.368 MB/s at 64 bytes. Rivet MemRd32 and MemRd64 printed the same completion-payload rates: 77.670, 146.789, 275.862, 444.444, 695.652, 973.384, 1207.547, 1378.197, 1480.839, 1538.115, and 1568.447 MB/s. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The amber line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
-  <rect width="1120" height="490" fill="#ffffff"/>
+  <desc id="desc">Gen2 x4. Rivet MemWr32 rates, 8 TLPs per size on a 4 ns user clock, are 250.000, 500.000, 800.000, 1122.807, 1333.333, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. MemWr64 matches those rates except 1347.368 MB/s at 64 bytes. Rivet MemRd32 and MemRd64 printed the same completion-payload rates: 77.670, 146.789, 275.862, 444.444, 695.652, 973.384, 1207.547, 1378.197, 1480.839, 1538.115, and 1568.447 MB/s. Gen3 x4 MemWr32 from perf_rq_sweep_gen3_x4 printed 250.000, 500.000, 800.000, 1084.746, 1280.000, 1488.372, 1651.613, 1815.603, 1896.296, 1943.074, and 1967.339 MB/s. The flat line is the Gen2 x4 symbol rate, 2000 MB/s. The amber line is the posted-write formula published by Xilinx WP350 and Intel AN 456: payload / (payload + 20) times 2000 MB/s. The square at 256 bytes is the AN 456 Stratix IV hard-IP DMA write, 1783 MB/s.</desc>
+  <rect width="1120" height="520" fill="#ffffff"/>
   <text x="78" y="28" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Throughput vs payload</text>
-  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 x4 at 64 bits, 4 ns. MemRd32 and MemRd64 printed the same CplD payload rate.</text>
+  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Gen2 and Gen3 x4 at 64 bits, 4 ns. Teal squares are the Gen3 MemWr32 sweep.</text>
   <g fill="none" stroke="#d0d7de" stroke-width="1">
     <line x1="78" y1="72" x2="1040" y2="72"/>
     <line x1="78" y1="147" x2="1040" y2="147"/>
@@ -54,6 +54,20 @@
     <circle cx="906" cy="141.28" r="3.5"/>
     <circle cx="996" cy="136.73" r="3.5"/>
   </g>
+  <polyline fill="none" stroke="#0e7c86" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,334.50 186,297.00 276,252.00 366,209.29 456,180.00 546,148.74 636,124.26 726,99.66 816,87.56 906,80.54 996,76.90"/>
+  <g fill="#0e7c86">
+    <rect x="92.5" y="331.00" width="7" height="7"/>
+    <rect x="182.5" y="293.50" width="7" height="7"/>
+    <rect x="272.5" y="248.50" width="7" height="7"/>
+    <rect x="362.5" y="205.79" width="7" height="7"/>
+    <rect x="452.5" y="176.50" width="7" height="7"/>
+    <rect x="542.5" y="145.24" width="7" height="7"/>
+    <rect x="632.5" y="120.76" width="7" height="7"/>
+    <rect x="722.5" y="96.16" width="7" height="7"/>
+    <rect x="812.5" y="84.06" width="7" height="7"/>
+    <rect x="902.5" y="77.04" width="7" height="7"/>
+    <rect x="992.5" y="73.40" width="7" height="7"/>
+  </g>
   <g fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" text-anchor="middle">
     <text x="96" y="390">4</text>
     <text x="186" y="390">8</text>
@@ -81,5 +95,7 @@
     <text x="670" y="440">Rivet MemRd</text>
     <rect x="820" y="430" width="10" height="10" fill="#8250df"/>
     <text x="836" y="440">AN 456, one point</text>
+    <rect x="78" y="458" width="10" height="10" fill="#0e7c86"/>
+    <text x="94" y="468">Gen3 x4 MemWr32</text>
   </g>
 </svg>

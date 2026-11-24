@@ -404,8 +404,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     int unsigned g3_sets;
     int unsigned com_hold;
     logic [22:0] g3_lfsr[];
+    logic [22:0] g3_rx_lfsr[];
     logic [7:0]  g3_plain[0:3][0:3];
     bit          g3_frame_beat;
+    bit          g3_rx_arm;
 
     if (!enable) return;
 
@@ -427,7 +429,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(null, "*", "peer_perf_rc", perf_rc));
     peer_lfsr = new[lanes];
     dut_lfsr  = new[lanes];
-    g3_lfsr   = new[lanes];
+    g3_lfsr    = new[lanes];
+    g3_rx_lfsr = new[lanes];
     wait (vif.preset_n === 1'b1);
 
     phase_q      = P_TS1_PAD;
@@ -445,13 +448,15 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     recovery_go = 1'b0; recovery_pulse = 1'b0;
     last_rate = 3'd0; rate_ack_left = 0; peer_rate_byte = PEER_RATE;
     g3_off = 0; g3_sets = 0; com_hold = 0; g3_frame_beat = 1'b0;
+    g3_rx_arm = 1'b0;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
     rxstatus_err_go = 1'b0; rxstatus_err_left = 0;
     for (l = 0; l < lanes; l++) begin
       peer_lfsr[l] = 16'hFFFF;
       dut_lfsr[l]  = 16'hFFFF;
-      g3_lfsr[l]   = 23'h7FFFFF;
+      g3_lfsr[l]    = 23'h7FFFFF;
+      g3_rx_lfsr[l] = 23'h7FFFFF;
     end
     parse_st = 0; parse_n = 0; seq_b0 = '0; seq_b1 = '0;
     ack_pending = 1'b0; ack_inflight = 1'b0; ack_seq = '0; ack_n = 0;
@@ -597,7 +602,41 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       begin
         automatic int unsigned ends_before;
         ends_before = tlp_ends;
-      if (perf_rc && peer_active && (vif.txelecidle != '1)) begin
+      if (perf_rc && peer_active && (vif.txelecidle == '0) &&
+          peer_gen3 && (vif.rate == 3'd2) && (vif.txdata_valid != '0)) begin
+        // Arm on the first data block, matching the DUT scrambler's reseed.
+        if (!g3_rx_arm && vif.txstart_block[0] && (vif.txsync_header[1:0] == 2'b01)) begin
+          for (l = 0; l < peer_lanes; l++)
+            g3_rx_lfsr[l] = 23'h7FFFFF;
+          g3_rx_arm = 1'b1;
+        end
+        if (g3_rx_arm) begin
+          automatic bit data_hdr;
+          automatic bit skp_hdr;
+          data_hdr = (vif.txsync_header[1:0] == 2'b01);
+          skp_hdr  = (vif.txsync_header[1:0] == 2'b10) &&
+                     (vif.txdata[7:0] == 8'hAA);
+          if (!skp_hdr) begin
+            for (s = 0; s < 4; s++) begin
+              for (l = 0; l < peer_lanes; l++) begin
+                automatic logic [30:0] step;
+                automatic logic [7:0]  raw, sym;
+                automatic logic        is_k;
+                raw  = vif.txdata[l*PW + 8*s +: 8];
+                step = rivet_pkg::rivet_lfsr23_byte(g3_rx_lfsr[l]);
+                g3_rx_lfsr[l] = step[30:8];
+                sym  = data_hdr ? (raw ^ step[7:0]) : raw;
+                is_k = data_hdr && ((sym == rivet_pkg::RIVET_SYM_STP) ||
+                                    (sym == rivet_pkg::RIVET_SYM_SDP) ||
+                                    (sym == rivet_pkg::RIVET_SYM_END));
+                if ((phase_q == P_IDLE) && data_hdr)
+                  dut_note_sym(sym, is_k, parse_st, parse_n, seq_b0, seq_b1,
+                               ack_pending, ack_seq, tlp_ends);
+              end
+            end
+          end
+        end
+      end else if (perf_rc && peer_active && (vif.txelecidle != '1)) begin
         for (s = 0; s < 2; s++) begin
           for (l = 0; l < peer_lanes; l++) begin
             automatic logic [7:0] raw, sym;

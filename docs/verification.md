@@ -77,6 +77,7 @@ Annotated tag: **`mvp-gen2-ep-x4`**.
 | Companion | `.\scripts\sim_questa.ps1 smoke_companion_gen2_x4 4` | CQ NP + RQ tag/seq + `pcie_tfc_*` |
 | Perf posted write | `.\scripts\sim_questa.ps1 perf_rq_memwr_gen2_x4 4` | 16× RQ MemWr32, finite-credit peer |
 | Perf payload sweep | `.\scripts\sim_questa.ps1 perf_rq_sweep_gen2_x4 4` | 8× MemWr32 at 1..1024 DW (4 B..4096 B); infinite credits and ACK |
+| Perf Gen3 payload sweep | `.\scripts\sim_questa.ps1 perf_rq_sweep_gen3_x4 4 0` | Same sizes after Gen3 L0; 24 Nov 2026 |
 | Perf MemWr64 sweep | `.\scripts\sim_questa.ps1 perf_rq_memwr64_gen2_x4 4` | Same sizes, `addr[63:32]=1` (TLP type 0x60) |
 | Perf MemRd sweep | `.\scripts\sim_questa.ps1 perf_rq_memrd_gen2_x4 4` | 8× MemRd32 then 8× MemRd64 at 1..1024 DW; CplD payload on RC |
 | Perf read latency | `.\scripts\sim_questa.ps1 perf_rq_rc_lat_gen2_x4 4` | 8× RQ MemRd32 → peer CplD → RC; min/avg/max `user_clk` cycles |
@@ -88,6 +89,7 @@ The performance tests print one `PERF tag=...` line. `user_clk` in `rivet_tb_top
 - `rq_memwr`: 64 bytes, 96 cycles, `rq_stall=0`, `mb_s=83.333`, `pct_gen2x4=4.167` (finite-credit peer, 8 ns user clock, not the payload curve)
 - `rq_dw1` .. `rq_dw1024` (`perf_rq_sweep_gen2_x4`, 8 TLPs, infinite credits and ACK, 4 ns user clock): `mb_s` 250.000, 500.000, 800.000, 1122.807, 1333.333, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, 1979.700. `rq_stall` 0, 0, 0, 1, 8, 11, 17, 17, 17, 18, 18. `pct_gen2x4` 12.500, 25.000, 40.000, 56.140, 66.667, 78.528, 86.195, 92.586, 96.150, 97.990, 98.985. 0 errors
 - `rq64_dw1` .. `rq64_dw1024` (`perf_rq_memwr64_gen2_x4`): same printed `mb_s` as MemWr32 except `rq64_dw16` = 1347.368 (`cycles=95`, `rq_stall=7`, `pct_gen2x4=67.368`). 4096-byte point 1979.700. 0 errors
+- `rq_dw1` .. `rq_dw1024` (`perf_rq_sweep_gen3_x4`, 8 TLPs after Gen3 L0, 4 ns user clock, 24 Nov 2026): `mb_s` 250.000, 500.000, 800.000, 1084.746, 1280.000, 1488.372, 1651.613, 1815.603, 1896.296, 1943.074, 1967.339. `cycles` 32, 32, 40, 59, 100, 172, 310, 564, 1080, 2108, 4164. `rq_stall` 0, 0, 0, 3, 12, 20, 30, 28, 32, 36, 44. `pct_gen2x4` 12.500, 25.000, 40.000, 54.237, 64.000, 74.419, 82.581, 90.780, 94.815, 97.154, 98.367. 0 errors
 - `rd_dw1` .. `rd_dw1024` and `rd64_dw1` .. `rd64_dw1024` (`perf_rq_memrd_gen2_x4`, 8 TLPs, infinite credits, 4 ns user clock, 23 Nov 2026): MemRd32 and MemRd64 printed the same `mb_s` 77.670, 146.789, 275.862, 444.444, 695.652, 973.384, 1207.547, 1378.197, 1480.839, 1538.115, 1568.447. `cycles` 103, 109, 116, 144, 184, 263, 424, 743, 1383, 2663, 5223. `rq_stall=0`, `credit_stall=0`, `tfc_nph_min=15`. 0 errors
 - `rq_rc_lat`: `lat_n=8`, `lat_min=363`, `lat_avg=458`, `lat_max=714` at `user_clk_ns=8.0`
 - `cq_cc`: 8 CQ and 8 CC, 32 bytes, 2876 cycles, `mb_s=1.391` at `user_clk_ns=8.0`

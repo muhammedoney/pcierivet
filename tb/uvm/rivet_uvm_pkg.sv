@@ -136,6 +136,7 @@ package rivet_uvm_pkg;
   `include "tests/smoke_aer_gen2_x4.svh"
   `include "tests/smoke_companion_gen2_x4.svh"
   `include "tests/rivet_perf_gen2_x4.svh"
+  `include "tests/rivet_perf_gen3_x4.svh"
   `include "tests/smoke_gen3_block_x4.svh"
   `include "tests/smoke_gen3_ts_x4.svh"
 endpackage : rivet_uvm_pkg
