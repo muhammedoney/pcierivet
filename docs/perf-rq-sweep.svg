@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 810" role="img" aria-labelledby="title desc">
   <title id="title">Throughput versus payload size</title>
-  <desc id="desc">Gen2 and Gen3 x4. The vertical grid is 500 MB/s. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1122.807, 1347.368, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. Rivet Gen2 x4 read printed 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, and 1737.065 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, and 3430.486 MB/s.</desc>
+  <desc id="desc">Gen2 and Gen3 x4. The vertical grid is 500 MB/s. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1142.857, 1438.202, 1651.613, 1790.210, 1889.299, 1943.074, 1970.178, and 1983.055 MB/s. Rivet Gen2 x4 read printed 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, and 1737.065 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, and 3430.486 MB/s.</desc>
   <rect width="1120" height="810" fill="#ffffff"/>
   <text x="78" y="28" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Throughput vs payload</text>
   <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Same 500 MB/s grid. The axis runs to 4000 MB/s so the Gen3 line fits.</text>
@@ -30,19 +30,19 @@
   <line x1="96" y1="372" x2="996" y2="372" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="5 4"/>
   <line x1="96" y1="81.23" x2="988" y2="81.23" fill="none" stroke="#9a6700" stroke-width="2" stroke-dasharray="2 3"/>
   <text x="1004" y="74" fill="#9a6700" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">3938</text>
-  <polyline fill="none" stroke="#1a7f37" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,634.50 186,597.00 276,552.00 366,503.58 456,469.89 546,436.42 636,413.41 726,394.24 816,383.55 906,378.03 996,375.05"/>
+  <polyline fill="none" stroke="#1a7f37" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,634.50 186,597.00 276,552.00 366,500.57 456,456.27 546,424.26 636,403.47 726,388.61 816,380.54 906,376.47 996,374.54"/>
   <g fill="#1a7f37">
     <circle cx="96" cy="634.50" r="3.5"/>
     <circle cx="186" cy="597.00" r="3.5"/>
     <circle cx="276" cy="552.00" r="3.5"/>
-    <circle cx="366" cy="503.58" r="3.5"/>
-    <circle cx="456" cy="469.89" r="3.5"/>
-    <circle cx="546" cy="436.42" r="3.5"/>
-    <circle cx="636" cy="413.41" r="3.5"/>
-    <circle cx="726" cy="394.24" r="3.5"/>
-    <circle cx="816" cy="383.55" r="3.5"/>
-    <circle cx="906" cy="378.03" r="3.5"/>
-    <circle cx="996" cy="375.05" r="3.5"/>
+    <circle cx="366" cy="500.57" r="3.5"/>
+    <circle cx="456" cy="456.27" r="3.5"/>
+    <circle cx="546" cy="424.26" r="3.5"/>
+    <circle cx="636" cy="403.47" r="3.5"/>
+    <circle cx="726" cy="388.61" r="3.5"/>
+    <circle cx="816" cy="380.54" r="3.5"/>
+    <circle cx="906" cy="376.47" r="3.5"/>
+    <circle cx="996" cy="374.54" r="3.5"/>
   </g>
   <polyline fill="none" stroke="#cf222e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,660.12 186,649.98 276,629.14 366,604.39 456,563.53 546,519.01 636,478.06 726,447.44 816,428.19 906,417.27 996,411.44"/>
   <g fill="#cf222e">

@@ -4,8 +4,8 @@
 // Pack TL->DLL beats into a 64-bit word RAM. A 64-bit beat writes one
 // word. A 128-bit beat writes two. The consumer reads one beat per cycle
 // (registered): 64 bits, or a 128-bit pair for the wide transmitter.
-// STREAM presents each beat as it arrives. The word RAM stays the
-// store-and-forward path used by the 64-bit framer.
+// STREAM presents each beat as it arrives. The word RAM is the
+// store-and-forward path, used when STREAM is 0.
 
 module rivet_dll_tl_pack #(
   parameter int unsigned DATA_W     = rivet_pkg::RIVET_TL_DLL_DATA_W,

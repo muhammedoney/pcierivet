@@ -1,9 +1,10 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Frame a TL payload with Seq# + LCRC and emit MAC beats one 64-bit word
-// at a time. The payload stays in the packer RAM. Replay records the same
-// byte stream as packed 64-bit words, not a SLOT_BYTES-wide copy.
+// Frame a TL payload with Seq# + LCRC and emit 8-byte MAC beats.
+// Beats are cut through: bytes go out while later payload beats are
+// still arriving. Replay capture copies the emitted bytes. Replay
+// itself still plays the captured byte stream one 64-bit word at a time.
 
 module rivet_dll_tlp_tx #(
   parameter int unsigned SLOT_BYTES = 160
@@ -16,6 +17,7 @@ module rivet_dll_tlp_tx #(
   input  logic        tl_valid_i,
   output logic        tl_ready_o,
   input  logic [15:0] tl_len_i,
+  input  logic        tl_last_i,
   input  logic [63:0] tl_word_i,
   output logic [15:0] tl_word_idx_o,
 
@@ -44,60 +46,102 @@ module rivet_dll_tlp_tx #(
   import rivet_pkg::*;
 
   localparam int unsigned BEAT_B = 8;
+  // Sequence skew, one beat, and the LCRC, with room for the beat
+  // already waiting on the MAC.
+  localparam int unsigned ACC_B  = 40;
 
-  typedef enum logic [2:0] {
-    ST_IDLE  = 3'd0,
-    ST_PREP  = 3'd1,
-    ST_CRC   = 3'd2,
-    ST_LCRC  = 3'd3,
-    ST_FLUSH = 3'd4,
-    ST_EMIT  = 3'd5
+  typedef enum logic [1:0] {
+    ST_IDLE = 2'd0,
+    ST_LIVE = 2'd1,
+    ST_EMIT = 2'd2
   } state_e;
 
-  state_e      state_q;
-  logic [11:0] seq_q, next_seq_q;
-  logic [31:0] crc_q;
-  logic [15:0] crc_left_q, pld_left_q, rem_q, frame_len_q;
-  logic [15:0] word_idx_q;
-  logic [127:0] acc_q;
-  logic [4:0]  acc_n_q;
-  logic [63:0] hold_q;
-  logic [63:0] cap_acc_q;
-  logic [3:0]  cap_n_q;
-  logic        cap_pend_q, cap_last_q;
-  logic [63:0] cap_word_q;
-  logic        pref_q, emit_sop_q, replay_q, tl_seen_q;
-  // The packer stays valid until capture finishes. Without this hold the
-  // transmitter can return to idle and start that same TLP a second time.
-  logic        tl_held_q;
-  logic        start_tl, start_rp;
+  state_e       state_q;
+  logic [11:0]  seq_q, next_seq_q;
+  logic [31:0]  crc_q;
+  logic [15:0]  rem_q, pay_q;
+  logic [15:0]  word_idx_q;
+  logic [ACC_B*8-1:0] acc_q;
+  logic [5:0]   acc_n_q;
+  // Bytes from the front of acc through the end of the frame. 0 means
+  // the open frame has not taken its last beat yet.
+  logic [5:0]   eop_n_q;
+  logic [5:0]   eop2_n_q;
+  logic         pkt_q;
+  logic [11:0]  cseq0_q, cseq1_q;
+  logic [15:0]  clen0_q, clen1_q;
+  logic [1:0]   cnum_q;
+  logic [63:0]  hold_q;
+  logic [63:0]  cap_acc_q;
+  logic [3:0]   cap_n_q;
+  logic         cap_pend_q, cap_last_q;
+  logic [63:0]  cap_word_q;
+  logic         pref_q, emit_sop_q, replay_q;
+  logic         start_rp;
+
+  logic         cap_free;
+  logic         live_v;
+  logic         live_eop;
+  logic [3:0]   live_n;
+  logic [5:0]   left_n;
+  logic         third_frame;
+  logic [15:0]  room_add;
 
   assign next_tx_seq_o = next_seq_q;
-  assign idle_o        = (state_q == ST_IDLE) && !cap_pend_q;
+  assign idle_o        = (state_q == ST_IDLE) && !cap_pend_q && (acc_n_q == 6'd0);
   assign cap_valid_o   = cap_pend_q;
   assign cap_data_o    = cap_word_q;
   assign cap_last_o    = cap_last_q;
-  assign cap_seq_o     = seq_q;
-  assign cap_len_o     = frame_len_q;
+  assign cap_seq_o     = cseq0_q;
+  assign cap_len_o     = clen0_q;
+  assign tl_word_idx_o = 16'd0;
 
-  assign start_tl = (state_q == ST_IDLE) && pref_q && tl_seen_q && !tl_held_q &&
-                    !replay_en_i && enable_i && tl_valid_i && cap_ready_i &&
-                    (tl_len_i != 16'd0) &&
-                    (tl_len_i <= 16'(SLOT_BYTES - RIVET_TLP_SEQ_BYTES - RIVET_TLP_LCRC_BYTES));
   assign start_rp = (state_q == ST_IDLE) && pref_q && replay_en_i &&
-                    replay_valid_i && !cap_pend_q;
+                    replay_valid_i && !cap_pend_q && (acc_n_q == 6'd0);
 
-  assign tl_word_idx_o     = start_tl ? 16'd1 :
-                             ((state_q == ST_IDLE) ? 16'd0 : word_idx_q);
   assign replay_word_idx_o = start_rp ? 16'd1 :
-                             ((state_q == ST_IDLE) ? 16'd0 : word_idx_q);
+                             ((state_q == ST_EMIT) ? word_idx_q : 16'd0);
 
-  assign tl_ready_o     = cap_pend_q && cap_last_q && cap_ready_i && !replay_q;
   assign replay_ready_o = (state_q == ST_EMIT) && beat_valid_o && beat_ready_i &&
                           beat_o.eop;
 
+  assign cap_free = !cap_pend_q || cap_ready_i;
+
+  // A new packet needs 2 sequence bytes + an 8-byte beat + 4 LCRC bytes.
+  // An open packet needs at most one more beat and the LCRC.
+  assign room_add = pkt_q ? 16'd12 : 16'd14;
+
+  always_comb begin
+    live_v   = 1'b0;
+    live_eop = 1'b0;
+    live_n   = '0;
+    if ((state_q != ST_EMIT) && cap_free && (acc_n_q != 6'd0)) begin
+      if ((acc_n_q >= 6'(BEAT_B)) && ((eop_n_q == 6'd0) || (eop_n_q > 6'(BEAT_B)))) begin
+        live_v   = 1'b1;
+        live_n   = 4'(BEAT_B);
+        live_eop = 1'b0;
+      end else if ((eop_n_q != 6'd0) && (eop_n_q <= 6'(BEAT_B)) &&
+                   (acc_n_q >= eop_n_q)) begin
+        live_v   = 1'b1;
+        live_n   = eop_n_q[3:0];
+        live_eop = 1'b1;
+      end
+    end
+  end
+
+  always_comb begin
+    left_n = acc_n_q;
+    if (live_v && beat_ready_i)
+      left_n = acc_n_q - {2'b0, live_n};
+    third_frame = !pkt_q && (eop2_n_q != 6'd0);
+    tl_ready_o = enable_i && !replay_en_i && !start_rp &&
+                 (state_q != ST_EMIT) && !third_frame &&
+                 (({2'b0, left_n} + room_add[7:0]) <= 8'(ACC_B)) &&
+                 ((pay_q + room_add) <= 16'(SLOT_BYTES));
+  end
+
   function automatic logic [7:0] len_to_keep8(input logic [15:0] n);
-    if (n >= 9'd8) return 8'hFF;
+    if (n >= 16'd8) return 8'hFF;
     unique case (n[2:0])
       3'd1: return 8'h01;
       3'd2: return 8'h03;
@@ -118,8 +162,6 @@ module rivet_dll_tlp_tx #(
     logic        word_last;
   } pack_r_t;
 
-  // Merge `n` low bytes of `src` into the replay packer. At most one
-  // 64-bit word comes out; a leftover stays in acc for the next beat.
   function automatic pack_r_t pack_bytes(
       input logic [63:0] acc_in,
       input logic [3:0]  acc_n_in,
@@ -153,32 +195,38 @@ module rivet_dll_tlp_tx #(
     return r;
   endfunction
 
-  wire cap_free = !cap_pend_q || cap_ready_i;
+  function automatic logic [ACC_B*8-1:0] append_bytes(
+      input logic [ACC_B*8-1:0] acc_in,
+      input logic [5:0]         n0,
+      input logic [63:0]        src,
+      input logic [3:0]         n);
+    logic [ACC_B*8-1:0] a;
+    a = acc_in;
+    for (int unsigned i = 0; i < 8; i++) begin
+      if (4'(i) < n)
+        a[8*(32'(n0) + i) +: 8] = src[8*i +: 8];
+    end
+    return a;
+  endfunction
 
   always_comb begin
-    logic [3:0] take;
     beat_o          = '0;
     beat_o.pkt_type = RIVET_MAC_PKT_TLP;
     beat_valid_o    = 1'b0;
-    take            = (crc_left_q >= 16'd8) ? 4'd8 : crc_left_q[3:0];
-    if ((state_q == ST_CRC) && cap_free && (acc_n_q >= 5'(take)) && (take != 4'd0)) begin
+    if (state_q == ST_EMIT) begin
+      if (rem_q != 16'd0) begin
+        beat_valid_o = 1'b1;
+        beat_o.sop   = emit_sop_q;
+        beat_o.eop   = (rem_q <= 16'd8);
+        beat_o.keep  = len_to_keep8(rem_q);
+        beat_o.data  = hold_q;
+      end
+    end else if (live_v) begin
       beat_valid_o = 1'b1;
       beat_o.sop   = emit_sop_q;
-      beat_o.eop   = 1'b0;
-      beat_o.keep  = len_to_keep8(16'(take));
+      beat_o.eop   = live_eop;
+      beat_o.keep  = len_to_keep8(16'(live_n));
       beat_o.data  = acc_q[63:0];
-    end else if ((state_q == ST_LCRC) && cap_free) begin
-      beat_valid_o = 1'b1;
-      beat_o.sop   = 1'b0;
-      beat_o.eop   = 1'b1;
-      beat_o.keep  = 8'h0F;
-      beat_o.data  = {32'h0, crc_q};
-    end else if ((state_q == ST_EMIT) && (rem_q != 16'd0)) begin
-      beat_valid_o = 1'b1;
-      beat_o.sop   = emit_sop_q;
-      beat_o.eop   = (rem_q <= 16'd8);
-      beat_o.keep  = len_to_keep8(rem_q);
-      beat_o.data  = hold_q;
     end
   end
 
@@ -188,13 +236,19 @@ module rivet_dll_tlp_tx #(
       seq_q        <= '0;
       next_seq_q   <= '0;
       crc_q        <= 32'hFFFF_FFFF;
-      crc_left_q   <= '0;
-      pld_left_q   <= '0;
       rem_q        <= '0;
-      frame_len_q  <= '0;
+      pay_q        <= '0;
       word_idx_q   <= '0;
       acc_q        <= '0;
       acc_n_q      <= '0;
+      eop_n_q      <= '0;
+      eop2_n_q     <= '0;
+      pkt_q        <= 1'b0;
+      cseq0_q      <= '0;
+      cseq1_q      <= '0;
+      clen0_q      <= '0;
+      clen1_q      <= '0;
+      cnum_q       <= '0;
       hold_q       <= '0;
       cap_acc_q    <= '0;
       cap_n_q      <= '0;
@@ -204,152 +258,204 @@ module rivet_dll_tlp_tx #(
       pref_q       <= 1'b0;
       emit_sop_q   <= 1'b0;
       replay_q     <= 1'b0;
-      tl_seen_q    <= 1'b0;
-      tl_held_q    <= 1'b0;
     end else begin
-      // One cycle after the packer marks a TLP valid, word 0 is in rd_data.
-      tl_seen_q <= (state_q == ST_IDLE) && tl_valid_i && !start_tl;
-      if (start_tl)
-        tl_held_q <= 1'b1;
-      else if (tl_ready_o)
-        tl_held_q <= 1'b0;
+      logic [ACC_B*8-1:0] acc;
+      logic [5:0]   an;
+      logic [5:0]   eop_n;
+      logic [5:0]   eop2;
+      logic [31:0]  crc;
+      logic         pkt;
+      logic         sop;
+      logic [15:0]  pay;
+      logic [11:0]  seq;
+      logic [11:0]  nseq;
+      logic [63:0]  cap_acc;
+      logic [3:0]   cap_n;
+      logic         cap_pend;
+      logic         cap_last;
+      logic [63:0]  cap_word;
+      logic [11:0]  cseq0, cseq1;
+      logic [15:0]  clen0, clen1;
+      logic [1:0]   cnum;
+
+      acc      = acc_q;
+      an       = acc_n_q;
+      eop_n    = eop_n_q;
+      eop2     = eop2_n_q;
+      crc      = crc_q;
+      pkt      = pkt_q;
+      sop      = emit_sop_q;
+      pay      = pay_q;
+      seq      = seq_q;
+      nseq     = next_seq_q;
+      cap_acc  = cap_acc_q;
+      cap_n    = cap_n_q;
+      cap_pend = cap_pend_q;
+      cap_last = cap_last_q;
+      cap_word = cap_word_q;
+      cseq0    = cseq0_q;
+      cseq1    = cseq1_q;
+      clen0    = clen0_q;
+      clen1    = clen1_q;
+      cnum     = cnum_q;
+
       if (cap_pend_q && cap_ready_i)
-        cap_pend_q <= 1'b0;
+        cap_pend = 1'b0;
 
       if (state_q == ST_IDLE)
         pref_q <= 1'b1;
       else
         pref_q <= 1'b0;
 
-      unique case (state_q)
-        ST_IDLE: begin
-          if (start_rp) begin
-            seq_q       <= replay_seq_i;
-            rem_q       <= replay_len_i;
-            frame_len_q <= replay_len_i;
-            hold_q      <= replay_word_i;
-            word_idx_q  <= 16'd2;
-            emit_sop_q  <= 1'b1;
-            replay_q    <= 1'b1;
-            state_q     <= ST_EMIT;
-          end else if (start_tl) begin
-            logic [15:0] seq_w;
-            seq_w        = rivet_tlp_seq_bytes(next_seq_q);
-            seq_q        <= next_seq_q;
-            next_seq_q   <= next_seq_q + 12'd1;
-            crc_q        <= 32'hFFFF_FFFF;
-            crc_left_q   <= tl_len_i + 16'(RIVET_TLP_SEQ_BYTES);
-            pld_left_q   <= tl_len_i;
-            frame_len_q  <= tl_len_i + 16'(RIVET_TLP_SEQ_BYTES + RIVET_TLP_LCRC_BYTES);
-            acc_q        <= {112'h0, seq_w};
-            acc_n_q      <= 5'(RIVET_TLP_SEQ_BYTES);
-            hold_q       <= tl_word_i;
-            word_idx_q   <= 16'd2;
-            cap_acc_q    <= '0;
-            cap_n_q      <= '0;
-            emit_sop_q   <= 1'b1;
-            replay_q     <= 1'b0;
-            state_q      <= ST_PREP;
+      if (state_q == ST_EMIT) begin
+        if (beat_valid_o && beat_ready_i) begin
+          logic [15:0] take;
+          take       = (rem_q >= 16'd8) ? 16'd8 : rem_q;
+          sop        = 1'b0;
+          rem_q     <= rem_q - take;
+          if (rem_q <= 16'd8) begin
+            state_q  <= ST_IDLE;
+            replay_q <= 1'b0;
+          end else begin
+            hold_q     <= replay_word_i;
+            word_idx_q <= word_idx_q + 16'd1;
           end
         end
-        ST_PREP: begin
-          logic [15:0] n;
-          logic [127:0] acc;
-          n   = (pld_left_q >= 16'd8) ? 16'd8 : pld_left_q;
-          acc = acc_q;
-          for (int unsigned i = 0; i < 8; i++) begin
-            if (16'(i) < n)
-              acc[8*(32'(acc_n_q) + i) +: 8] = hold_q[8*i +: 8];
+        emit_sop_q <= sop;
+      end else if (start_rp) begin
+        seq          = replay_seq_i;
+        rem_q       <= replay_len_i;
+        hold_q      <= replay_word_i;
+        word_idx_q  <= 16'd2;
+        sop          = 1'b1;
+        replay_q     <= 1'b1;
+        acc          = '0;
+        an           = '0;
+        eop_n        = '0;
+        eop2         = '0;
+        pkt          = 1'b0;
+        cnum         = '0;
+        state_q     <= ST_EMIT;
+        emit_sop_q  <= sop;
+        acc_q       <= acc;
+        acc_n_q     <= an;
+        eop_n_q     <= eop_n;
+        eop2_n_q    <= eop2;
+        pkt_q       <= pkt;
+        cnum_q      <= cnum;
+        seq_q       <= seq;
+      end else begin
+        if (live_v && beat_ready_i) begin
+          pack_r_t pk;
+          pk = pack_bytes(cap_acc, cap_n, acc[63:0], live_n, live_eop);
+          cap_acc = pk.acc;
+          cap_n   = pk.acc_n;
+          if (pk.pend) begin
+            cap_pend = 1'b1;
+            cap_word = pk.word;
+            cap_last = pk.word_last;
           end
-          acc_q      <= acc;
-          acc_n_q    <= acc_n_q + n[4:0];
-          pld_left_q <= pld_left_q - n;
-          hold_q     <= tl_word_i;
-          state_q    <= ST_CRC;
-        end
-        ST_CRC: begin
-          if (beat_valid_o && beat_ready_i && (!cap_pend_q || cap_ready_i)) begin
-            logic [3:0]   take;
-            logic [127:0] acc;
-            logic [4:0]   an;
-            pack_r_t      pk;
-            take = (crc_left_q >= 16'd8) ? 4'd8 : crc_left_q[3:0];
-            crc_q      <= rivet_crc32_fold(crc_q, acc_q[63:0], take);
-            acc        = acc_q >> (32'(take) * 8);
-            an         = acc_n_q - 5'(take);
-            crc_left_q <= crc_left_q - 16'(take);
-            emit_sop_q <= 1'b0;
-            pk = pack_bytes(cap_acc_q, cap_n_q, acc_q[63:0], take, 1'b0);
-            if (pk.pend) begin
-              cap_pend_q <= 1'b1;
-              cap_word_q <= pk.word;
-              cap_last_q <= 1'b0;
-            end
-            cap_acc_q <= pk.acc;
-            cap_n_q   <= pk.acc_n;
-            if (pld_left_q != 16'd0) begin
-              logic [15:0] n;
-              n = (pld_left_q >= 16'd8) ? 16'd8 : pld_left_q;
-              for (int unsigned i = 0; i < 8; i++) begin
-                if (16'(i) < n)
-                  acc[8*(32'(an) + i) +: 8] = hold_q[8*i +: 8];
-              end
-              an         = an + n[4:0];
-              pld_left_q <= pld_left_q - n;
-              hold_q     <= tl_word_i;
-              word_idx_q <= word_idx_q + 16'd1;
-            end
-            acc_q   <= acc;
-            acc_n_q <= an;
-            if (crc_left_q == 16'(take)) begin
-              crc_q   <= ~rivet_crc32_fold(crc_q, acc_q[63:0], take);
-              state_q <= ST_LCRC;
-            end
-          end
-        end
-        ST_LCRC: begin
-          if (beat_valid_o && beat_ready_i && (!cap_pend_q || cap_ready_i)) begin
-            pack_r_t pk;
-            pk = pack_bytes(cap_acc_q, cap_n_q, {32'h0, crc_q}, 4'd4, 1'b1);
-            cap_acc_q <= pk.acc;
-            cap_n_q   <= pk.acc_n;
-            if (pk.pend) begin
-              cap_pend_q <= 1'b1;
-              cap_word_q <= pk.word;
-              cap_last_q <= pk.word_last;
-            end
-            if (pk.acc_n != 4'd0)
-              state_q <= ST_FLUSH;
+          acc = acc >> (32'(live_n) * 8);
+          an  = an - {2'b0, live_n};
+          if (live_eop) begin
+            logic closed_tail;
+            closed_tail = (eop2 != 6'd0);
+            if (closed_tail)
+              eop_n = eop2 - {2'b0, live_n};
             else
-              state_q <= ST_IDLE;
+              eop_n = '0;
+            eop2    = '0;
+            pkt     = (an != 6'd0) && !closed_tail;
+            sop     = 1'b1;
+            cap_acc = '0;
+            cap_n   = '0;
+            if (cnum != 2'd0) begin
+              cseq0 = cseq1;
+              clen0 = clen1;
+              cnum  = cnum - 2'd1;
+            end
+          end else begin
+            sop = 1'b0;
+            if (eop_n != 6'd0)
+              eop_n = eop_n - {2'b0, live_n};
+            if (eop2 != 6'd0)
+              eop2 = eop2 - {2'b0, live_n};
           end
         end
-        ST_FLUSH: begin
-          if (!cap_pend_q || cap_ready_i) begin
-            cap_pend_q <= 1'b1;
-            cap_word_q <= cap_acc_q;
-            cap_last_q <= 1'b1;
-            cap_acc_q  <= '0;
-            cap_n_q    <= '0;
-            state_q    <= ST_IDLE;
-          end
-        end
-        ST_EMIT: begin
-          if (beat_valid_o && beat_ready_i) begin
-            logic [15:0] take;
-            take = (rem_q >= 16'd8) ? 16'd8 : rem_q;
-            emit_sop_q <= 1'b0;
-            rem_q      <= rem_q - take;
-            if (rem_q <= 16'd8) begin
-              state_q <= ST_IDLE;
-            end else begin
-              hold_q     <= replay_word_i;
-              word_idx_q <= word_idx_q + 16'd1;
+
+        if (tl_valid_i && tl_ready_o) begin
+          logic [3:0]  nb;
+          logic [31:0] lcrc;
+          nb = (tl_len_i >= 16'd8) ? 4'd8 : tl_len_i[3:0];
+          if (nb != 4'd0) begin
+            if (!pkt) begin
+              logic        at_front;
+              logic [15:0] seq_w;
+              at_front = (an == 6'd0);
+              seq_w = rivet_tlp_seq_bytes(nseq);
+              seq   = nseq;
+              nseq  = nseq + 12'd1;
+              crc   = rivet_crc32_fold(32'hFFFF_FFFF, {48'h0, seq_w}, 4'd2);
+              acc   = append_bytes(acc, an, {48'h0, seq_w}, 4'd2);
+              an    = an + 6'd2;
+              pay   = 16'd2;
+              pkt   = 1'b1;
+              if (at_front)
+                sop = 1'b1;
+            end
+            crc = rivet_crc32_fold(crc, tl_word_i, nb);
+            acc = append_bytes(acc, an, tl_word_i, nb);
+            an  = an + {2'b0, nb};
+            pay = pay + 16'(nb);
+            if (tl_last_i) begin
+              lcrc = ~crc;
+              acc  = append_bytes(acc, an, {32'h0, lcrc}, 4'd4);
+              an   = an + 6'd4;
+              if (eop_n == 6'd0)
+                eop_n = an;
+              else
+                eop2 = an;
+              pay = pay + 16'(RIVET_TLP_LCRC_BYTES);
+              if (cnum == 2'd0) begin
+                cseq0 = seq;
+                clen0 = pay;
+              end else begin
+                cseq1 = seq;
+                clen1 = pay;
+              end
+              cnum = cnum + 2'd1;
+              pkt  = 1'b0;
+              pay  = '0;
             end
           end
         end
-        default: state_q <= ST_IDLE;
-      endcase
+
+        if ((an == 6'd0) && (eop_n == 6'd0))
+          state_q <= ST_IDLE;
+        else
+          state_q <= ST_LIVE;
+
+        acc_q      <= acc;
+        acc_n_q    <= an;
+        eop_n_q    <= eop_n;
+        eop2_n_q   <= eop2;
+        crc_q      <= crc;
+        pkt_q      <= pkt;
+        emit_sop_q <= sop;
+        pay_q      <= pay;
+        seq_q      <= seq;
+        next_seq_q <= nseq;
+        cap_acc_q  <= cap_acc;
+        cap_n_q    <= cap_n;
+        cap_pend_q <= cap_pend;
+        cap_last_q <= cap_last;
+        cap_word_q <= cap_word;
+        cseq0_q    <= cseq0;
+        cseq1_q    <= cseq1;
+        clen0_q    <= clen0;
+        clen1_q    <= clen1;
+        cnum_q     <= cnum;
+      end
     end
   end
 

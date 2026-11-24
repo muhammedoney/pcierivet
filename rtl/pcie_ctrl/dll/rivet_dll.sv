@@ -333,7 +333,7 @@ module rivet_dll #(
   rivet_dll_tl_pack #(
     .DATA_W     (TX_DATA_W),
     .SLOT_BYTES (REPLAY_SLOT_BYTES),
-    .STREAM     (TX_DATA_W == 128)
+    .STREAM     (1'b1)
   ) u_tl_pack (
     .clk_i      (pclk_i),
     .rst_ni     (rst_ni),
@@ -547,6 +547,7 @@ module rivet_dll #(
         .tl_valid_i      (whole_tx_v),
         .tl_ready_o      (whole_tx_r),
         .tl_len_i        (whole_tx_len),
+        .tl_last_i       (whole_tx_last),
         .tl_word_i       (tx_word),
         .tl_word_idx_o   (tx_word_idx),
         .replay_valid_i  (rep_v),
