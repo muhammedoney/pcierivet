@@ -1,8 +1,8 @@
-# Generation evolution (Gen2 now → Gen3/4 later)
+# Generation evolution (Gen3 EP x4 now, Gen4 next)
 
-**Active development generation: Gen2** (`GEN=2`). Every current RTL/TB slice targets EP Gen2 unless a change is explicitly labeled Gen3/4 prep (ports, parameters, docs).
+**Active sim target: Gen3 EP x4** (`GEN=3`, `PIPE_DATA_WIDTH=32`, 8 GT/s). Default elaboration stays `GEN=2` and a 16-bit pipe so every Gen2 smoke still builds unchanged. Gen4 (16 GT/s, 64-bit pipe) is the next protocol.
 
-Do **not** implement Gen3/4 protocol behavior until Gen2 link + UVM are solid. When touching a file, keep Gen2 working and note Gen3/4 follow-ups here (or in the PR) if you discover new gaps.
+Keep Gen2 behavior when `rate` is Gen1 or Gen2. A Gen3 change that breaks a Gen2 smoke is not done.
 
 Encoding reminder (PG239 UltraScale+ defaults — **fixed 2-byte datapath** for Gen1↔Gen2):
 
@@ -91,4 +91,4 @@ Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac
 
 ## Phase priority reminder
 
-See [roadmap.md](roadmap.md): **Phase 1 top priority is the UVM environment**, then Gen2 link RTL slices against that TB — not Gen3/4 feature work.
+See [roadmap.md](roadmap.md). Phase 4 (Gen3 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-24. Next is Phase 5, Gen4 EP.

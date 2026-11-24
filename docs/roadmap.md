@@ -36,7 +36,7 @@ Ordered ×4 gates ([verification.md](verification.md)):
 
 Gen2 leftovers (closed): Recovery.Speed Gen2→Gen1 downshift (`smoke_recovery_downshift_gen2_x4`), minimal ASPM L0s/L1, RxStatus-error Recovery (`smoke_rxstatus_err_gen2_x4`), ×2 TLP clones (`smoke_tlp_rq_memwr_gen2_x2`, `smoke_tlp_cq_cc_gen2_x2`).
 
-Phase 3 closed on 2026-11-23. Next: Phase 4 EP Gen3. Recovery.Equalization can use the Downstream master and the Upstream slave from that phase.
+Phase 3 closed on 2026-11-23. Phase 4 closed on 2026-11-24. Next: Phase 5 EP Gen4.
 
 ## Phase 3 — Gen2 port roles (closed 2026-11-23)
 
@@ -54,16 +54,16 @@ EP and USP share the Upstream port (Type 0, adopt Link# / Lane#). RC and DSP sha
 
 Every current Gen2 EP smoke stays green after each slice.
 
-## Phase 4 — EP Gen3 (next)
+## Phase 4 — EP Gen3 (closed 2026-11-24)
 
-- Both port roles already exist, so equalization can grow a master and a slave together.
-- 128b/130b, Recovery.Equalization, PG239 EQ/assist
+- Endpoint x4 reaches L0 at 8 GT/s through Recovery.Speed and four equalization phases, then one MemWr32 and one CplD.
+- Gates: `smoke_gen3_l0_x4`, `smoke_gen3_memwr_x4`, `smoke_gen3_cpld_x4` (see [verification.md](verification.md)).
 - Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md) Tasks 1–6. The older Gen3-only file is superseded.
 - Details: [gen-evolution.md](gen-evolution.md)
 
-## Phase 5 — EP Gen4
+## Phase 5 — EP Gen4 (next)
 
-- Starts after Phase 4 L0 and one TLP each way. Same plan, Tasks 7–11.
+- Same plan, Tasks 7–11.
 - 16 GT/s, 64-bit US+ datapath. No message-bus margining.
 - Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md)
 - Details: [gen-evolution.md](gen-evolution.md)

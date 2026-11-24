@@ -1,8 +1,8 @@
 # Rivet MAC — implementation follow-guide
 
 **Audience:** anyone implementing or reviewing the Media Access Control inside `rivet_pcie_ctrl`.  
-**Active target:** `MODE=EP`, **Gen2**, `LANES` ∈ {1,2,4}, PIPE to PG239-aligned `rivet_pipe_if`.  
-**Do not** implement Gen3/4 protocol behavior while Gen2 is active ([roadmap.md](roadmap.md), [gen-evolution.md](gen-evolution.md)).
+**Active sim target:** `MODE=EP`, **Gen3 x4**. Default elaboration stays Gen2, `LANES` ∈ {1,2,4}, PIPE to PG239-aligned `rivet_pipe_if`.  
+Gen4 is next ([roadmap.md](roadmap.md), [gen-evolution.md](gen-evolution.md)). Gen1/Gen2 behavior stays on the 16-bit pipe.
 
 This is the checklist doc for MAC work. PIPE signal meaning: [pipe-notes.md](pipe-notes.md). User IF: [pg213-interface.md](pg213-interface.md). DLL / FC: [dll.md](dll.md).
 
@@ -381,9 +381,9 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 ### Later phases
 
 - Gen2 TLP/DLL complete (Phase 2, closed)
-- Gen2 Downstream / RC port roles (roadmap Phase 3, closed 2026-11-23). Next is EP Gen3
+- Gen2 Downstream / RC port roles (roadmap Phase 3, closed 2026-11-23)
+- Gen3 EP x4 L0, MemWr32, and CplD (roadmap Phase 4, closed 2026-11-24). Next is EP Gen4
 - VCU118 + real PG239 (lab backlog)
-- Gen3 EQ / 128b/130b (roadmap Phase 4)
 
 ---
 
@@ -405,8 +405,7 @@ Per [verification.md](verification.md) and workspace gates:
 - SerDes PIPE architecture in FPGA Rivet  
 - Soft elastic buffer / 8b/10b codec in MAC for Gen2  
 - PIPE Message Bus / LPC  
-- Gen3/4 EQ protocol while Gen2 is active  
-- Copying reference RTL or GPL VIP into the tree  
+- Copying reference RTL or GPL VIP into the tree
 - Treating AXI-ST as the only DLL↔MAC interface  
 
 ---

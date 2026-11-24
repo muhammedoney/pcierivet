@@ -115,6 +115,16 @@ The link partner for RC and DSP is the PG213 Endpoint model. UVM mode is the thi
 | DSP Type 1 + RQ stall | `.\scripts\sim_questa.ps1 ltssm_l0_gen2_dsp_x4 4 3` | PASS |
 | DSP link, header, stall | `.\scripts\sim_bfm_pg213_rc.ps1 -Mode 3` | PASS |
 
+## Phase 4 EP Gen3 (closed 2026-11-24)
+
+Endpoint x4, `GEN=3`, 32-bit pipe. Each row printed `UVM_ERROR : 0` on that date.
+
+| Gate | Command | Status |
+|------|---------|--------|
+| L0 at 8 GT/s | `.\scripts\sim_questa.ps1 smoke_gen3_l0_x4 4 0` | PASS |
+| RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen3_memwr_x4 4 0` | PASS |
+| RQ MemRd + CplD | `.\scripts\sim_questa.ps1 smoke_gen3_cpld_x4 4 0` | PASS |
+
 ## Phase 1 UVM build-out (historical)
 
 | Step | Status |

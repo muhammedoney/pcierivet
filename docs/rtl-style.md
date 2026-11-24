@@ -82,7 +82,7 @@ end
 
 - `MODE`, `GEN`, `LANES` (1/2/4), widths explicit.  
 - No Xilinx primitives in `rtl/pcie_ctrl/`.  
-- Gen2-first: do not implement Gen3/4 protocol in active slices ([gen-evolution.md](gen-evolution.md)).
+- Default elaboration is Gen2. Active sim target is Gen3 EP x4; Gen4 is next ([gen-evolution.md](gen-evolution.md)). Keep the Gen1/Gen2 rate path working.
 
 ## Clocks / CDC
 
