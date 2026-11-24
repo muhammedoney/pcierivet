@@ -241,6 +241,7 @@ module rivet_pcie_ctrl #(
   logic        tl_rx_tlast, tl_tx_tlast;
   logic        tl_rx_tvalid, tl_tx_tvalid;
   logic        tl_rx_tready, tl_tx_tready;
+  logic        tl_rx_abort;
 
   logic [63:0] cfg_rx_d, cq_rx_d, cfg_tx_d, cc_tx_d, msi_tx_d;
   logic [7:0]  cfg_rx_k, cq_rx_k, cfg_tx_k, cc_tx_k, msi_tx_k;
@@ -365,6 +366,7 @@ module rivet_pcie_ctrl #(
     .s_tkeep_i   (tl_rx_tkeep),
     .s_tlast_i   (tl_rx_tlast),
     .s_tvalid_i  (tl_rx_tvalid),
+    .s_abort_i   (tl_rx_abort),
     .s_tready_o  (tl_rx_tready),
     .cfg_tdata_o (cfg_rx_d),
     .cfg_tkeep_o (cfg_rx_k),
@@ -692,6 +694,7 @@ module rivet_pcie_ctrl #(
         .rx_tkeep_i       (16'(rc_rx_k)),
         .rx_tlast_i       (rc_rx_l),
         .rx_tvalid_i      (rc_rx_v),
+        .rx_abort_i       (tl_rx_abort),
         .rx_tready_o      (rc_rx_r),
         .m_axis_rc_tdata  (rc_p_tdata),
         .m_axis_rc_tkeep  (rc_p_tkeep),
@@ -1010,7 +1013,8 @@ module rivet_pcie_ctrl #(
     .tl_rx_tlast_o  (tl_rx_tlast),
     .tl_rx_tvalid_o (tl_rx_tvalid),
     .tl_rx_tready_i (tl_rx_tready),
-    .tl_rx_seq_o    ()
+    .tl_rx_seq_o    (),
+    .tl_rx_abort_o  (tl_rx_abort)
   );
 
   // PG213 tfc / cfg_fc on pclk, then sync to user_clk

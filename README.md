@@ -80,21 +80,21 @@ Each point is eight TLPs on the 4 ns user clock. Payload sizes, left to right, a
 
 Gen2 theoretical bandwidth is the symbol rate after 8b/10b: 5 GT/s × 4 lanes × 8/10 = 2000 MB/s. Gen3 theoretical bandwidth is the symbol rate after 128b/130b: 8 GT/s × 4 lanes × 128/130 = 3938 MB/s.
 
-Gen3 MemWr64 is the 128-bit posted-write path. The header goes out while later payload beats are still arriving, and the next TLP can start in the middle of a Gen3 data block. That is why the write curve rises toward the line the way a saturating link does. Reads stay on the completion path and are lower.
+Gen3 MemWr64 is the 128-bit posted-write path. The header goes out while later payload beats are still arriving, and the next TLP can start in the middle of a Gen3 data block. Gen3 MemRd64 is the completion coming back. Payload bytes move toward the user port while the rest of the frame is still arriving. The last four bytes stay held until the LCRC check passes, so a bad frame is not completed. Reads stay below writes because each one waits for that completion.
 
 | Payload (bytes) | Gen2 x4 MemWr64 | Gen2 x4 read | Gen3 x4 MemWr64 | Gen3 x4 MemRd64 |
 |----------------:|----------------:|-------------:|----------------:|----------------:|
-| 4 | 250.000 | 77.670 | 333.333 | 81.633 |
-| 8 | 500.000 | 146.789 | 666.667 | 146.789 |
-| 16 | 800.000 | 275.862 | 1333.333 | 326.531 |
-| 32 | 1122.807 | 444.444 | 2000.000 | 640.000 |
-| 64 | 1347.368 | 695.652 | 2666.667 | 969.697 |
-| 128 | 1570.552 | 973.384 | 3200.000 | 1462.857 |
-| 256 | 1723.906 | 1207.547 | 3506.849 | 2064.516 |
-| 512 | 1851.718 | 1378.197 | 3737.226 | 2509.804 |
-| 1024 | 1923.005 | 1480.839 | 3820.896 | 2813.187 |
-| 2048 | 1959.809 | 1538.115 | 3908.397 | 2994.152 |
-| 4096 | 1979.700 | 1568.447 | 3953.668 | 3093.656 |
+| 4 | 250.000 | 77.670 | 333.333 | 108.108 |
+| 8 | 500.000 | 146.789 | 666.667 | 192.771 |
+| 16 | 800.000 | 275.862 | 1333.333 | 390.244 |
+| 32 | 1122.807 | 444.444 | 2000.000 | 711.111 |
+| 64 | 1347.368 | 695.652 | 2666.667 | 1185.185 |
+| 128 | 1570.552 | 973.384 | 3200.000 | 1630.573 |
+| 256 | 1723.906 | 1207.547 | 3506.849 | 2226.087 |
+| 512 | 1851.718 | 1378.197 | 3737.226 | 2752.688 |
+| 1024 | 1923.005 | 1480.839 | 3820.896 | 3103.030 |
+| 2048 | 1959.809 | 1538.115 | 3908.397 | 3313.916 |
+| 4096 | 1979.700 | 1568.447 | 3953.668 | 3430.486 |
 
 Rates are MB/s, quoted from the sweep log. The 4096-byte Gen3 MemWr64 point prints 3953.668, above the 3938 line. The sample is the user port: the count stops when the host finishes the eight writes, before the tail of the last frame has left the wire. The gold line is still the wire rate. On the chart the 3938 label sits above that marker so the square does not cover it.
 

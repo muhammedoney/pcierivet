@@ -16,6 +16,7 @@ module rivet_tl_rc_wide #(
   input  logic [15:0]  rx_tkeep_i,
   input  logic         rx_tlast_i,
   input  logic         rx_tvalid_i,
+  input  logic         rx_abort_i,
   output logic         rx_tready_o,
 
   output logic [DATA_W-1:0]     m_axis_rc_tdata,
@@ -107,6 +108,10 @@ module rivet_tl_rc_wide #(
       data_q       <= '0;
       has_data_q   <= 1'b0;
       has_more_q   <= 1'b0;
+    end else if (rx_abort_i) begin
+      st_q       <= ST_IDLE;
+      has_data_q <= 1'b0;
+      has_more_q <= 1'b0;
     end else begin
       unique case (st_q)
         ST_IDLE: begin

@@ -55,7 +55,8 @@ module rivet_dll #(
   output logic                              tl_rx_tlast_o,
   output logic                              tl_rx_tvalid_o,
   input  logic                              tl_rx_tready_i,
-  output logic [11:0]                       tl_rx_seq_o
+  output logic [11:0]                       tl_rx_seq_o,
+  output logic                              tl_rx_abort_o
 );
 
   import rivet_pkg::*;
@@ -707,7 +708,8 @@ module rivet_dll #(
         .ack_valid_o     (ack_valid),
         .ack_ready_i     (ack_ready),
         .last_good_seq_o (last_good),
-        .lcrc_err_o      (lcrc_err)
+        .lcrc_err_o      (lcrc_err),
+        .tl_abort_o      (tl_rx_abort_o)
       );
     end else begin : g_rx8
       rivet_dll_tlp_rx #(.SLOT_BYTES(RX_SLOT_BYTES)) u_tlp_rx (
@@ -729,6 +731,7 @@ module rivet_dll #(
         .last_good_seq_o (last_good),
         .lcrc_err_o      (lcrc_err)
       );
+      assign tl_rx_abort_o = 1'b0;
     end
   endgenerate
 

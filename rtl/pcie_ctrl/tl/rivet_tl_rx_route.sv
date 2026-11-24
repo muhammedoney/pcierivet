@@ -15,6 +15,7 @@ module rivet_tl_rx_route #(
   input  logic [DATA_W/8-1:0] s_tkeep_i,
   input  logic                s_tlast_i,
   input  logic                s_tvalid_i,
+  input  logic                s_abort_i,
   output logic                s_tready_o,
 
   output logic [63:0] cfg_tdata_o,
@@ -119,6 +120,8 @@ module rivet_tl_rx_route #(
 
       always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
+          st_q <= ST_SOP;
+        end else if (s_abort_i) begin
           st_q <= ST_SOP;
         end else if (s_tvalid_i && s_tready_o) begin
           unique case (st_q)
@@ -239,6 +242,8 @@ module rivet_tl_rx_route #(
           hi_k_q    <= '0;
           hi_last_q <= 1'b0;
           hi_cfg_q  <= 1'b0;
+        end else if (s_abort_i) begin
+          st_q <= ST_SOP;
         end else if (st_q == ST_HI) begin
           if ((hi_cfg_q && cfg_tready_i) || (!hi_cfg_q && cq_tready_i)) begin
             if (hi_last_q)
