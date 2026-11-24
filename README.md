@@ -60,7 +60,7 @@ Where each layer, interface, and vendor product sits in the stack:
 - **`rivet_pcie_phy_*`** covers **PCS + PMA** by wrapping the family PHY (Xilinx **PG239** / **PG345**).
 - **`rivet_pcie`** = controller + PHY, the drop-in full IP.
 
-`MODE` selects Endpoint, Root Complex/Port, Switch USP, or Switch DSP. Gen2 EP, RC, USP, and DSP are in simulation on lanes **×1 / ×2 / ×4**. Next: EP Gen3.
+`MODE` selects Endpoint, Root Complex/Port, Switch USP, or Switch DSP. Gen2 EP, RC, USP, and DSP are in simulation on lanes **×1 / ×2 / ×4**. Gen3 EP ×4 is closed in simulation.
 
 ## Status
 
@@ -76,13 +76,29 @@ Phase 1/2 Gen2 EP sim gates, Phase 3 Gen2 port roles, and Phase 4 Gen3 EP x4 are
 
 ## Measured throughput
 
-The grid is still 500 MB/s per step. The axis now runs to 4000 MB/s so the Gen3 line fits without squeezing those steps. Each Rivet point is 8 TLPs on the 4 ns user clock.
+Each point is eight TLPs on the 4 ns user clock. Payload sizes, left to right, are 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, and 4096 bytes. The grid is 500 MB/s and the axis runs to 4000 MB/s.
 
 Gen2 theoretical bandwidth is the symbol rate after 8b/10b: 5 GT/s × 4 lanes × 8/10 = 2000 MB/s. Gen3 theoretical bandwidth is the symbol rate after 128b/130b: 8 GT/s × 4 lanes × 128/130 = 3938 MB/s.
 
-Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1122.807, 1347.368, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. Rivet Gen2 x4 read printed 77.670, 146.789, 275.862, 444.444, 695.652, 973.384, 1207.547, 1378.197, 1480.839, 1538.115, and 1568.447 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 81.633, 146.789, 326.531, 640.000, 969.697, 1462.857, 2064.516, 2509.804, 2813.187, 2994.152, and 3093.656 MB/s.
+Gen3 MemWr64 is the 128-bit posted-write path. The header goes out while later payload beats are still arriving, and the next TLP can start in the middle of a Gen3 data block. That is why the write curve rises toward the line the way a saturating link does. Reads stay on the completion path and are lower.
 
-![Throughput versus payload size. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1122.807, 1347.368, 1570.552, 1723.906, 1851.718, 1923.005, 1959.809, and 1979.700 MB/s. Rivet Gen2 x4 read printed 77.670, 146.789, 275.862, 444.444, 695.652, 973.384, 1207.547, 1378.197, 1480.839, 1538.115, and 1568.447 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 81.633, 146.789, 326.531, 640.000, 969.697, 1462.857, 2064.516, 2509.804, 2813.187, 2994.152, and 3093.656 MB/s.](docs/perf-rq-sweep.svg)
+| Payload (bytes) | Gen2 x4 MemWr64 | Gen2 x4 read | Gen3 x4 MemWr64 | Gen3 x4 MemRd64 |
+|----------------:|----------------:|-------------:|----------------:|----------------:|
+| 4 | 250.000 | 77.670 | 333.333 | 81.633 |
+| 8 | 500.000 | 146.789 | 666.667 | 146.789 |
+| 16 | 800.000 | 275.862 | 1333.333 | 326.531 |
+| 32 | 1122.807 | 444.444 | 2000.000 | 640.000 |
+| 64 | 1347.368 | 695.652 | 2666.667 | 969.697 |
+| 128 | 1570.552 | 973.384 | 3200.000 | 1462.857 |
+| 256 | 1723.906 | 1207.547 | 3506.849 | 2064.516 |
+| 512 | 1851.718 | 1378.197 | 3737.226 | 2509.804 |
+| 1024 | 1923.005 | 1480.839 | 3820.896 | 2813.187 |
+| 2048 | 1959.809 | 1538.115 | 3908.397 | 2994.152 |
+| 4096 | 1979.700 | 1568.447 | 3953.668 | 3093.656 |
+
+Rates are MB/s, quoted from the sweep log. The 4096-byte Gen3 MemWr64 point prints 3953.668, above the 3938 line. The sample is the user port: the count stops when the host finishes the eight writes, before the tail of the last frame has left the wire. The gold line is still the wire rate. On the chart the 3938 label sits above that marker so the square does not cover it.
+
+![Throughput versus payload size. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Printed MB/s for Gen2 x4 MemWr64, Gen2 x4 read, Gen3 x4 MemWr64, and Gen3 x4 MemRd64 are in the table above. The 4096-byte Gen3 MemWr64 point is the user-port sample at 3953.668 MB/s.](docs/perf-rq-sweep.svg)
 
 ## Repository layout
 
