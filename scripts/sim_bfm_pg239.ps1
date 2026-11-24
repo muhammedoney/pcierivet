@@ -26,7 +26,9 @@ param(
   [ValidateSet("pattern", "rivet")]
   [string]$Dut = "pattern",
   [switch]$Gui,
-  [switch]$ResetRun
+  [switch]$ResetRun,
+  # Override the example project. Empty keeps RIVET_PG239_EX (the Gen2 tree).
+  [string]$ExampleRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +40,9 @@ if (Test-Path $LocalPaths) {
   . $LocalPaths
 } else {
   Write-Warning "scripts/local_paths.ps1 not found - using environment / defaults."
+}
+if ($ExampleRoot) {
+  $env:RIVET_PG239_EX = $ExampleRoot
 }
 
 if (-not $env:QUESTA_HOME) {
@@ -148,7 +153,21 @@ function New-CompileDo {
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_sync_cell.v",
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_sync.v",
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_phy_ff_chain.v",
-    "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_phy_pipeline.v",
+    "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_phy_pipeline.v"
+  )
+  # Gen4 (16 GT/s) adds these. Gen2 and Gen3 trees do not have them.
+  foreach ($extra in @(
+      "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_gen4_fast2slow.v",
+      "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_gen4_perlane_64b_bridge.v",
+      "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_gen4_perlane_eq_bridge.v",
+      "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_gen4_rx_64b_bridge.v",
+      "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_gen4_tx_64b_bridge.v",
+      "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_gen4_tx_eq_bridge.v"
+    )) {
+    $extraWin = Join-Path $ExRoot ($extra -replace '/', '\')
+    if (Test-Path $extraWin) { $phyCore += $extra }
+  }
+  $phyCore += @(
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/source/pcie_phy_0_core_top.v",
     "pcie_phy_0_ex.gen/sources_1/ip/pcie_phy_0/sim/pcie_phy_0.v"
   )

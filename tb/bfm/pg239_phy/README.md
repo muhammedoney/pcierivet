@@ -178,6 +178,22 @@ scripts/compile_simlib_pg239.ps1
 
 Do **not** commit `pcie_phy_0` netlists, encrypted IP, or `compile_simlib` outputs.
 
+## Gen3 and Gen4 local examples
+
+`scripts/gen_pg239_speed.tcl` builds two more PG239 example trees on XCVU9P. They stay under `C:/Users/tosba/vivado` and are not committed.
+
+| Tree | `phy_max_speed` | Example traffic |
+|------|-----------------|-----------------|
+| `rivet_phy_gen3_ex` | `8.0_GT/s` | Gen1, then Gen3. Log: `PHY Traffic Has Tested @ 8.0 Gbps` |
+| `rivet_phy_gen4_ex` | `16.0_GT/s` | up to Gen4. Log: `PHY Traffic Has Tested @ 16.0 Gbps` |
+
+```powershell
+.\scripts\sim_bfm_pg239.ps1 -ExampleRoot C:\Users\tosba\vivado\rivet_phy_gen3_ex\pcie_phy_0_ex
+.\scripts\sim_bfm_pg239.ps1 -ExampleRoot C:\Users\tosba\vivado\rivet_phy_gen4_ex\pcie_phy_0_ex
+```
+
+2026-11-24: both example sims printed `Test Completed Successfully`. This is the Xilinx PHY pattern, not a Rivet Gen3/Gen4 link.
+
 ## Pass / fail
 
 | Result | Meaning |
