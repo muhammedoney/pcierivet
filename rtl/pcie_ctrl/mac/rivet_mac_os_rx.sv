@@ -59,6 +59,8 @@ module rivet_mac_os_rx #(
   output logic [7:0]         rx_n_fts_o,
   output logic [7:0]         rx_rate_id_o,
   output logic [7:0]         rx_train_ctrl_o,
+  output logic [7:0]         rx_eq_ctrl_o,
+  output logic [7:0]         rx_eq_data_o,
   output logic               rx_lane_num_changed_o,
 
   output logic [LANES-1:0]   polarity_inverted_o,
@@ -136,11 +138,21 @@ module rivet_mac_os_rx #(
       end
     end else begin
       for (int unsigned l = 0; l < LANES; l++) begin
-        for (int unsigned i = WIN - 1; i >= SYMS; i--) win_q[l][i] <= win_q[l][i-SYMS];
-        for (int unsigned s = 0; s < SYMS; s++) begin
-          win_q[l][SYMS-1-s] <= {sym_valid_i[l],
-                                 sym_datak_i[SYMS*l + s],
-                                 sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8]};
+        // Gen1/Gen2 on a 32-bit pipe: shift two symbols from the low 16 bits.
+        if ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3)) begin
+          for (int unsigned i = WIN - 1; i >= 2; i--) win_q[l][i] <= win_q[l][i-2];
+          for (int unsigned s = 0; s < 2; s++) begin
+            win_q[l][1-s] <= {sym_valid_i[l],
+                              sym_datak_i[2*l + s],
+                              sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8]};
+          end
+        end else begin
+          for (int unsigned i = WIN - 1; i >= SYMS; i--) win_q[l][i] <= win_q[l][i-SYMS];
+          for (int unsigned s = 0; s < SYMS; s++) begin
+            win_q[l][SYMS-1-s] <= {sym_valid_i[l],
+                                   (s < 2) ? sym_datak_i[2*l + s] : 1'b0,
+                                   sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8]};
+          end
         end
       end
     end
@@ -164,6 +176,8 @@ module rivet_mac_os_rx #(
   logic [7:0]       cap_n_fts    [LANES];
   logic [7:0]       cap_rate_id  [LANES];
   logic [7:0]       cap_train    [LANES];
+  logic [7:0]       cap_eq_ctrl  [LANES];
+  logic [7:0]       cap_eq_data  [LANES];
 
   always_comb begin
     hit_ts1_pad  = '0;
@@ -182,6 +196,8 @@ module rivet_mac_os_rx #(
       cap_n_fts[l]    = '0;
       cap_rate_id[l]  = '0;
       cap_train[l]    = '0;
+      cap_eq_ctrl[l]  = '0;
+      cap_eq_data[l]  = '0;
 
       if ((rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_i[l] && os_block_i[l] &&
           !block_start_i[l] && (blk_n_q[l] == 5'd12) &&
@@ -192,6 +208,8 @@ module rivet_mac_os_rx #(
         cap_n_fts[l]    = blk_q[l][3];
         cap_rate_id[l]  = blk_q[l][4];
         cap_train[l]    = blk_q[l][5];
+        cap_eq_ctrl[l]  = blk_q[l][6];
+        cap_eq_data[l]  = blk_q[l][7];
         if (blk_q[l][0] == RIVET_SYM_TS1_BLK) begin
           if ((blk_q[l][1] == RIVET_SYM_PAD) && (blk_q[l][2] == RIVET_SYM_PAD))
             hit_ts1_pad[l] = 1'b1;
@@ -206,10 +224,16 @@ module rivet_mac_os_rx #(
         end
       end
 
+      // A Gen3 data block (sync header 01) is logical idle for Recovery.Idle.
+      if ((rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_i[l] && !os_block_i[l])
+        hit_idle[l] = 1'b1;
+
       // Idle / K activity on the newest symbols of this lane.
       for (int unsigned s = 0; s < SYMS; s++) begin
+        if ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3) && (s >= 2))
+          continue;
         if (sym_valid_i[l]) begin
-          if (sym_datak_i[SYMS*l + s]) hit_k[l] = 1'b1;
+          if ((s < 2) && sym_datak_i[2*l + s]) hit_k[l] = 1'b1;
           else if (sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8] == 8'h00)
             hit_idle[l] = 1'b1;
         end
@@ -228,6 +252,8 @@ module rivet_mac_os_rx #(
         id_ts2_inv = 1'b1;
         is_ts1     = 1'b0;
         is_ts2     = 1'b0;
+        if ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3) && (a >= 2))
+          continue;
 
         for (int unsigned j = 0; j < RIVET_TS_LEN; j++) begin
           if (!win_q[l][a + RIVET_TS_LEN - 1 - j][9]) all_valid = 1'b0;
@@ -293,6 +319,8 @@ module rivet_mac_os_rx #(
   logic [7:0]       n_fts_q;
   logic [7:0]       rate_id_q;
   logic [7:0]       train_q;
+  logic [7:0]       eq_ctrl_q;
+  logic [7:0]       eq_data_q;
   logic [7:0]       lane_num_q     [LANES];
   logic [7:0]       lane_num_ref_q [LANES];
   logic             lane_num_seen_q;
@@ -318,6 +346,8 @@ module rivet_mac_os_rx #(
       n_fts_q         <= '0;
       rate_id_q       <= '0;
       train_q         <= '0;
+      eq_ctrl_q       <= '0;
+      eq_data_q       <= '0;
       lane_num_seen_q <= 1'b0;
       inverted_q      <= '0;
       deskew_q        <= 1'b0;
@@ -358,6 +388,8 @@ module rivet_mac_os_rx #(
             n_fts_q    <= cap_n_fts[l];
             rate_id_q  <= cap_rate_id[l];
             train_q    <= cap_train[l];
+            eq_ctrl_q  <= cap_eq_ctrl[l];
+            eq_data_q  <= cap_eq_data[l];
           end
         end
 
@@ -445,6 +477,8 @@ module rivet_mac_os_rx #(
   assign rx_n_fts_o          = n_fts_q;
   assign rx_rate_id_o        = rate_id_q;
   assign rx_train_ctrl_o     = train_q;
+  assign rx_eq_ctrl_o        = eq_ctrl_q;
+  assign rx_eq_data_o        = eq_data_q;
   assign polarity_inverted_o = inverted_q;
   assign deskew_done_o       = (LANES == 1) ? 1'b1 : deskew_q;
 
@@ -516,7 +550,7 @@ module rivet_mac_os_rx #(
         for (int unsigned l = 0; l < LANES; l++) begin
           automatic int unsigned p = s * LANES + l;
           automatic logic [7:0]  b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-          automatic logic        k = sym_datak_i[SYMS*l + s];
+          automatic logic        k = (s < 2) ? sym_datak_i[2*l + s] : 1'b0;
           automatic logic        e = ok && lane_en_i[l];
           p0_en_q[p]   <= e;
           p0_sdp_q[p]  <= e && k && (b == RIVET_SYM_SDP);

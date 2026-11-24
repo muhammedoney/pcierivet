@@ -190,6 +190,7 @@ package rivet_pkg;
     logic [1:0]           negotiated_speed; // Gen encoding
     logic                 accept_dll_tlp;   // typically L0 only
     logic                 replay_freeze;
+    logic [2:0]           pipe_rate;        // PIPE rate code (Gen1=0 .. Gen3=2)
   } rivet_mac_dll_sb_t;
 
   // DLL -> MAC/LTSSM control sideband.

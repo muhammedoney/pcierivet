@@ -35,6 +35,9 @@ module rivet_mac_os_tx #(
   input  logic [7:0]                    tx_n_fts_i,
   input  logic [7:0]                    tx_rate_id_i,
   input  logic [7:0]                    tx_train_ctrl_i,
+  // Gen3 TS bytes 6 and 7. Zero outside equalization.
+  input  logic [7:0]                    tx_eq_ctrl_i = 8'h00,
+  input  logic [7:0]                    tx_eq_data_i = 8'h00,
 
   // DLL payload
   input  rivet_pkg::rivet_dll_mac_tx_beat_t dll_tx_beat_i,
@@ -98,6 +101,8 @@ module rivet_mac_os_tx #(
             4'd3:    sym = {1'b0, tx_n_fts_i};
             4'd4:    sym = {1'b0, tx_rate_id_i};
             4'd5:    sym = {1'b0, tx_train_ctrl_i};
+            4'd6:    sym = {1'b0, tx_eq_ctrl_i};
+            4'd7:    sym = {1'b0, tx_eq_data_i};
             default: sym = {1'b0, 8'h00};
           endcase
         end
@@ -270,9 +275,13 @@ module rivet_mac_os_tx #(
       ? (want_skp ? RIVET_MAC_OS_SKP
                   : (transmitting ? os_req_i : RIVET_MAC_OS_NONE))
       : cur_q;
+  // Gen1/Gen2 on a 32-bit pipe use the low 16 bits (two symbols). Gen3 uses all four.
+  wire [4:0] os_step;
+  assign os_step = ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3))
+                 ? 5'd2 : 5'(SYMS);
   assign len          = os_length(cur);
-  assign set_done     = (ptr_q + 5'(SYMS)) >= len;
-  assign ptr_next     = set_done ? 5'd0 : (ptr_q + 5'(SYMS));
+  assign set_done     = (ptr_q + os_step) >= len;
+  assign ptr_next     = set_done ? 5'd0 : (ptr_q + os_step);
 
   assign dllp_ok = dll_tx_valid_i &&
                    (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_DLLP) &&
@@ -519,15 +528,19 @@ module rivet_mac_os_tx #(
     end else begin
       for (int unsigned l = 0; l < LANES; l++) begin
         for (int unsigned s = 0; s < SYMS; s++) begin
+          if (s >= int'(os_step))
+            continue;
           sym_tmp = os_symbol(cur, 4'(ptr_q + 5'(s)), tx_lane_num_i[8*l +: 8]);
           if (lane_en_i[l]) begin
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
-            sym_datak_d[SYMS*l + s]                  = sym_tmp[8];
-            if ((!sym_tmp[8] &&
-                 ((cur == RIVET_MAC_OS_TS1) || (cur == RIVET_MAC_OS_TS2))) ||
-                ((rate_i == RIVET_PIPE_RATE_GEN3) &&
-                 (cur != RIVET_MAC_OS_NONE) && (cur != RIVET_MAC_OS_IDLE)))
-              sym_os_d_d[SYMS*l + s] = 1'b1;
+            if (s < 2) begin
+              sym_datak_d[2*l + s] = sym_tmp[8];
+              if ((!sym_tmp[8] &&
+                   ((cur == RIVET_MAC_OS_TS1) || (cur == RIVET_MAC_OS_TS2))) ||
+                  ((rate_i == RIVET_PIPE_RATE_GEN3) &&
+                   (cur != RIVET_MAC_OS_NONE) && (cur != RIVET_MAC_OS_IDLE)))
+                sym_os_d_d[2*l + s] = 1'b1;
+            end
           end
         end
       end
@@ -590,7 +603,7 @@ module rivet_mac_os_tx #(
       if (os_cnt_clr_i) begin
         sent_q <= '0;
       end else if ((mode_q == ST_OS) && !in_pkt_emit && (cur == RIVET_MAC_OS_IDLE)) begin
-        if (sent_q < (CNT_MAX - SYMS_C)) sent_q <= sent_q + SYMS_C;
+        if (sent_q < (CNT_MAX - CNT_W'(os_step))) sent_q <= sent_q + CNT_W'(os_step);
       end else if ((mode_q == ST_OS) && !in_pkt_emit && set_done &&
                    (cur != RIVET_MAC_OS_NONE)) begin
         if (sent_q != CNT_MAX) sent_q <= sent_q + 1'b1;
@@ -606,9 +619,9 @@ module rivet_mac_os_tx #(
         skp_due_q <= 1'b0;
       end else if (skp_sym_q < SKP_CNT_W'(SKP_INTERVAL_SYM)) begin
         if (in_pkt_emit || (cur != RIVET_MAC_OS_NONE)) begin
-          if (skp_sym_q <= (SKP_CNT_W'(SKP_INTERVAL_SYM) - SKP_CNT_W'(SYMS))) begin
-            skp_sym_q <= skp_sym_q + SKP_CNT_W'(SYMS);
-            skp_due_q <= ((skp_sym_q + SKP_CNT_W'(SYMS)) >= SKP_CNT_W'(SKP_INTERVAL_SYM));
+          if (skp_sym_q <= (SKP_CNT_W'(SKP_INTERVAL_SYM) - SKP_CNT_W'(os_step))) begin
+            skp_sym_q <= skp_sym_q + SKP_CNT_W'(os_step);
+            skp_due_q <= ((skp_sym_q + SKP_CNT_W'(os_step)) >= SKP_CNT_W'(SKP_INTERVAL_SYM));
           end else begin
             skp_sym_q <= SKP_CNT_W'(SKP_INTERVAL_SYM);
             skp_due_q <= 1'b1;

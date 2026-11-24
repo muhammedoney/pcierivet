@@ -344,7 +344,7 @@ module rivet_pcie_ctrl #(
     .aer_set_nonfatal_i           (aer_set_nf),
     .link_up_i                    (link_up),
     // PCIe Cap Link Status: CLS 0001=2.5 / 0010=5.0; NLW = raw lane count.
-    .link_speed_i                 (mac_to_dll_sb.negotiated_speed[0] ? 4'h2 : 4'h1),
+    .link_speed_i                 (4'({1'b0, mac_to_dll_sb.pipe_rate} + 4'h1)),
     .link_width_i                 ({3'b0, mac_to_dll_sb.negotiated_width})
   );
 

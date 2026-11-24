@@ -140,6 +140,12 @@ module rivet_mac #(
   logic [7:0]         rx_n_fts;
   logic [7:0]         rx_rate_id;
   logic [7:0]         rx_train_ctrl;
+  logic [7:0]         rx_eq_ctrl;
+  logic [7:0]         rx_eq_data;
+  logic [7:0]         tx_eq_ctrl;
+  logic [7:0]         tx_eq_data;
+  logic [1:0]         txeq_ctrl;
+  logic [3:0]         txeq_preset;
   logic               rx_lane_num_changed;
   logic [LANES-1:0]   polarity_inverted;
   logic               deskew_done;
@@ -236,6 +242,8 @@ module rivet_mac #(
     .rx_rate_id_i         (rx_rate_id),
     .rx_train_ctrl_i      (rx_train_ctrl),
     .rx_n_fts_i           (rx_n_fts),
+    .rx_eq_ctrl_i         (rx_eq_ctrl),
+    .rx_eq_data_i         (rx_eq_data),
     .polarity_inverted_i  (polarity_inverted),
     .deskew_done_i        (deskew_done),
     .rx_err_i             (rx_err),
@@ -254,6 +262,8 @@ module rivet_mac #(
     .tx_n_fts_o           (tx_n_fts),
     .tx_rate_id_o         (tx_rate_id),
     .tx_train_ctrl_o      (tx_train_ctrl),
+    .tx_eq_ctrl_o         (tx_eq_ctrl),
+    .tx_eq_data_o         (tx_eq_data),
     .os_sent_cnt_i        (os_sent_cnt),
     .capture_clr_o        (capture_clr),
     .lane_en_o            (lane_en),
@@ -262,6 +272,8 @@ module rivet_mac #(
     .rxpolarity_o         (rxpolarity),
     .powerdown_o          (powerdown),
     .rate_o               (rate),
+    .txeq_ctrl_o          (txeq_ctrl),
+    .txeq_preset_o        (txeq_preset),
     .as_mac_in_detect_o   (as_mac_in_detect),
     .as_cdr_hold_req_o    (as_cdr_hold_req),
     .as_mac_in_L0_o       (as_mac_in_L0),
@@ -294,6 +306,8 @@ module rivet_mac #(
     .tx_rate_id_i    (tx_rate_id),
     .rate_i          (rate),
     .tx_train_ctrl_i (tx_train_ctrl),
+    .tx_eq_ctrl_i    (tx_eq_ctrl),
+    .tx_eq_data_i    (tx_eq_data),
     .dll_tx_beat_i   (dll_tx_beat_i),
     .dll_tx_valid_i  (dll_tx_valid_i),
     .dll_tx_ready_o  (dll_tx_ready_o),
@@ -462,6 +476,8 @@ module rivet_mac #(
     .rx_n_fts_o            (rx_n_fts),
     .rx_rate_id_o          (rx_rate_id),
     .rx_train_ctrl_o       (rx_train_ctrl),
+    .rx_eq_ctrl_o          (rx_eq_ctrl),
+    .rx_eq_data_o          (rx_eq_data),
     .rx_lane_num_changed_o (rx_lane_num_changed),
     .polarity_inverted_o   (polarity_inverted),
     .deskew_done_o         (deskew_done),
@@ -523,6 +539,8 @@ module rivet_mac #(
     .pipe_txmargin_o         (pipe_txmargin_o),
     .pipe_txswing_o          (pipe_txswing_o),
     .pipe_txdeemph_o         (pipe_txdeemph_o),
+    .txeq_ctrl_i             (txeq_ctrl),
+    .txeq_preset_i           (txeq_preset),
     .pipe_txeq_ctrl_o        (pipe_txeq_ctrl_o),
     .pipe_txeq_preset_o      (pipe_txeq_preset_o),
     .pipe_txeq_coeff_o       (pipe_txeq_coeff_o),
@@ -551,6 +569,7 @@ module rivet_mac #(
     mac_to_dll_sb_o.negotiated_speed = negotiated_speed;
     mac_to_dll_sb_o.accept_dll_tlp   = accept_dll_tlp;
     mac_to_dll_sb_o.replay_freeze    = !accept_dll_tlp;
+    mac_to_dll_sb_o.pipe_rate        = rate;
   end
 
   logic _unused_mac;

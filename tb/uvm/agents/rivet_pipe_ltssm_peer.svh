@@ -19,6 +19,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            hot_reset_enable = 0;    // set TS training-control Hot Reset
   bit            disable_link_enable = 0; // set TS training-control Disable Link
   bit            gen3_block_only = 0;     // drive blocks, do not run the LTSSM
+  bit            peer_gen3 = 0;           // advertise 8 GT/s and send blocks after Recovery.Speed
   logic [2:0]    rxstatus_err_code = 3'b100; // RxStatus injected by peer_rxstatus_err_go
   int unsigned   peer_lanes = 0;         // 0 = all DUT lanes; else narrower partner
   bit            peer_lane_reverse = 0;  // assign Lane# W-1..0 on phys 0..W-1
@@ -43,6 +44,26 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   localparam logic [7:0] PEER_LINK  = 8'h00;
   localparam logic [7:0] PEER_NFTS  = 8'h00;
   localparam logic [7:0] PEER_RATE  = 8'h06;
+  localparam int unsigned PW = `RIVET_TB_PIPE_W;
+
+  // Gen3 TS block byte. Byte 6 is {success, phase request}; byte 7 is the preset.
+  function automatic logic [7:0] gen3_ts_byte(
+    input int unsigned idx,
+    input bit          ts2,
+    input logic [7:0]  lane_n,
+    input logic [7:0]  eq_ctrl,
+    input logic [7:0]  eq_data
+  );
+    case (idx[3:0])
+      4'd0:    return ts2 ? 8'h2D : 8'h1E;
+      4'd1:    return 8'h00;
+      4'd2:    return lane_n;
+      4'd4:    return 8'h0E;
+      4'd6:    return eq_ctrl;
+      4'd7:    return eq_data;
+      default: return 8'h00;
+    endcase
+  endfunction
 
   typedef enum int unsigned {
     P_TS1_PAD,
@@ -69,6 +90,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(this, "", "hot_reset_enable", hot_reset_enable));
     void'(uvm_config_db#(bit)::get(this, "", "disable_link_enable", disable_link_enable));
     void'(uvm_config_db#(bit)::get(this, "", "gen3_block_only", gen3_block_only));
+    void'(uvm_config_db#(bit)::get(this, "", "peer_gen3", peer_gen3));
     void'(uvm_config_db#(logic [2:0])::get(this, "", "rxstatus_err_code", rxstatus_err_code));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
     void'(uvm_config_db#(int unsigned)::get(this, "", "peer_lanes", peer_lanes));
@@ -378,6 +400,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     int unsigned cpld_owed;
     int unsigned tlp_ends;
     bit          cpld_auto;
+    int unsigned g3_off;
+    int unsigned g3_sets;
+    int unsigned com_hold;
 
     if (!enable) return;
 
@@ -415,6 +440,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     tlp_sym = 0; tlp_nbytes = 0; tlp_frame = '0;
     recovery_go = 1'b0; recovery_pulse = 1'b0;
     last_rate = 3'd0; rate_ack_left = 0; peer_rate_byte = PEER_RATE;
+    g3_off = 0; g3_sets = 0; com_hold = 0;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
     rxstatus_err_go = 1'b0; rxstatus_err_left = 0;
@@ -457,10 +483,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         for (s = 0; s < 2; s++) begin
           if (vif.txdatak[2*l + s]) begin
             dut_tx_k = 1'b1;
-            if (vif.txdata[16*l + 8*s +: 8] == SYM_COM) dut_tx_com = 1'b1;
+            if (vif.txdata[l*PW + 8*s +: 8] == SYM_COM) dut_tx_com = 1'b1;
           end else begin
-            if (vif.txdata[16*l + 8*s +: 8] == SYM_TS1_ID) dut_tx_ts1 = 1'b1;
-            if (vif.txdata[16*l + 8*s +: 8] == SYM_TS2_ID) dut_tx_ts2 = 1'b1;
+            if (vif.txdata[l*PW + 8*s +: 8] == SYM_TS1_ID) dut_tx_ts1 = 1'b1;
+            if (vif.txdata[l*PW + 8*s +: 8] == SYM_TS2_ID) dut_tx_ts2 = 1'b1;
           end
         end
       end
@@ -475,9 +501,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       send_link_pad = (phase_q == P_TS1_PAD) || (phase_q == P_TS2_PAD);
       send_lane_pad = (phase_q != P_TS1_LANE) && (phase_q != P_TS2_CFG);
       send_os       = peer_active && (phase_q != P_IDLE);
-      // Advertise Gen2; set speed-change bit during Recovery TS when enabled.
-      peer_rate_byte = PEER_RATE;
-      if (speed_change_enable && send_os && !send_link_pad)
+      // Advertise Gen2, or 8 GT/s when peer_gen3. Speed-change bit in Recovery TS.
+      peer_rate_byte = peer_gen3 ? 8'h0E : PEER_RATE;
+      if ((speed_change_enable || peer_gen3) && send_os && !send_link_pad)
         peer_rate_byte = peer_rate_byte | 8'h80;
       peer_train_byte = 8'h00;
       if (tc_inject_active && send_os && !send_link_pad) begin
@@ -568,7 +594,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             automatic logic [7:0] raw, sym;
             automatic logic        is_k;
             automatic logic [15:0] lfsr;
-            raw  = vif.txdata[16*l + 8*s +: 8];
+            raw  = vif.txdata[l*PW + 8*s +: 8];
             is_k = vif.txdatak[2*l + s];
             lfsr = dut_lfsr[l];
             sym  = dut_unscramble(raw, is_k, lfsr);
@@ -712,7 +738,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
                 tlp_sym9 = {1'b0, 8'h00};
               peer_tmp = tlp_sym9;
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
-              vif.rxdata[16*phys + 8*s +: 8] <= peer_out;
+              vif.rxdata[phys*PW + 8*s +: 8] <= peer_out;
               vif.rxdatak[2*phys + s]        <= peer_tmp[8];
             end
             peer_lfsr[phys] = lfsr;
@@ -734,7 +760,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
               end else
                 peer_tmp = {1'b0, 8'h00};
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8], 1'b0, lfsr);
-              vif.rxdata[16*phys + 8*s +: 8] <= peer_out;
+              vif.rxdata[phys*PW + 8*s +: 8] <= peer_out;
               vif.rxdatak[2*phys + s]        <= peer_tmp[8];
             end
             peer_lfsr[phys] = lfsr;
@@ -767,7 +793,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
                                  : {1'b0, 8'h00};
               peer_out = peer_scramble(peer_tmp[7:0], peer_tmp[8],
                                        send_os && !peer_tmp[8], lfsr);
-              vif.rxdata[16*l + 8*s +: 8] <= peer_out;
+              vif.rxdata[l*PW + 8*s +: 8] <= peer_out;
               vif.rxdatak[2*l + s]        <= peer_tmp[8];
             end
             peer_lfsr[l] = lfsr;
@@ -796,6 +822,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           dut_lfsr[l]  = 16'hFFFF;
         end
         parse_st = 0; ack_pending = 1'b0;
+        com_hold = 0;
       end else begin
         case (phase_q)
           P_TS1_PAD: if (dut_tx_ts2) begin
@@ -817,16 +844,62 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           end
           P_IDLE: begin
             // DUT entered Recovery (TS1/TS2 again) — rejoin numbered training.
-            // COM in the same cycle rejects a scrambled payload alias of 0x4A.
-            if (dut_tx_com && (dut_tx_ts1 || dut_tx_ts2)) begin
+            // COM and the TS identifier are several symbols apart, so hold COM
+            // for one ordered set. A bare identifier is still not enough.
+            if (dut_tx_com)
+              com_hold = 8;
+            else if (com_hold != 0)
+              com_hold = com_hold - 1;
+            if ((com_hold != 0) && (dut_tx_ts1 || dut_tx_ts2)) begin
               phase_q    = dut_tx_ts2 ? P_TS2_CFG : P_TS1_LANE;
               phase_sets = '0;
               peer_ptr   = '0;
               idle_seen  = '0;
+              com_hold   = 0;
             end
           end
           default: ;
         endcase
+      end
+
+      // After the PIPE rate is 8 GT/s, replace the 8b/10b symbols with 16-byte
+      // blocks. The first blocks carry EQ phase 2 plus the success bit and
+      // preset 1 so the upstream slave can leave equalization, then TS2, then
+      // data blocks the DUT treats as logical idle.
+      if (peer_gen3 && peer_active && (vif.rate == 3'd2) && (vif.txelecidle != '1)) begin
+        bit          ts2;
+        bit          data_blk;
+        logic [7:0]  eqc, eqd;
+        ts2      = (g3_sets >= 24) && (g3_sets < 40);
+        data_blk = (g3_sets >= 40);
+        eqc      = (ts2 || data_blk) ? 8'h00 : 8'h0A;
+        eqd      = (ts2 || data_blk) ? 8'h00 : 8'h01;
+        vif.rxdatak       <= '0;
+        vif.rxdata_valid  <= '1;
+        for (l = 0; l < lanes; l++) begin
+          vif.rxstart_block[2*l +: 2] <= (g3_off == 0) ? 2'b01 : 2'b00;
+          vif.rxsync_header[2*l +: 2] <= data_blk ? 2'b01 : 2'b10;
+          for (s = 0; s < 4; s++) begin
+            if (data_blk)
+              vif.rxdata[l*PW + 8*s +: 8] <= 8'h00;
+            else
+              vif.rxdata[l*PW + 8*s +: 8] <= gen3_ts_byte(
+                  g3_off + s, ts2, 8'(l), eqc, eqd);
+          end
+        end
+        g3_off = g3_off + 4;
+        if (g3_off >= 16) begin
+          g3_off  = 0;
+          g3_sets = g3_sets + 1;
+        end
+        if (data_blk)
+          phase_q = P_IDLE;
+      end else if (peer_gen3) begin
+        g3_off = 0;
+        g3_sets = 0;
+        vif.rxdata_valid  <= '0;
+        vif.rxstart_block <= '0;
+        vif.rxsync_header <= '0;
       end
     end
   endtask

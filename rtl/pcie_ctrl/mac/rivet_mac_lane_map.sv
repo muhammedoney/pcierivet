@@ -91,7 +91,8 @@ module rivet_mac_lane_map #(
         if (map_phys[log] == 5'(phys)) begin
           tx_data_o[PIPE_DATA_WIDTH*phys +: PIPE_DATA_WIDTH] =
               tx_data_i[PIPE_DATA_WIDTH*log +: PIPE_DATA_WIDTH];
-          tx_datak_o[SYMS*phys +: SYMS] = tx_datak_i[SYMS*log +: SYMS];
+          // datak is 2 bits per lane at every pipe width.
+          tx_datak_o[2*phys +: 2] = tx_datak_i[2*log +: 2];
         end
       end
     end
@@ -109,7 +110,7 @@ module rivet_mac_lane_map #(
         if (map_log[phys] == 5'(log)) begin
           rx_data_o[PIPE_DATA_WIDTH*log +: PIPE_DATA_WIDTH] =
               rx_data_i[PIPE_DATA_WIDTH*phys +: PIPE_DATA_WIDTH];
-          rx_datak_o[SYMS*log +: SYMS] = rx_datak_i[SYMS*phys +: SYMS];
+          rx_datak_o[2*log +: 2] = rx_datak_i[2*phys +: 2];
           rx_valid_o[log] = rx_valid_i[phys];
           rx_os_o[log]    = rx_os_i[phys];
           rx_start_o[log] = rx_start_i[phys];

@@ -50,26 +50,32 @@ module rivet_mac_scrambler #(
       lfsr_next[l] = lfsr_q[l];
       lfsr23_next[l] = lfsr23_q[l];
       if ((rate_i == RIVET_PIPE_RATE_GEN3) && valid_i && lane_en_i[l]) begin
-        for (int unsigned s = 0; s < SYMS; s++) begin
-          automatic logic [7:0]  din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-          automatic logic        is_k = datak_i[SYMS*l + s];
-          automatic logic        os_d = os_d_i[SYMS*l + s];
-          automatic logic [30:0] step;
-          if (is_k && (din == RIVET_SYM_SKP_BLK)) begin
-            // SKP does not advance the 23-bit LFSR.
-          end else begin
+        // One OS flag covers the 4-byte word. SKP does not advance the LFSR.
+        automatic logic os_word  = os_d_i[2*l];
+        automatic logic skp_word = os_word &&
+                                   (data_i[PIPE_DATA_WIDTH*l +: 8] == RIVET_SYM_SKP_BLK);
+        if (!skp_word) begin
+          for (int unsigned s = 0; s < SYMS; s++) begin
+            automatic logic [7:0]  din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+            automatic logic [30:0] step;
             step = rivet_lfsr23_byte(lfsr23_next[l]);
             lfsr23_next[l] = step[30:8];
-            if (!os_d)
+            if (!os_word)
               data_scr[PIPE_DATA_WIDTH*l + 8*s +: 8] = din ^ step[7:0];
           end
         end
       end else if (valid_i && lane_en_i[l]) begin
         for (int unsigned s = 0; s < SYMS; s++) begin
-          automatic logic [7:0]  din  = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-          automatic logic        is_k = datak_i[SYMS*l + s];
-          automatic logic        os_d = os_d_i[SYMS*l + s];
+          automatic logic [7:0]  din;
+          automatic logic        is_k;
+          automatic logic        os_d;
           automatic logic [23:0] step;
+          // 32-bit pipe, Gen1/Gen2: only the low 16 bits are symbols.
+          if ((PIPE_DATA_WIDTH == 32) && (s >= 2))
+            continue;
+          din  = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+          is_k = datak_i[2*l + s];
+          os_d = os_d_i[2*l + s];
           if (is_k && (din == RIVET_SYM_COM)) begin
             lfsr_next[l] = RIVET_LFSR_SEED;
           end else if (!(is_k && (din == RIVET_SYM_SKP))) begin

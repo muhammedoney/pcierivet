@@ -65,6 +65,8 @@ module rivet_mac_pipe_adapter #(
   output logic [2:0]                       pipe_txmargin_o,
   output logic                             pipe_txswing_o,
   output logic                             pipe_txdeemph_o,
+  input  logic [1:0]                       txeq_ctrl_i = 2'b00,
+  input  logic [3:0]                       txeq_preset_i = 4'h0,
   output logic [2*LANES-1:0]               pipe_txeq_ctrl_o,
   output logic [4*LANES-1:0]               pipe_txeq_preset_o,
   output logic [6*LANES-1:0]               pipe_txeq_coeff_o,
@@ -297,8 +299,8 @@ module rivet_mac_pipe_adapter #(
   assign pipe_txmargin_o         = 3'b000;
   assign pipe_txswing_o          = 1'b0;
   assign pipe_txdeemph_o         = 1'b1; // -3.5 dB default (PG239)
-  assign pipe_txeq_ctrl_o        = '0;
-  assign pipe_txeq_preset_o      = '0;
+  assign pipe_txeq_ctrl_o        = {LANES{txeq_ctrl_i}};
+  assign pipe_txeq_preset_o      = {LANES{txeq_preset_i}};
   assign pipe_txeq_coeff_o       = '0;
   assign pipe_rxeq_ctrl_o        = '0;
   assign pipe_rxeq_txpreset_o    = '0;

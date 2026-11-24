@@ -91,19 +91,25 @@ module rivet_mac_descrambler #(
         end
       end else if (valid_i[l] && lane_en_i[l]) begin
         for (int unsigned s = 0; s < SYMS; s++) begin
-          automatic logic [7:0]  din   = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-          automatic logic        is_k  = datak_i[SYMS*l + s];
-          automatic logic        in_os = (os_left_n[l] != 5'd0);
+          automatic logic [7:0]  din;
+          automatic logic        is_k;
+          automatic logic        in_os;
           automatic logic [23:0] step;
           automatic logic [7:0]  nxt;
           automatic logic        this_os;
+          // 32-bit pipe, Gen1/Gen2: only the low 16 bits are symbols.
+          if ((PIPE_DATA_WIDTH == 32) && (s >= 2))
+            continue;
+          din   = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+          is_k  = datak_i[2*l + s];
+          in_os = (os_left_n[l] != 5'd0);
 
           this_os = in_os;
 
           if (is_k && (din == RIVET_SYM_COM)) begin
             lfsr_next[l]  = RIVET_LFSR_SEED;
             com_pend_n[l] = 1'b0;
-            if ((s + 1 < SYMS) && datak_i[SYMS*l + (s+1)]) begin
+            if (((s + 1) < 2) && datak_i[2*l + (s + 1)]) begin
               nxt = data_i[PIPE_DATA_WIDTH*l + 8*(s+1) +: 8];
               if (is_short_os_k(nxt))
                 os_left_n[l] = 5'(RIVET_SHORT_OS_LEN - 1);
