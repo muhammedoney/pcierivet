@@ -119,9 +119,9 @@ The link partner for RC and DSP is the PG213 Endpoint model. UVM mode is the thi
 
 ## Phase 4 EP Gen3 (closed 2026-11-24)
 
-Endpoint x4, `GEN=3`, 32-bit pipe. Each row printed `UVM_ERROR : 0` on that date. After the length-prefix transmit change, `smoke_gen3_memwr_x4` and `smoke_gen3_cpld_x4` were run again and both printed `UVM_ERROR : 0` and `UVM_FATAL : 0`.
+Endpoint x4, `GEN=3`, 32-bit pipe. Each row printed `UVM_ERROR : 0` on that date. After the receive path accepted all four symbol times, `smoke_gen3_memwr_x4` and `smoke_gen3_cpld_x4` were run again and both printed `UVM_ERROR : 0` and `UVM_FATAL : 0`. The completion smoke printed `rc_match=1`.
 
-A Gen3 TLP on the transmit path is STP, a 2-byte little-endian DLL length, then the DLL bytes, with no END token, in all four symbol times. The receive gearbox still takes symbol times 0 and 1, eight bytes per cycle. The peer counts a received TLP from the length field, so a payload byte equal to STP, SDP, or END is not a token.
+A Gen3 TLP is STP, a 2-byte little-endian DLL length, then the DLL bytes, with no END token, in all four symbol times. The receive gearbox walks those four symbol times and writes two 8-byte RAM words when a cycle carries more than eight frame bytes. Playback toward the DLL is still eight bytes per cycle. The peer sends and counts the same length-prefixed frame, so a payload byte equal to STP, SDP, or END is not a token.
 
 | Gate | Command | Status |
 |------|---------|--------|

@@ -569,10 +569,9 @@ module rivet_mac_os_rx #(
           automatic logic [7:0]  b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           automatic logic        k = (s < 2) ? sym_datak_i[2*l + s] : 1'b0;
           automatic logic        tok = k || (gen3_pkt && !os_block_i[l]);
-          // The gearbox captures 8 bytes per cycle, so a Gen3 frame still
-          // uses symbol times 0 and 1. Times 2 and 3 stay idle until that
-          // capture can take a full 16-byte word.
-          automatic logic        e = ok && lane_en_i[l] && !(gen3_pkt && (s >= 2));
+          // Gen3 data blocks carry four symbol times. A cycle that holds
+          // more than eight frame bytes writes a second RAM word below.
+          automatic logic        e = ok && lane_en_i[l];
           en_t[p]   = e;
           sdp_t[p]  = e && tok && (b == RIVET_SYM_SDP);
           stp_t[p]  = e && tok && (b == RIVET_SYM_STP);
@@ -643,6 +642,11 @@ module rivet_mac_os_rx #(
   logic                    tlp_ram_we;
   logic [TLP_AW-1:0]       tlp_ram_waddr;
   logic [63:0]             tlp_ram_wdata;
+  // Second write in the same cycle. A Gen3 x4 data beat is 16 bytes, and
+  // the accumulator holds only seven, so the extra word cannot wait.
+  logic                    tlp_ram_we2;
+  logic [TLP_AW-1:0]       tlp_ram_waddr2;
+  logic [63:0]             tlp_ram_wdata2;
   logic [63:0]             tlp_ram_rd_q;
   logic                    tlp_rd_issue;
 
@@ -686,6 +690,8 @@ module rivet_mac_os_rx #(
   always_ff @(posedge pclk_i) begin
     if (tlp_ram_we)
       tlp_ram[tlp_ram_waddr] <= tlp_ram_wdata;
+    if (tlp_ram_we2)
+      tlp_ram[tlp_ram_waddr2] <= tlp_ram_wdata2;
   end
 
   // Synchronous read-data reset so Versal does not see an async BRAM reset.
@@ -731,6 +737,9 @@ module rivet_mac_os_rx #(
     tlp_ram_we       = 1'b0;
     tlp_ram_waddr    = tlp_wr_slot_q;
     tlp_ram_wdata    = '0;
+    tlp_ram_we2      = 1'b0;
+    tlp_ram_waddr2   = tlp_wr_slot_q;
+    tlp_ram_wdata2   = '0;
 
     if (dll_beat_valid_q && dll_rx_ready_i) dll_beat_valid_d = 1'b0;
 
@@ -753,14 +762,15 @@ module rivet_mac_os_rx #(
             automatic logic        saw_stp = 1'b0;
             automatic logic [3:0]  c       = 4'd0;
             automatic logic [63:0] b       = '0;
-            automatic logic [3:0]  cap_n   = 4'd0;
-            automatic logic [7:0]  cap_b [0:7];
-            automatic logic [63:0] cap_word;
+            automatic logic [4:0]  cap_n   = 5'd0;
+            automatic logic [7:0]  cap_b [0:15];
+            automatic logic [63:0] cap_lo;
+            automatic logic [63:0] cap_hi;
             automatic logic        err       = 1'b0;
             automatic logic        done      = 1'b0;
             automatic logic        nullified = 1'b0;
 
-            for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
+            for (int unsigned i = 0; i < 16; i++) cap_b[i] = '0;
 
             for (int unsigned p = 0; p < NSYM; p++) begin
               if (p0_en_q[p] && !done) begin
@@ -797,16 +807,18 @@ module rivet_mac_os_rx #(
                   end else if (p0_k_q[p]) begin
                     err  = 1'b1;
                     done = 1'b1;
-                  end else begin
-                    cap_b[cap_n[2:0]] = p0_data_q[p];
-                    cap_n = cap_n + 4'd1;
+                  end else if (cap_n < 5'd16) begin
+                    cap_b[cap_n[3:0]] = p0_data_q[p];
+                    cap_n = cap_n + 5'd1;
                   end
                 end
               end
             end
 
-            cap_word = {cap_b[7], cap_b[6], cap_b[5], cap_b[4],
-                        cap_b[3], cap_b[2], cap_b[1], cap_b[0]};
+            cap_lo = {cap_b[7], cap_b[6], cap_b[5], cap_b[4],
+                      cap_b[3], cap_b[2], cap_b[1], cap_b[0]};
+            cap_hi = {cap_b[15], cap_b[14], cap_b[13], cap_b[12],
+                      cap_b[11], cap_b[10], cap_b[9], cap_b[8]};
 
             if (saw_sdp) begin
               rx_body_d    = b;
@@ -840,17 +852,60 @@ module rivet_mac_os_rx #(
               automatic logic [TLP_AW-1:0] slot;
               slot = tlp_tail_pend_q ? (tlp_wr_slot_q + 11'd1) : tlp_wr_slot_q;
               tlp_base_d = slot;
-              tlp_len_d  = {9'd0, cap_n};
-              tlp_err_d  = err | nullified | (done && (cap_n == 4'd0)) | (used_q > 13'd3600);
-              if (done) begin
-                if (!tlp_err_d && (cap_n != 4'd0) && tlp_tail_pend_q) begin
-                  tlp_acc_d       = cap_word[55:0];
+              tlp_len_d  = 13'(cap_n);
+              tlp_err_d  = err | nullified | (done && (cap_n == 5'd0)) | (used_q > 13'd3600);
+              if (cap_n > 5'd8) begin
+                // Eight bytes fill the RAM word. The accumulator holds seven,
+                // so a longer first beat writes the low word now.
+                automatic logic [4:0] n_hi;
+                n_hi = cap_n - 5'd8;
+                if (!tlp_err_d) begin
+                  if (tlp_tail_pend_q) begin
+                    tlp_ram_we2    = 1'b1;
+                    tlp_ram_waddr2 = slot;
+                    tlp_ram_wdata2 = cap_lo;
+                  end else begin
+                    tlp_ram_we    = 1'b1;
+                    tlp_ram_waddr = slot;
+                    tlp_ram_wdata = cap_lo;
+                  end
+                  tlp_wr_slot_d = slot + 12'd1;
+                end
+                if (done) begin
+                  if (!tlp_err_d && (n_hi != 5'd0) && !tlp_ram_we2) begin
+                    tlp_ram_we2    = 1'b1;
+                    tlp_ram_waddr2 = slot + 12'd1;
+                    tlp_ram_wdata2 = cap_hi;
+                    tlp_wr_slot_d  = slot + 12'd2;
+                    tlp_acc_d      = '0;
+                    tlp_acc_cnt_d  = 3'd0;
+                  end else if (!tlp_err_d && (n_hi != 5'd0)) begin
+                    tlp_acc_d       = cap_hi[55:0];
+                    tlp_acc_cnt_d   = n_hi[2:0];
+                    tlp_tail_pend_d = 1'b1;
+                  end else begin
+                    tlp_acc_d     = '0;
+                    tlp_acc_cnt_d = 3'd0;
+                  end
+                  frame_push_d      = 1'b1;
+                  frame_push_base_d = slot;
+                  frame_push_len_d  = 13'(cap_n);
+                  frame_push_err_d  = tlp_err_d;
+                  rx_pkt_d          = RX_IDLE;
+                end else begin
+                  tlp_acc_d     = cap_hi[55:0];
+                  tlp_acc_cnt_d = n_hi[2:0];
+                  rx_pkt_d      = RX_TLP;
+                end
+              end else if (done) begin
+                if (!tlp_err_d && (cap_n != 5'd0) && tlp_tail_pend_q) begin
+                  tlp_acc_d       = cap_lo[55:0];
                   tlp_acc_cnt_d   = cap_n[2:0];
                   tlp_tail_pend_d = 1'b1;
-                end else if (!tlp_err_d && (cap_n != 4'd0)) begin
+                end else if (!tlp_err_d && (cap_n != 5'd0)) begin
                   tlp_ram_we    = 1'b1;
                   tlp_ram_waddr = slot;
-                  tlp_ram_wdata = cap_word;
+                  tlp_ram_wdata = cap_lo;
                   tlp_wr_slot_d = slot + 11'd1;
                   tlp_acc_d     = '0;
                   tlp_acc_cnt_d = 3'd0;
@@ -860,11 +915,11 @@ module rivet_mac_os_rx #(
                 end
                 frame_push_d      = 1'b1;
                 frame_push_base_d = slot;
-                frame_push_len_d  = {9'd0, cap_n};
+                frame_push_len_d  = 13'(cap_n);
                 frame_push_err_d  = tlp_err_d;
                 rx_pkt_d          = RX_IDLE;
               end else begin
-                tlp_acc_d     = cap_word[55:0];
+                tlp_acc_d     = cap_lo[55:0];
                 tlp_acc_cnt_d = cap_n[2:0];
                 rx_pkt_d      = RX_TLP;
               end
@@ -946,18 +1001,17 @@ module rivet_mac_os_rx #(
 
         RX_TLP: begin
           if (p0_lanes_ok_q) begin
-            automatic logic [7:0]   cap_b [0:7];
-            automatic logic [3:0]   cap_n     = 4'd0;
-            automatic logic [63:0]  cap_word;
-            automatic logic [119:0] comb_bytes;
-            automatic logic [3:0]   comb_cnt;
+            automatic logic [7:0]   cap_b [0:15];
+            automatic logic [4:0]   cap_n     = 5'd0;
+            automatic logic [183:0] comb_bytes;
+            automatic logic [4:0]   comb_cnt;
             automatic logic [13:0]  new_len;
             automatic logic         len_ovf;
             automatic logic         err       = tlp_err_q;
             automatic logic         done      = 1'b0;
             automatic logic         nullified = 1'b0;
 
-            for (int unsigned i = 0; i < 8; i++) cap_b[i] = '0;
+            for (int unsigned i = 0; i < 16; i++) cap_b[i] = '0;
 
             for (int unsigned p = 0; p < NSYM; p++) begin
               if (p0_en_q[p] && !done) begin
@@ -969,39 +1023,46 @@ module rivet_mac_os_rx #(
                 end else if (p0_k_q[p]) begin
                   err  = 1'b1;
                   done = 1'b1;
-                end else begin
-                  cap_b[cap_n[2:0]] = p0_data_q[p];
-                  cap_n = cap_n + 4'd1;
+                end else if (cap_n < 5'd16) begin
+                  cap_b[cap_n[3:0]] = p0_data_q[p];
+                  cap_n = cap_n + 5'd1;
                 end
               end
             end
 
-            new_len = {1'b0, tlp_len_q} + {10'd0, cap_n};
+            new_len = {1'b0, tlp_len_q} + 14'(cap_n);
             len_ovf = (new_len > 14'(TLP_FRAME_MAX)) || (used_q > 13'd3600);
             if (len_ovf) begin
               err  = 1'b1;
               done = 1'b1;
             end
 
-            cap_word = {cap_b[7], cap_b[6], cap_b[5], cap_b[4],
-                        cap_b[3], cap_b[2], cap_b[1], cap_b[0]};
-            unique case (tlp_acc_cnt_q)
-              3'd0: comb_bytes = {56'd0, cap_word};
-              3'd1: comb_bytes = {48'd0, cap_word, tlp_acc_q[ 7:0]};
-              3'd2: comb_bytes = {40'd0, cap_word, tlp_acc_q[15:0]};
-              3'd3: comb_bytes = {32'd0, cap_word, tlp_acc_q[23:0]};
-              3'd4: comb_bytes = {24'd0, cap_word, tlp_acc_q[31:0]};
-              3'd5: comb_bytes = {16'd0, cap_word, tlp_acc_q[39:0]};
-              3'd6: comb_bytes = { 8'd0, cap_word, tlp_acc_q[47:0]};
-              3'd7: comb_bytes = {       cap_word, tlp_acc_q[55:0]};
-            endcase
-            comb_cnt = {1'b0, tlp_acc_cnt_q} + cap_n;
+            comb_bytes = '0;
+            for (int unsigned i = 0; i < 7; i++) begin
+              if (3'(i) < tlp_acc_cnt_q)
+                comb_bytes[8*i +: 8] = tlp_acc_q[8*i +: 8];
+            end
+            for (int unsigned i = 0; i < 16; i++) begin
+              if (5'(i) < cap_n)
+                comb_bytes[8*(int'(tlp_acc_cnt_q) + i) +: 8] = cap_b[i];
+            end
+            comb_cnt = {2'd0, tlp_acc_cnt_q} + cap_n;
 
             tlp_len_d = len_ovf ? 13'(TLP_FRAME_MAX) : new_len[12:0];
             tlp_err_d = err | nullified | (done && (new_len == 14'd0));
 
             if (!done) begin
-              if (comb_cnt[3]) begin
+              if (comb_cnt >= 5'd16) begin
+                tlp_ram_we     = 1'b1;
+                tlp_ram_waddr  = tlp_wr_slot_q;
+                tlp_ram_wdata  = comb_bytes[63:0];
+                tlp_ram_we2    = 1'b1;
+                tlp_ram_waddr2 = tlp_wr_slot_q + 12'd1;
+                tlp_ram_wdata2 = comb_bytes[127:64];
+                tlp_wr_slot_d  = tlp_wr_slot_q + 12'd2;
+                tlp_acc_d      = comb_bytes[183:128];
+                tlp_acc_cnt_d  = 3'(comb_cnt - 5'd16);
+              end else if (comb_cnt[3]) begin
                 tlp_ram_we    = 1'b1;
                 tlp_ram_waddr = tlp_wr_slot_q;
                 tlp_ram_wdata = comb_bytes[63:0];
@@ -1012,8 +1073,31 @@ module rivet_mac_os_rx #(
                 tlp_acc_d     = comb_bytes[55:0];
                 tlp_acc_cnt_d = comb_cnt[2:0];
               end
+            end else if (comb_cnt >= 5'd16) begin
+              if (!tlp_err_d) begin
+                tlp_ram_we     = 1'b1;
+                tlp_ram_waddr  = tlp_wr_slot_q;
+                tlp_ram_wdata  = comb_bytes[63:0];
+                tlp_ram_we2    = 1'b1;
+                tlp_ram_waddr2 = tlp_wr_slot_q + 12'd1;
+                tlp_ram_wdata2 = comb_bytes[127:64];
+                tlp_wr_slot_d  = tlp_wr_slot_q + 12'd2;
+              end
+              if (!tlp_err_d && (comb_cnt > 5'd16)) begin
+                tlp_acc_d       = comb_bytes[183:128];
+                tlp_acc_cnt_d   = 3'(comb_cnt - 5'd16);
+                tlp_tail_pend_d = 1'b1;
+              end else begin
+                tlp_acc_d     = '0;
+                tlp_acc_cnt_d = 3'd0;
+              end
+              frame_push_d      = 1'b1;
+              frame_push_base_d = tlp_base_q;
+              frame_push_len_d  = tlp_len_d;
+              frame_push_err_d  = tlp_err_d;
+              rx_pkt_d          = RX_IDLE;
             end else begin
-              if (!tlp_err_d && (comb_cnt != 4'd0)) begin
+              if (!tlp_err_d && (comb_cnt != 5'd0)) begin
                 tlp_ram_we    = 1'b1;
                 tlp_ram_waddr = tlp_wr_slot_q;
                 tlp_ram_wdata = comb_bytes[63:0];
@@ -1182,6 +1266,8 @@ module rivet_mac_os_rx #(
       endcase
       used_next = used_q;
       if (tlp_ram_we)
+        used_next = used_next + 12'd1;
+      if (tlp_ram_we2)
         used_next = used_next + 12'd1;
       if (rd_took && (used_next != 12'd0))
         used_next = used_next - 12'd1;

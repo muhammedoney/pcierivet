@@ -62,9 +62,9 @@
 - Consumes: the Task 2 frame.
 - Produces: the same 8-byte DLL beat stream the gearbox already accepts. Length bytes are stripped. The byte after the body is a synthetic END for that gearbox only.
 
-- [ ] **Step 1:** Walk symbol times 0..3 while `rate == GEN3`. The RX gearbox still captures 8 bytes per cycle, so this step also has to write two 8-byte RAM words when a cycle carries 16 frame bytes. Until then, times 2 and 3 stay idle on RX and on the peer transmit path. The peer observer already counts a Gen3 TLP by its length prefix.
-- [ ] **Step 2:** Delete `work`, run `smoke_gen3_memwr_x4` and `smoke_gen3_cpld_x4`. Expected: `UVM_ERROR : 0` and `UVM_FATAL : 0` in both logs.
-- [ ] **Step 3:** Commit `feat(mac): parse a Gen3 TLP across four symbol times`.
+- [x] **Step 1:** Walk symbol times 0..3 while `rate == GEN3`. The RX gearbox still captures 8 bytes per cycle, so this step also has to write two 8-byte RAM words when a cycle carries 16 frame bytes. Until then, times 2 and 3 stay idle on RX and on the peer transmit path. The peer observer already counts a Gen3 TLP by its length prefix.
+- [x] **Step 2:** Delete `work`, run `smoke_gen3_memwr_x4` and `smoke_gen3_cpld_x4`. Expected: `UVM_ERROR : 0` and `UVM_FATAL : 0` in both logs. `work` was already the Gen3 library, so vlog rebuilt the changed files in place. Both smokes printed `UVM_ERROR : 0` and `UVM_FATAL : 0`. `smoke_gen3_cpld_x4` printed `rc_match=1`.
+- [x] **Step 3:** Commit `feat(mac): parse a Gen3 TLP across four symbol times`.
 
 ### Task 4: Peer matches the length frame
 
@@ -76,10 +76,10 @@
 - Consumes: DUT TX in the Task 2 layout.
 - Produces: peer TX in the same layout, including CplD. Observe state advances on the length, not on FD/FE/FB.
 
-- [ ] **Step 1:** Send STP, length, DLL bytes in symbol times 0..3. Remove the `ns = 2` cap for Gen3 TLPs.
-- [ ] **Step 2:** On observe, arm the 23-bit LFSR on the first data header and count `length` bytes before calling a frame done. Do not set `is_k` from a payload byte.
-- [ ] **Step 3:** Re-run `smoke_gen3_cpld_x4`. Expected: `UVM_ERROR : 0`.
-- [ ] **Step 4:** Commit `fix(tb): match Gen3 length framing in the peer`.
+- [x] **Step 1:** Send STP, length, DLL bytes in symbol times 0..3. Remove the `ns = 2` cap for Gen3 TLPs.
+- [x] **Step 2:** On observe, arm the 23-bit LFSR on the first data header and count `length` bytes before calling a frame done. Do not set `is_k` from a payload byte.
+- [x] **Step 3:** Re-run `smoke_gen3_cpld_x4`. Expected: `UVM_ERROR : 0`.
+- [x] **Step 4:** Commit `fix(tb): match Gen3 length framing in the peer`. The peer send change ships with the RX capture. Splitting them makes CplD fail, so both land in the RX commit.
 
 ### Task 5: 128-bit user port for Gen3
 

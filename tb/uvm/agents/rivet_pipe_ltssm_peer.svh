@@ -813,8 +813,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       if (peer_active) begin
         if (tlp_sending) begin
           automatic int unsigned ns;
-          // Match the DUT gearbox: two symbol times until it accepts 16 bytes.
-          ns = 2;
+          // Gen3 stripes the length-prefixed TLP across all four symbol times.
+          ns = (peer_gen3 && (vif.rate == 3'd2)) ? 4 : 2;
           for (l = 0; l < peer_lanes; l++) begin
             automatic int unsigned phys;
             automatic logic [15:0] lfsr;
@@ -870,7 +870,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             end
             peer_lfsr[phys] = lfsr;
           end
-          tlp_sym += peer_lanes * 2;
+          tlp_sym += peer_lanes * ns;
           if (tlp_sym >= ((peer_gen3 && (vif.rate == 3'd2))
                           ? (tlp_nbytes + 3) : (tlp_nbytes + 2)))
             tlp_sending = 1'b0;
