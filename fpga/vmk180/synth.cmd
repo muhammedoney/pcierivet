@@ -14,12 +14,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not "%~1"=="" (
-  echo Usage: %SELF%
-  echo Create the project first with create_project.cmd
-  call :pause_if_explorer
-  exit /b 1
+set "RIVET_TCLARGS="
+if "%~1"=="" goto :args_ok
+if /I "%~1"=="4" if /I "%~2"=="ep" if "%~3"=="" (
+  set "RIVET_TCLARGS=4 ep"
+  goto :args_ok
 )
+echo Usage: %SELF% [4 ep]
+call :pause_if_explorer
+exit /b 1
+:args_ok
 
 set "LOG=fpga\vmk180\synth.log"
 set "VIVADO_BAT="
@@ -44,8 +48,13 @@ if not defined VIVADO_BAT (
   exit /b 1
 )
 
-if not exist "fpga\vmk180\build\rivet_vmk180.xpr" (
-  echo ERROR: missing fpga\vmk180\build\rivet_vmk180.xpr
+if defined RIVET_TCLARGS (
+  set "XPR=fpga\vmk180\build\gen4_ep\rivet_vmk180.xpr"
+) else (
+  set "XPR=fpga\vmk180\build\rivet_vmk180.xpr"
+)
+if not exist "%XPR%" (
+  echo ERROR: missing %XPR%
   echo Run create_project.cmd first. Synthesis is a separate script.
   call :pause_if_explorer
   exit /b 1
@@ -53,7 +62,11 @@ if not exist "fpga\vmk180\build\rivet_vmk180.xpr" (
 
 echo Using %VIVADO_BAT%
 echo Log:   %LOG%
-call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\synth.tcl" -nojournal -log "%LOG%"
+if defined RIVET_TCLARGS (
+  call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\synth.tcl" -nojournal -log "%LOG%" -tclargs %RIVET_TCLARGS%
+) else (
+  call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\synth.tcl" -nojournal -log "%LOG%"
+)
 set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" (

@@ -9,7 +9,15 @@
 #   vivado -mode batch -source fpga/vmk180/synth.tcl
 
 set script_dir [file normalize [file dirname [info script]]]
-set xpr [file join $script_dir build rivet_vmk180.xpr]
+set gen4 0
+if {[info exists argv] && [llength $argv] == 2 &&
+    [lindex $argv 0] eq "4" && [lindex $argv 1] eq "ep"} {
+  set gen4 1
+} elseif {[info exists argv] && [llength $argv] != 0} {
+  error "usage: no arguments, or: 4 ep"
+}
+set build_dir [file join $script_dir build [expr {$gen4 ? "gen4_ep" : ""}]]
+set xpr [file join $build_dir rivet_vmk180.xpr]
 
 if {![file exists $xpr]} {
   error "Missing $xpr. Run create_project.cmd first."

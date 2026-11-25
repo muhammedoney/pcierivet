@@ -15,7 +15,17 @@
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir .. ..]]
-set build_dir  [file join $script_dir build]
+set gen4 0
+if {[info exists argv] && [llength $argv] == 2 &&
+    [lindex $argv 0] eq "4" && [lindex $argv 1] eq "ep"} {
+  set gen4 1
+} elseif {[info exists argv] && [llength $argv] == 1 && [lindex $argv 0] eq "synth"} {
+  # Raw `vivado -tclargs synth` still builds and synthesizes the Gen2 project.
+} elseif {[info exists argv] && [llength $argv] != 0} {
+  error "usage: no arguments, or: 4 ep"
+}
+set build_dir [file join $script_dir build [expr {$gen4 ? "gen4_ep" : ""}]]
+set link_speed [expr {$gen4 ? 4 : 2}]
 set part       xcvm1802-vsva2197-2MP-e-S
 set boards {
   xilinx.com:vmk180:part0:3.4
@@ -209,21 +219,46 @@ proc rivet_delete_port {name} {
   }
 }
 
-proc rivet_automate {cell} {
-  # hier false keeps gtwiz_versal_0 at the BD root. link_speed 2 is Gen2.
+proc rivet_collect_v {dir} {
+  set hits [lsort [glob -nocomplain -directory $dir *.v]]
+  foreach sub [lsort [glob -nocomplain -directory $dir -type d *]] {
+    set hits [concat $hits [rivet_collect_v $sub]]
+  }
+  return $hits
+}
+
+proc rivet_decl_range {dir port} {
+  foreach f [rivet_collect_v $dir] {
+    set fh [open $f r]
+    set body [read $fh]
+    close $fh
+    if {[regexp "\\\[(\[0-9\]+):(\[0-9\]+)\\\]\[^\\n\]*\\m${port}\\M" $body -> hi lo]} {
+      return "${hi}:${lo}"
+    }
+  }
+  return ""
+}
+
+proc rivet_automate {cell speed} {
+  # hier false keeps gtwiz_versal_0 at the BD root.
   # phy_refclk and phy_gtrefclk must still be open: the rule drives them
   # from the IBUF it inserts, and a pre-connected sink aborts the rule.
+  # Gen2 may fall back to automation without a config. Gen4 must not.
+  set cfg "link_speed $speed link_width 4 hier false"
   if {[catch {
     apply_bd_automation -rule xilinx.com:bd_rule:pcie_phy_versal \
-      -config {link_speed 2 link_width 4 hier false} $cell
+      -config $cfg $cell
   } err]} {
     puts "WARN: automation with explicit config failed: $err"
+    if {$speed != 2} {
+      error "PG345 link_speed $speed rejected"
+    }
     if {[catch {apply_bd_automation -rule xilinx.com:bd_rule:pcie_phy_versal $cell} err2]} {
       puts "WARN: $err2"
       return 0
     }
   }
-  puts "Block automation: xilinx.com:bd_rule:pcie_phy_versal"
+  puts "Block automation: xilinx.com:bd_rule:pcie_phy_versal link_speed $speed"
   return 1
 }
 
@@ -275,6 +310,7 @@ rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_
 add_files -norecurse [file normalize [file join $script_dir rtl rivet_vmk180_ep.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pipe_pg239_pad.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pcie_phy_wrap.sv]]
+add_files -norecurse [file normalize [file join $repo_root fpga common rivet_fpga_pio256.sv]]
 
 foreach f [get_files -of_objects [current_fileset]] {
   set name [get_property NAME $f]
@@ -367,7 +403,7 @@ rivet_export $phy phy_rxeq_done            O {phy_rxeq_done} 4
 rivet_export $phy pcie_ltssm_state         I {pcie_ltssm_state} 6
 rivet_export $phy pcie_link_reach_target   I {pcie_link_reach_target} 1
 
-if {![rivet_automate $phy]} {
+if {![rivet_automate $phy $link_speed]} {
   rivet_pin_dump $phy
   puts "Intf pins:"
   foreach p [lsort [get_bd_intf_pins -quiet $phy/*]] {
@@ -396,6 +432,16 @@ set bd [get_files pcie_phy_bd.bd]
 generate_target {synthesis instantiation_template} $bd
 set wrapper [make_wrapper -files $bd -top -force]
 add_files -norecurse $wrapper
+set txw [rivet_decl_range $build_dir phy_txdata]
+if {$txw ne "63:0" && $txw ne "255:0"} {
+  error "phy_txdata width is \[$txw\], expected \[63:0\] or \[255:0\]"
+}
+if {$gen4} {
+  set ratew [rivet_decl_range $build_dir phy_rate]
+  if {$ratew ne "2:0"} {
+    error "phy_rate width is \[$ratew\], expected \[2:0\]"
+  }
+}
 
 # DRC CIPS-2: a Versal PDI needs a CIPS so the PMC has a PLM.
 # PL Subsystem keeps DDR and fabric clocks out of this shell.
@@ -431,10 +477,13 @@ add_files -norecurse $cips_wrapper
 puts "CIPS wrapper: $cips_wrapper"
 
 set_property top rivet_vmk180_ep [current_fileset]
+if {$gen4} {
+  set_property generic {GEN=4 PHY_RATE_W=3} [current_fileset]
+}
 update_compile_order -fileset sources_1
 
 set do_synth 0
-if {[info exists argv] && [llength $argv] > 0 && [lindex $argv 0] eq "synth"} {
+if {!$gen4 && [info exists argv] && [llength $argv] > 0 && [lindex $argv 0] eq "synth"} {
   set do_synth 1
 }
 if {$do_synth} {

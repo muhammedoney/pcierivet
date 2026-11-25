@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 rem Create the local VMK180 Vivado project by running create_project.tcl.
 rem   fpga\vmk180\create_project.cmd
-rem   fpga\vmk180\create_project.cmd synth
+rem   fpga\vmk180\create_project.cmd 4 ep
 rem Finds vivado.bat via VIVADO_PATH, XILINX_VIVADO, PATH, then
 rem C:\Xilinx\Vivado\<version>, D:\Xilinx\Vivado\<version>, and Program Files.
 
@@ -14,11 +14,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if /I not "%~1"=="" if /I not "%~1"=="synth" (
-  echo Usage: %SELF% [synth]
-  call :pause_if_explorer
-  exit /b 1
+set "RIVET_TCLARGS="
+if "%~1"=="" goto :args_ok
+if /I "%~1"=="4" if /I "%~2"=="ep" if "%~3"=="" (
+  set "RIVET_TCLARGS=4 ep"
+  goto :args_ok
 )
+echo Usage: %SELF% [4 ep]
+call :pause_if_explorer
+exit /b 1
+:args_ok
 
 set "VIVADO_BAT="
 if defined VIVADO_PATH if exist "%VIVADO_PATH%\bin\vivado.bat" (
@@ -43,8 +48,8 @@ if not defined VIVADO_BAT (
 )
 
 echo Using %VIVADO_BAT%
-if /I "%~1"=="synth" (
-  call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\create_project.tcl" -tclargs synth
+if defined RIVET_TCLARGS (
+  call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\create_project.tcl" -tclargs %RIVET_TCLARGS%
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\create_project.tcl"
 )
