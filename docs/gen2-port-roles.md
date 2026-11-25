@@ -1,16 +1,11 @@
 # Gen2 Upstream / Downstream and Root Port — design
 
 **Date:** 2026-11-23
-**Status:** Accepted direction. Implementation follows
-[the plan](superpowers/plans/2026-11-23-gen2-up-dp-rc.md), one slice at a time.
-**Active generation stays Gen2.** The Gen3 EP procedure in
-[2026-11-23-gen3-ep.md](superpowers/plans/2026-11-23-gen3-ep.md) waits until this
-design's four slices are closed.
+**Status:** Phase 3 closed on 2026-11-23. This file is the Gen2 port-role design. Gen3 and Gen4 port roles, RC config at 8 GT/s and 16 GT/s, and the posted switch hop closed later (roadmap Phases 6–8).
 
 ## Decision
 
-Finish the port-role axis on the Gen2 link that already passes, then open
-Gen3. Four `MODE` values are two ports:
+This design finished the port-role axis on the Gen2 link, and later phases opened Gen3 and Gen4. Four `MODE` values are two ports:
 
 | Port | `MODE` | Trains as | Config header |
 |------|--------|-----------|---------------|
@@ -19,18 +14,20 @@ Gen3. Four `MODE` values are two ports:
 
 `RC` adds a requester that emits Type 1 CfgRd/CfgWr. `USP` is the Upstream
 config path with no extra transaction engine. `DSP` is the Downstream config
-path with no extra transaction engine. Switch forwarding (USP and DSP in one
-design, TLP routing between them) is not this design.
+path with no extra transaction engine. A posted MemWr hop between those two
+ports is `rtl/switch/rivet_sw_posted_fwd` (Phase 8). Two trained links in one
+simulation are still open.
 
 ## Why this order
 
-Gen2 EP simulation is closed (roadmap Phase 1 and Phase 2). The next cut that
-changes the encoding is 128b/130b plus Recovery.Equalization. Equalization is
-not symmetric: the Downstream port is the master and the Upstream port is the
-slave. `rivet_ltssm` can already offer a link number when `MODE` is RC or DSP,
-but it still *enters* Hot Reset and Disabled because it *received* those
-training-control bits. That is the Upstream reaction. Building Gen3
-equalization on that machine would implement only the slave side.
+When this design was written, Gen2 EP simulation was closed and the next
+encoding change was 128b/130b plus Recovery.Equalization. Equalization is
+not symmetric: the Downstream port is the master and the Upstream port is
+the slave. At that date the LTSSM entered Hot Reset and Disabled only
+because it had received those training-control bits, which is the Upstream
+reaction. Building Gen3 equalization before the Downstream master existed
+would have implemented only the slave side. That port-role work closed
+here; Phases 4–8 then added the generations.
 
 The Gen2 MAC, DLL, and the four AXI-ST channels stay. Port type changes
 LTSSM polarity, the config file, and who creates a Config TLP.
@@ -242,19 +239,15 @@ Goal: prove the two aliases are the two ports, not two new stacks.
 - No crosslink, no loopback states (`6'h21`–`6'h26`), no peer-to-peer
   bridge forward.
 
-## Out of scope
+## Out of scope for this Gen2 design
 
-- Gen3/Gen4 protocol, 128b/130b, equalization, `PIPE_DATA_WIDTH != 16`.
-- Switch forwarding, multi-function, SR-IOV, FLR, INTx.
-- A second Rivet controller as the link partner.
+These items were outside Phase 3. Later roadmap phases closed the generation and port-role rows. Multi-function, SR-IOV, FLR, INTx, a second trained controller, and the FPGA bitstream are still open.
+
+- Gen3/Gen4 protocol was Phase 4 and Phase 5. Port roles at those rates were Phase 6 and Phase 7. RC config, directed reset, and the posted forwarder were Phase 8.
+- Switch forwarding across two trained links, multi-function, SR-IOV, FLR, INTx.
 - FPGA bitstream and PG239 generation.
-- Changing AXI-ST data width (stays 64).
-- Pasting PCIe Base or PG213 text into the tree. Codes above are the
-  values already used, or the public PG213 request-type table the RQ
-  descriptor already indexes.
+- Changing the Gen2 AXI-ST data width (stays 64). Gen3 is 128 and Gen4 is 256.
 
 ## Docs already moved
 
-`docs/roadmap.md` Phase 3 closed on 2026-11-23. EP Gen3 is Phase 4 and
-keeps `docs/gen-evolution.md` as its procedure. The Gen3 plan is next.
-This file lives at `docs/gen2-port-roles.md` because `specs/` is gitignored.
+`docs/roadmap.md` Phase 3 closed on 2026-11-23. Phases 4–8 closed Gen3 and Gen4, including RC config and the posted forwarder. This file stays the Gen2 port-role design.

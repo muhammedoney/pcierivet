@@ -1,5 +1,7 @@
 # Gen4 USP, DSP, and RC
 
+**Closed 2026-11-25.** Phase 8 later added RC config at 16 GT/s, Hot Reset and Link Disable at Gen4, the posted forwarder, and opt-in preset search. Gen5 and the FPGA lab stayed out.
+
 **Goal:** `MODE` USP, DSP, and RC each reach L0 at 16 GT/s on x4 and post one RQ MemWr32. Every current Gen4 EP smoke, the Gen3 DSP L0 smoke, and `smoke_gen2_x4` still pass.
 
 **Architecture:** The Gen3 downstream master is already rate-independent, so Gen4 adds no LTSSM RTL. USP keeps the existing downstream peer (`peer_upstream=0`, `peer_gen4=1`). RC and DSP reuse `peer_upstream` at both 8 GT/s and 16 GT/s. After Gen3 L0 the peer holds speed-change TS2 until the rate pin leaves Gen3, then the electrical-idle gap restarts the slave walk for the second equalization. No second Rivet DUT.

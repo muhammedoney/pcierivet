@@ -1,7 +1,7 @@
 # Rivet roadmap
 
-**Active generation: Gen2** (`MODE=EP`, `GEN=2`, lanes ×1/×2/×4).  
-**Primary verified width: ×4.** Gen3/4/5 — see [gen-evolution.md](gen-evolution.md).
+**Default elaboration: Gen2** (`MODE=EP`, `GEN=2`, lanes ×1/×2/×4, 16-bit PIPE).  
+**In simulation:** Gen3 and Gen4 x4 for EP, RC, USP, and DSP, including RC config, CplD, directed reset, a posted switch hop, and opt-in equalization. **Primary verified width: ×4.** Gen5 is not started. See [gen-evolution.md](gen-evolution.md).
 
 ## Phase 0 — Bootstrap (done)
 
@@ -36,7 +36,7 @@ Ordered ×4 gates ([verification.md](verification.md)):
 
 Gen2 leftovers (closed): Recovery.Speed Gen2→Gen1 downshift (`smoke_recovery_downshift_gen2_x4`), minimal ASPM L0s/L1, RxStatus-error Recovery (`smoke_rxstatus_err_gen2_x4`), ×2 TLP clones (`smoke_tlp_rq_memwr_gen2_x2`, `smoke_tlp_cq_cc_gen2_x2`).
 
-Phase 3 closed on 2026-11-23. Phase 4 closed on 2026-11-24. Phase 5 closed on 2026-11-25. Phase 6 closed on 2026-11-25. Phase 7 closed on 2026-11-25. Next: Phase 8 Gen5 backlog, not started.
+Phase 3 closed on 2026-11-23. Phase 4 closed on 2026-11-24. Phase 5 closed on 2026-11-25. Phase 6 closed on 2026-11-25. Phase 7 closed on 2026-11-25. Phase 8 closed on 2026-11-25. Next: Phase 9 Gen5 backlog, not started.
 
 ## Phase 3 — Gen2 port roles (closed 2026-11-23)
 
@@ -66,7 +66,7 @@ Every current Gen2 EP smoke stays green after each slice.
 - Endpoint x4 reaches L0 at 16 GT/s through a second equalization, then one MemWr32 and one CplD.
 - Gates: `smoke_gen4_l0_x4`, `smoke_gen4_memwr_x4`, `smoke_gen4_cpld_x4` (see [verification.md](verification.md)).
 - Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md) Tasks 7–11.
-- 64-bit US+ datapath. No message-bus margining. Gen5 is not started.
+- 64-bit US+ datapath. Opt-in preset search, one coefficient, and a margin nibble landed in Phase 8. Gen5 is not started.
 - Details: [gen-evolution.md](gen-evolution.md)
 
 ## Phase 6 — Gen3 port roles (closed 2026-11-25)

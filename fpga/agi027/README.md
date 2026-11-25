@@ -1,6 +1,6 @@
 # DK-DEV-AGI027-RA-B controller compile
 
-Quartus project for a compile check of the Gen2 ×4 soft controller on the Agilex 7 FPGA I-Series Development Kit, Rev B.
+Quartus project for a compile check of the default Gen2 ×4 soft controller on the Agilex 7 FPGA I-Series Development Kit, Rev B. Gen3 and Gen4 x4 are closed in simulation; this project does not elaborate them.
 
 | Item | Value |
 |------|-------|

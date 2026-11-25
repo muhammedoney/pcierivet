@@ -1,5 +1,7 @@
 # Gen3 posted-write cut-through Implementation Plan
 
+**Closed.** The Gen3 sweep after this plan is in [perf-poster.md](../../perf-poster.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the Gen3 x4 MemWr64 sweep follow the protocol curve `payload / (payload + overhead)` instead of flattening at 64 bytes.

@@ -1,7 +1,7 @@
 # Rivet DLL — implementation follow-guide
 
 **Audience:** anyone implementing or reviewing the Data Link Layer inside `rivet_pcie_ctrl`.  
-**Active target:** `MODE=EP`, **Gen2**, `LANES` ∈ {1,2,4}, VC0 only.  
+**Active target:** default `MODE=EP`, **Gen2**, `LANES` ∈ {1,2,4}, VC0 only. The same DLL rides inside the Gen3 and Gen4 block frame. Gen3 user/DLL beats are 16 bytes; Gen4 beats are 32 bytes.  
 **Companion docs:** [mac.md](mac.md) (PHY framing / LTSSM), [pg213-interface.md](pg213-interface.md) (user FC visibility), [roadmap.md](roadmap.md).
 
 This is an **original Rivet engineering plan**. Normative detail stays in local

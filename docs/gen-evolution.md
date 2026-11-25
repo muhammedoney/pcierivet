@@ -1,8 +1,8 @@
 # Generation evolution (Gen4 x4 closed, Gen5 not started)
 
-**Active sim target: Gen4 EP x4** (`GEN=4`, `PIPE_DATA_WIDTH=64`, 16 GT/s). Default elaboration stays `GEN=2` and a 16-bit pipe so every Gen2 smoke still builds unchanged. Gen5 is not started.
+**Default elaboration: Gen2** (`GEN=2`, `PIPE_DATA_WIDTH=16`, `MODE=EP`). **In simulation: Gen3 and Gen4 x4** for EP, RC, USP, and DSP (`PIPE_DATA_WIDTH` 32 then 64, user AXI-ST 128 then 256 bits). Phase 8 added RC Type 0/1 config, CplD on USP/DSP/RC, Hot Reset and Link Disable from L0, the posted forwarder `rtl/switch/rivet_sw_posted_fwd`, and opt-in preset search plus one coefficient and a margin nibble. Gen5 is not started.
 
-Keep Gen2 behavior when `rate` is Gen1 or Gen2. A Gen3 change that breaks a Gen2 smoke is not done.
+Keep Gen2 behavior when `rate` is Gen1 or Gen2. A Gen3 or Gen4 change that breaks a Gen2 smoke is not done.
 
 Encoding reminder (PG239 UltraScale+ defaults — **fixed 2-byte datapath** for Gen1↔Gen2):
 
@@ -20,72 +20,70 @@ Throughput check (1 lane, after 8b/10b):
 
 ---
 
-## Per-area: Gen2 now vs Gen3/4 later
+## Per-area: Gen2 default vs Gen3/4 in simulation
 
 ### `rtl/interfaces/rivet_pipe_if.sv`
 
-| Now (Gen2) | Later (Gen3/4) |
-|------------|----------------|
-| Drive/observe classic 8b/10b path: `txdata`/`txdatak`, `rxdata`/`rxdatak`, `rxvalid`, `rxelecidle`, driver `txmargin`/`txswing`/`txdeemph` | **Use** already-present Gen3+ ports: `txdata_valid`, `txstart_block`, `txsync_header`, `rxdata_valid`, `rxstart_block`, `rxsync_header` |
-| `PIPE_DATA_WIDTH=16` | Raise to 32 (Gen3) then 64 (Gen4 US+); keep unused MSBs ignored below those gens (PG239) |
-| EQ / assist may idle | Drive AMD **custom** EQ (`txeq_*` / `rxeq_*`) per PG239 — not standard PIPE Local FS/LF EQ |
-| Assist: Detect / CDR as needed for Gen2 LTSSM | Same assist model; ASPM L0s ports if enabled |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| Classic 8b/10b path: `txdata`/`txdatak`, `rxdata`/`rxdatak`, `rxvalid`, `rxelecidle` | Block path is live: `txdata_valid`, `txstart_block`, `txsync_header`, and the RX twins |
+| `PIPE_DATA_WIDTH=16` | 32 at Gen3, 64 at Gen4 US+. Widths below the elaboration stay in the low bits |
+| `txmargin` stays 0 unless a test forces a margin message | High nibble `4'h1` on that message drives `txmargin[2:0]`. Preset search and one coefficient are opt-in on `txeq_*` |
+| Assist: Detect / CDR for the Gen2 LTSSM | Same assist model through Recovery.Speed and Recovery.Equalization |
 
 ### `rtl/pcie_ctrl/` (`rivet_pcie_ctrl.sv` + `mac/` / `dll/` / `tl/`)
 
-| Now (Gen2) | Later (Gen3/4) |
-|------------|----------------|
-| Stub top; layer folders ready for sources | Add Recovery.Equalization phases; Gen3/4 rate change |
-| 8b/10b ordered sets, SKP, disparity (`mac/`) | 128b/130b OS / block sync; ignore DataK path |
-| DLLP / credit (`dll/`) / TLP (`tl/`) for Gen2 | Same TL/DL with Gen3+ framing on PIPE; wider internal datapath |
-| `pipe_rate = Gen2`; P1/`txelecidle` idle defaults | Dynamic `pipe_rate` Gen1↔Gen2↔Gen3↔Gen4; honor `phystatus` completion |
-| EQ outputs tied off | Full PG239 TX/RX EQ sequences (see PG239 Ch.4) |
-| `$error` if `GEN != 2` | Gate features by `GEN`; widen compile-time checks |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| 8b/10b ordered sets, SKP, disparity | 128b/130b blocks. DataK is idle at block rate |
+| 64-bit user AXI-ST and DLL beat | 128-bit at Gen3, 256-bit at Gen4. RC config headers are packed on all three widths |
+| `pipe_rate` Gen1↔Gen2 with PhyStatus | Same handshake through Gen3 (`rate=2`) and Gen4 (`rate=3`) |
+| Downstream EQ master sends `8'h0A` / preset 1 whenever `GEN>=3` | Opt-in `eq_search` offers preset 0 in EQ0, then preset 1. `eq_search` tied off keeps the preset-1 path |
+| Hot Reset and Link Disable from L0 | Same two directions at 8 GT/s and 16 GT/s. The block-rate peer puts the training-control bit in TS byte 5 |
 
-Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac_os_tx` / `_rx`, `rivet_mac_pipe_adapter` — each gets a Gen3/4 section in this doc when created.
+`rtl/switch/rivet_sw_posted_fwd` sits between two controllers. It rewrites a CQ MemWr into an RQ descriptor and drops config. It does not train a second link.
 
 ### `rtl/pcie_ctrl/rivet_pkg.sv`
 
-| Now | Later |
-|-----|-------|
-| `RIVET_GEN2` active | Use `RIVET_GEN4` / enums in params; helpers for legal `PIPE_DATA_WIDTH` vs `GEN` |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| `RIVET_GEN2` is the default parameter | `GEN=3` and `GEN=4` select pipe width, AXI width, and the block-rate LTSSM |
 
 ### `rtl/phy/rivet_pcie_phy_usplus.sv` / `rivet_pcie_phy_us.sv` / `rivet_pcie_phy_versal.sv`
 
-| Now (Gen2) | Later (Gen3/4) |
-|------------|----------------|
-| Behavioral stub; serial tied | Real PHY instance; map Rivet PIPE ↔ `phy_*` |
-| 16-bit logical width | Connect full 32/64-bit `phy_txdata`/`phy_rxdata` per family table |
-| US and Versal wrappers share the US+ stub packing | Honor US 1-bit `rxstart_block` vs US+ 2-bit if wrapping real IP |
-| No GT/DRP on the behavioral stub | `rivet_pcie_phy_wrap` binds PG239 (`gt_gtpowergood`) or PG345 (`phy_ready`, `phy_phystatus_rst`, external GT quad) from `BOARD`. |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| Behavioral stub; serial tied | The soft controller speaks 32-bit and 64-bit PIPE. A generated PG239/PG345 for Gen3/4 is still a lab step |
+| 16-bit logical width on the stub | Wrappers must pass the full 32/64-bit `phy_txdata`/`phy_rxdata` when a real PHY is bound |
+| No GT/DRP on the behavioral stub | `rivet_pcie_phy_wrap` binds PG239 or PG345 from `BOARD` |
 
 ### `rtl/top/rivet_pcie.sv`
 
-| Now | Later |
-|-----|-------|
-| Pass-through PIPE between `u_ctrl` and `u_phy` | Same; optional width/adapters if ctrl logical width ≠ PHY pin width |
-| `FPGA_FAMILY` select | Gen4 speed-grade / part constraints live in the vendor project (not in soft RTL). 0=US+, 1=US, 2=Versal |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| Pass-through PIPE between `u_ctrl` and `u_phy` | Same. The controller's `GEN` sets the PIPE width |
+| `FPGA_FAMILY` select | 0=US+, 1=US, 2=Versal. Speed-grade constraints stay in the vendor project |
 
 ### `rtl/interfaces/rivet_axi_st_if.sv` / `rivet_cfg_mgmt_if.sv`
 
-| Now (Gen2) | Later (Gen3/4) |
-|------------|----------------|
-| 64-bit AXI-ST stub (PG213-style) | May widen AXI data/user widths with gen/lanes; CQ/CC/RQ/RC stay |
-| `cfg_mgmt_*` stub (PG213 Table 26) | Same pulse IF; extended regs / IDs as capabilities grow |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| 64-bit AXI-ST | 128-bit at Gen3, 256-bit at Gen4. CQ/CC/RQ/RC names stay |
+| `cfg_mgmt_*` for the local config image | Same pulse interface. RC config TLPs use the RQ channel, not `cfg_mgmt` |
 
-### `tb/uvm/**` (Phase 1 priority)
+### `tb/uvm/**`
 
-| Now (Gen2) | Later (Gen3/4) |
-|------------|----------------|
-| **Build out** PIPE + AXI-ST agents, sequences, scoreboard, coverage for Gen2 | Extend agents for Gen3+ PIPE fields; EQ monitors; rate-change sequences |
-| Smoke `smoke_gen2_x1` / ×2 / ×4 | `smoke_gen3_*`, `smoke_gen4_*`; EQ / Recovery tests |
-| Scoreboard: Gen2 OS/DLLP/TLP when RTL exists | 128b/130b checkers; Gen3/4 ordered-set models |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| PIPE + AXI-ST agents, scoreboard, coverage | Gen3/4 peers, equalization, rate change, config, CplD, Hot Reset, Link Disable |
+| `smoke_gen2_*` | `smoke_gen3_*`, `smoke_gen4_*`, `smoke_eq_search_gen3_x4`, `smoke_eq_search_gen4_x4` |
 
 ### Scripts / CI
 
-| Now | Later |
-|-----|-------|
-| Lint/smoke Gen2 top | Plusargs / defines for `GEN` and `PIPE_DATA_WIDTH`; optional Gen3/4 lint tops |
+| Gen2 default | Gen3/4 in simulation |
+|--------------|----------------------|
+| `scripts/lint.ps1` on the Gen2 controller top | The same script also lints `tb/lint/rivet_gen3_lint_top.sv` and `rivet_gen4_lint_top.sv` |
+| `sim_questa.ps1` defaults to Gen2, 16-bit PIPE | A test name containing `gen3` or `gen4` sets `GEN` and `PIPE_DATA_WIDTH` |
 
 ---
 

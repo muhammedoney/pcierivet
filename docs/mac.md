@@ -1,8 +1,8 @@
 # Rivet MAC — implementation follow-guide
 
 **Audience:** anyone implementing or reviewing the Media Access Control inside `rivet_pcie_ctrl`.  
-**Active sim target:** `MODE=EP`, **Gen3 x4**. Default elaboration stays Gen2, `LANES` ∈ {1,2,4}, PIPE to PG239-aligned `rivet_pipe_if`.  
-Gen4 is next ([roadmap.md](roadmap.md), [gen-evolution.md](gen-evolution.md)). Gen1/Gen2 behavior stays on the 16-bit pipe.
+**Active sim coverage:** `MODE` EP, RC, USP, and DSP at Gen2, Gen3, and Gen4 x4. Default elaboration stays Gen2, `LANES` ∈ {1,2,4}, PIPE to the PG239-aligned `rivet_pipe_if`.
+Gen5 is not started ([roadmap.md](roadmap.md), [gen-evolution.md](gen-evolution.md)). Gen1/Gen2 behavior stays on the 16-bit pipe.
 
 This is the checklist doc for MAC work. PIPE signal meaning: [pipe-notes.md](pipe-notes.md). User IF: [pg213-interface.md](pg213-interface.md). DLL / FC: [dll.md](dll.md).
 
@@ -285,15 +285,15 @@ BFM Gen1 ×2 and ×4 serial pass NLW + Class A+B+C+E, including full pair revers
 
 ---
 
-## 8. Gen2 now vs Gen3/4 later (MAC-only)
+## 8. Gen2 default vs Gen3/4 in simulation (MAC-only)
 
-| Area | Gen2 now | Later |
-|------|----------|-------|
+| Area | Gen2 default | Gen3/4 in simulation |
+|------|--------------|----------------------|
 | Encoding | Logical 8b/10b OS (PHY encodes) | 128b/130b OS / sync header |
-| LTSSM | Detect→…→L0 (+ light Recovery) | Recovery.Equalization `0x28..0x2B` |
+| LTSSM | Detect→…→L0, Recovery, Hot Reset, Disabled | Recovery.Equalization `0x28..0x2B` at 8 GT/s and again at 16 GT/s |
 | PIPE width | 16 | 32 then 64 |
-| EQ | Tie off PG239 EQ | Drive `txeq_*` / `rxeq_*` |
-| Rate change | Fixed Gen2 | Recovery.Speed + PhyStatus |
+| EQ | Preset pins idle outside EQ | Downstream master sends `8'h0A` / preset 1. Opt-in `eq_search` tries preset 0 first. A margin nibble can drive `txmargin` |
+| Rate change | Gen1↔Gen2 | Recovery.Speed through Gen3 and Gen4, plus PhyStatus |
 
 Details: [gen-evolution.md](gen-evolution.md).
 
@@ -382,7 +382,8 @@ Prerequisites from [§6.2](#62-physical-layer-gaps-to-close-beforewith-dll):
 
 - Gen2 TLP/DLL complete (Phase 2, closed)
 - Gen2 Downstream / RC port roles (roadmap Phase 3, closed 2026-11-23)
-- Gen3 EP x4 L0, MemWr32, and CplD (roadmap Phase 4, closed 2026-11-24). Next is EP Gen4
+- Gen3 and Gen4 x4 L0, MemWr, and CplD for EP, USP, DSP, and RC (Phases 4–7, closed)
+- Phase 8 (closed 2026-11-25): RC config, directed Hot Reset and Link Disable at 8 GT/s and 16 GT/s, posted switch hop, opt-in preset search
 - VCU118 + real PG239 (lab backlog)
 
 ---

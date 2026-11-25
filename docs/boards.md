@@ -50,7 +50,7 @@ Default `FPGA_FAMILY` on `rivet_pcie` remains UltraScale+ (0) → US+ / VCU118.
 | **PHY IP** | **PG345** (`pcie_phy_versal`). The GT quad sits outside the PHY |
 | **Quad LOC** | `GTY_QUAD_X0Y3` (quad 103). Refclk `GTY_REFCLK_X0Y6` (W39/W40, 100 MHz) |
 
-VPK180 (Versal Premium, GTYP) remains the Gen5 kit. Gen2 ×4 on VMK180 GTY matches the active generation, and PG345 on GTY already reaches Gen4 ×8.
+VPK180 (Versal Premium, GTYP) remains the Gen5 kit. The soft controller's Gen3 and Gen4 x4 paths are in simulation. The VMK180 lab project is still PG345 Gen2 ×4, and PG345 on GTY can reach Gen4 ×8 when that bitstream is asked for.
 
 Lab project: `fpga/vmk180/create_project.tcl` (part **XCVM1802-VSVA2197-2MP-E-S**, PG345 Gen2 ×4). Generated IP stays in `fpga/vmk180/build/` (gitignored). Slot PERST# is PMC MIO38, so the PL shell uses SW4 as the lab reset until a CIPS forward exists.
 

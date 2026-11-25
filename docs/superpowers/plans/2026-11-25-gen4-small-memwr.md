@@ -1,5 +1,7 @@
 # Gen4 small MemWr packing Implementation Plan
 
+**Closed 2026-11-25.** This packing is in the Gen4 requester. Phase 8 did not change it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Raise Gen4 x4 MemWr64 throughput at 32, 64, 128, and 256 bytes by removing the half-empty beat at the end of each posted write.

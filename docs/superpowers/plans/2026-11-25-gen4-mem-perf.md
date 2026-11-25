@@ -1,5 +1,7 @@
 # Gen4 MemWr / MemRd throughput Implementation Plan
 
+**Closed 2026-11-25.** The measured points are in [perf-poster.md](../../perf-poster.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Raise Gen4 x4 MemWr64 and MemRd64 throughput by removing the idle user cycle between posted writes and the store-and-forward wait on completions.

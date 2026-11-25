@@ -82,7 +82,7 @@ end
 
 - `MODE`, `GEN`, `LANES` (1/2/4), widths explicit.  
 - No Xilinx primitives in `rtl/pcie_ctrl/`.  
-- Default elaboration is Gen2. Active sim target is Gen3 EP x4; Gen4 is next ([gen-evolution.md](gen-evolution.md)). Keep the Gen1/Gen2 rate path working.
+- Default elaboration is Gen2. Gen3 and Gen4 x4 are in simulation for EP, RC, USP, and DSP ([gen-evolution.md](gen-evolution.md)). Keep the Gen1/Gen2 rate path working. Do not start Gen5 in a Gen2/3/4 change.
 
 ## Clocks / CDC
 

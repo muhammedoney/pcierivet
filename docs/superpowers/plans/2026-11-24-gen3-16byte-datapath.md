@@ -1,5 +1,7 @@
 # Gen3 16-byte datapath Implementation Plan
 
+**Closed.** Gen3 user and DLL beats are 16 bytes. Gen4 later moved to 32 bytes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Raise Gen3 x4 user throughput above Gen2 x4 by moving 16 bytes per clock, and make the Gen3 read sweep finish clean.

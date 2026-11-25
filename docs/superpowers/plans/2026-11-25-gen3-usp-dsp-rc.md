@@ -1,5 +1,7 @@
 # Gen3 USP, DSP, and RC
 
+**Closed 2026-11-25.** Gen4 multi-mode closed the same day as Phase 7. Phase 8 added RC config, CplD, directed reset, the posted forwarder, and opt-in equalization at 8 GT/s and 16 GT/s.
+
 **Goal:** `MODE` USP, DSP, and RC each reach L0 at 8 GT/s on x4 and post one RQ MemWr32. Every current Gen2 smoke and every current Gen3 EP smoke still passes.
 
 **Architecture:** USP is the same upstream equalization slave as EP. RC and DSP share one downstream master. The master transmits the compressed handshake the UVM peer already uses against EP: EQ byte `8'h0A` (phase 2 plus success) and preset `8'h01`. The peer grows an upstream-slave mode for RC and DSP. No second Rivet DUT. Gen4 multi-mode is a follow-on plan.

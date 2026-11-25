@@ -4,6 +4,8 @@
 **Primary local training source:** `specs/MindShare_PIPE_vC.2.pdf` (MindShare PIPE course, based on PIPE spec rev 6.0, version C.2).  
 **Implementation authority for Rivet ports:** AMD **PG239** via `rtl/interfaces/rivet_pipe_if.sv` + [gen-evolution.md](gen-evolution.md).
 
+Gen2 text below is the 16-bit path, which is still the default elaboration. Gen3 and Gen4 block controls, Recovery.Equalization, and the opt-in margin nibble are in simulation. See [roadmap.md](roadmap.md) Phase 8.
+
 ## Copyright / redistribution
 
 The MindShare PDF is **copyrighted course material** (“Do Not Distribute”). This document is an **original Rivet engineering digest** — concepts restated for our Gen2-first MAC work. It is **not** a slide-by-slide conversion and must **not** paste MindShare figures, long verbatim bullet lists, or proprietary wording.
@@ -88,11 +90,11 @@ MAC responsibilities:
 | `txelecidle` | Enter/exit electrical idle with OS (EIOS) |
 | `txdetectrx` | Receiver detect (with PowerDown + ElecIdle combo) |
 | `txcompliance` | Compliance pattern |
-| `rate` | Gen1=`0`, Gen2=`1` (PIPE encodings; PG239 `rate[2:0]`) |
+| `rate` | Gen1=`0`, Gen2=`1`, Gen3=`2`, Gen4=`3` (PG239 `rate[2:0]`) |
 | `powerdown` | P0 / P0s / P1 / P2 mapping to LTSSM / ASPM |
 | `txmargin` / `txswing` / `txdeemph` | Gen1/2 driver; Gen2 de-emphasis select |
 
-Gen3+ adds block controls (`txdata_valid`, `txstart_block`, `txsync_header`) — present on Rivet IF, idle until Phase 3+.
+Gen3 and Gen4 drive the block controls (`txdata_valid`, `txstart_block`, `txsync_header`, and the RX twins). At Gen1 and Gen2 those pins stay idle.
 
 ---
 
@@ -191,7 +193,7 @@ PCIe PowerDown encodings used by Rivet (`powerdown[1:0]` on PG239 path):
 PIPE Rate (PCIe): `0`=2.5, `1`=5.0, `2`=8.0, `3`=16, `4`=32 GT/s.  
 Width (classic Original): 8 / 16 / 32 bits when encode in PHY.
 
-Rivet Phase 1: hold `rate=Gen2`, `PIPE_DATA_WIDTH=16`. Do not implement dynamic Gen3+ rate change until Phase 3.
+Default elaboration holds `rate=Gen2` and `PIPE_DATA_WIDTH=16`. A `GEN=3` or `GEN=4` build changes rate through Recovery.Speed and widens the pipe to 32 or 64 bits.
 
 ---
 
@@ -199,15 +201,15 @@ Rivet Phase 1: hold `rate=Gen2`, `PIPE_DATA_WIDTH=16`. Do not implement dynamic 
 
 Later PIPE revisions add an 8-bit **Message Bus** (M2P / P2M) and **Low Pin Count** modes that move slow controls into registers (margining, some EQ, RxPolarity in LPC, etc.).
 
-**Rivet Gen2 + PG239:** stick to **legacy pin-style** signals already on `rivet_pipe_if`. Do not plan Message Bus RTL for Phase 1–2. Gen4 margining / Gen3 EQ on AMD PHYs use **PG239 custom** EQ/assist ports, not standard PIPE Local FS/LF message-bus sequences.
+**Rivet** keeps the legacy PIPE pins. There is no PIPE message-bus port on `rivet_pipe_if`. Phase 8 drives `txmargin` from an 8-bit message whose high nibble is `4'h1`; the low three bits are the margin. Gen3/4 equalization uses the PG239 `txeq_*` / `rxeq_*` pins.
 
 ---
 
-## 12. Gen3+ equalization (defer)
+## 12. Gen3+ equalization
 
-From 8 GT/s up, EQ is an active MAC↔PHY dialogue (presets, FS/LF, coefficient iteration, Recovery.Equalization). MindShare covers message-bus EQ flows extensively.
+From 8 GT/s up, EQ is an active MAC↔PHY dialogue (presets, FS/LF, coefficient iteration, Recovery.Equalization).
 
-**Rivet:** Phase 3+; use PG239 `txeq_*` / `rxeq_*` (AMD custom). Keep ports present, behavior idle in Gen2.
+**Rivet:** the downstream master sends EQ byte `8'h0A` and preset 1 through EQ0–EQ3 at 8 GT/s and at 16 GT/s. With `eq_search` forced, EQ0 offers preset 0 and, if the partner does not echo phase 2, moves to preset 1. Adaptation done copies lane 0's new cursor into `pipe_txeq_coeff` with ctrl `2'b10`. Gen2 leaves those pins idle. The full PIPE message-bus EQ flow is not on `rivet_pipe_if`.
 
 ---
 

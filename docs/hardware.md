@@ -10,7 +10,7 @@ Preferred bring-up kit:
 | PHY IP | **PG345** generated for XCVM1802 GTY, Gen2 ×4 |
 | Edge | ×8 PCIe, lanes 0–3 on quad 103 (`GTY_QUAD_X0Y3`) |
 
-VPK180 is the later Premium / GTYP / Gen5 kit. The in-tree Versal project is `fpga/vmk180/`.
+VPK180 is the later Premium / GTYP / Gen5 kit. The in-tree Versal project is `fpga/vmk180/` and its PHY is still generated as Gen2 ×4. The soft controller's Gen3 and Gen4 x4 paths are simulation-only until a lab PHY is asked for.
 
 ## UltraScale+ (second choice)
 

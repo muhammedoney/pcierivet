@@ -1,5 +1,7 @@
 # Gen3 16-byte datapath
 
+**Closed.** Gen3 runs at 16 bytes per cycle. Gen4 runs at 32.
+
 ## Goal
 
 Gen3 x4 user throughput must rise above the Gen2 x4 curve. Gen2 x4 stays on the 64-bit, 8-byte-per-cycle path. A Gen3 read sweep must finish with zero UVM errors.

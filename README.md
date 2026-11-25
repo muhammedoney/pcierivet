@@ -27,6 +27,7 @@ Gen4 x4 on 25 Nov 2026 (`UVM_ERROR : 0`, `UVM_FATAL : 0`): MemWr64 printed 888.8
 ```text
 rtl/pcie_ctrl/        Soft controller top + rivet_pkg (to PIPE)
   mac/ dll/ tl/       Layer sources (LTSSM/OS, DLLP/FC, TLP/cfg)
+rtl/switch/           Posted CQ-to-RQ forwarder between USP and DSP
 rtl/phy/              PG239 / PG345 family PHY wrappers
 rtl/top/              rivet_pcie = ctrl + phy
 rtl/interfaces/       PIPE, AXI-ST, cfg_mgmt SV interfaces

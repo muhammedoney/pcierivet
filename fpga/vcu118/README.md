@@ -2,7 +2,7 @@
 
 Local Vivado project for a first lab check: does the Gen2 Endpoint reach **L0**, and can the host complete Type 0 config (and BAR0 Mem32 PIO).
 
-The soft controller is the same RTL as simulation. The PHY is a generated **PG239** `pcie_phy_0` (GTY, Gen2, ×4). That netlist is not in git.
+The soft controller is the same RTL as simulation. This project generates a **PG239** `pcie_phy_0` at Gen2 ×4, so the bitstream stays Gen2. Gen3 and Gen4 x4 are closed in simulation and are not this board image. That netlist is not in git.
 
 ## Create
 

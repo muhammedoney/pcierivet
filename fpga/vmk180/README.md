@@ -2,7 +2,7 @@
 
 Local Vivado project for a first lab check on the Versal primary board: does the Gen2 Endpoint reach **L0**, and can the host complete Type 0 config (and BAR0 Mem32 PIO).
 
-The soft controller is the same RTL as simulation and as the VCU118 shell. The PHY is a generated **PG345** `pcie_phy_versal` (GTY, Gen2, ×4) with the GT quad connected by block automation. That netlist is not in git.
+The soft controller is the same RTL as simulation and as the VCU118 shell. This project generates a **PG345** `pcie_phy_versal` at Gen2 ×4, so the bitstream stays Gen2. Gen3 and Gen4 x4 are closed in simulation and are not this board image. That netlist is not in git.
 
 Primary Versal part: **XCVM1802** on the **VMK180** (EK-VMK180-G). VPK180 (Premium, GTYP) is the later Gen5 path, not this project.
 

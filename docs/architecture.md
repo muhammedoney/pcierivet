@@ -32,12 +32,12 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`
 
 | Mode | `MODE` | Status |
 |------|--------|--------|
-| Endpoint (EP) | 0 | Active — Upstream Port, Type 0. Gen2 sim closed |
-| Root Complex / Root Port (RC) | 1 | Next — Downstream LTSSM, then Type 1, then config requester |
-| Switch Upstream Port (USP) | 2 | Alias of the Upstream port. Proved after RC |
-| Switch Downstream Port (DSP) | 3 | Alias of the Downstream port. No config master |
+| Endpoint (EP) | 0 | Upstream Port, Type 0. Gen2 through Gen4 x4 sim closed |
+| Root Complex / Root Port (RC) | 1 | Downstream Port, Type 1, config requester. Gen2 through Gen4 x4 sim closed |
+| Switch Upstream Port (USP) | 2 | Same Upstream port as EP. Gen2 through Gen4 x4 sim closed. Posted MemWr forwarder is `rtl/switch/` |
+| Switch Downstream Port (DSP) | 3 | Same Downstream port as RC, without the config master. Gen2 through Gen4 x4 sim closed |
 
-Generation roadmap: **Gen2 (default)** → Gen3 → **Gen4 EP x4 in simulation** → Gen5 not started.
+Generation roadmap: **Gen2 (default elaboration)** → Gen3 x4 in simulation → **Gen4 x4 in simulation** → Gen5 not started.
 
 ## Primary FPGA / board (locked)
 
@@ -46,17 +46,17 @@ Generation roadmap: **Gen2 (default)** → Gen3 → **Gen4 EP x4 in simulation**
 | Board | **VCU118** (US+ primary), **VMK180** (Versal primary) |
 | FPGA | **XCVU9P** (PG239 GTY), **XCVM1802** (PG345 GTY) |
 
-Default elaboration stays **Gen2**. Gen4 EP x4 is in simulation; Gen5 is not started. Deltas: [gen-evolution.md](gen-evolution.md).
+Default elaboration stays **Gen2**. Gen3 and Gen4 x4 (EP, RC, USP, DSP) are in simulation; Gen5 is not started. Deltas: [gen-evolution.md](gen-evolution.md).
 
 ## Parameters
 
 | Parameter | Values | Notes |
 |-----------|--------|-------|
 | `MODE` | EP / RC / USP / DSP | EP+USP Upstream Type 0; RC+DSP Downstream Type 1; RC is the config requester |
-| `GEN` | **`2` now** | Gen4 EP x4 is in simulation; Gen5 is not started. |
+| `GEN` | **`2` default** | `3` and `4` elaborate in simulation. Gen5 is not started. |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
 | `FPGA_FAMILY` | 0=US+, 1=US, 2=Versal | On `rivet_pcie` / PHY only. US+ bring-up **VCU118 / XCVU9P**. Versal bring-up **VMK180 / XCVM1802**. |
-| `PIPE_DATA_WIDTH` | `16` now | 32 Gen3 / 64 Gen4 US+ later |
+| `PIPE_DATA_WIDTH` | `16` at Gen2 | `32` at Gen3, `64` at Gen4 US+. User AXI-ST is 64 / 128 / 256 bits on that same step |
 
 ## MAC and PIPE
 

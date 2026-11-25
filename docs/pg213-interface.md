@@ -12,9 +12,8 @@ Base Specification.
 - `rivet_pcie_ctrl` ends at PIPE. PG239 supplies the FPGA PHY (`PCS + PMA`).
 - "PG213-style" means compatible channel names and semantics. Rivet is **not yet
   pin-compatible** with PG213.
-- Active scope is one Physical Function, Endpoint, Gen2, lanes x1/x2/x4.
-  Multi-PF, SR-IOV/VF, Gen3/4, 512-bit straddling, and Root Port-only signals are
-  tracked but are not Phase 1 implementation targets.
+- Active scope is one Physical Function, lanes x1/x2/x4. EP, RC, USP, and DSP are in simulation at Gen2, Gen3, and Gen4. The user datapath is 64, 128, or 256 bits with `GEN`.
+  Multi-PF, SR-IOV/VF, and 512-bit straddling are tracked and are not implemented.
 
 ## Important findings
 
@@ -287,8 +286,7 @@ the controller remains independently testable at user clock + PIPE.
 
 - 512-bit AXI and straddling.
 - Multi-PF and SR-IOV/VF buses.
-- Root Port-only controls/status.
-- Gen3/4-specific widths/features (tracked in `gen-evolution.md`).
+- Gen3/4 widths and RC config are in simulation ([gen-evolution.md](gen-evolution.md), roadmap Phase 8).
 
 ## PG213 extract caveats and locked decisions
 

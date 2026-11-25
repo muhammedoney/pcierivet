@@ -1,6 +1,6 @@
 # Rivet performance note
 
-Rivet is a soft PCIe endpoint. The controller is `rivet_pcie_ctrl`. The posted-write sweep was printed by QuestaSim 2024.1 on 22 Nov 2026. The requester-read sweep was printed by the same simulator on 23 Nov 2026. Read latency, inbound, and credit stall were printed on 21 Nov 2026. The FPGA slack below is the 22 Nov streaming-TX image, before the completion-path RAM, and is not a current route. Nothing else is quoted as a measurement.
+Rivet is a soft PCIe controller. The numbers below are the Gen2 x4 measurements from 21–23 Nov 2026. Gen3 and Gen4 x4 sweeps are in [perf-poster.md](perf-poster.md). Nothing else is quoted as a measurement.
 
 ## Link under test
 

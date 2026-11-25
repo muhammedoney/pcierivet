@@ -1,5 +1,7 @@
 # Posted-write cut-through implementation plan
 
+**Closed.** This is the Gen2 cut-through. Gen3 and Gen4 have their own datapaths.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Raise Gen2 x4 posted-write throughput from the 1000 MB/s user-port ceiling toward the 2000 MB/s symbol rate.
