@@ -16,12 +16,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not "%~1"=="" (
-  echo Usage: %SELF%
-  echo Create the project first with create_project.cmd
-  call :pause_if_explorer
-  exit /b 1
+set "RIVET_TCLARGS="
+if "%~1"=="" goto :args_ok
+if /I "%~1"=="4" if /I "%~2"=="ep" if "%~3"=="" (
+  set "RIVET_TCLARGS=4 ep"
+  goto :args_ok
 )
+echo Usage: %SELF% [4 ep]
+call :pause_if_explorer
+exit /b 1
+:args_ok
 
 set "LOG=fpga\vcu118\impl.log"
 set "VIVADO_BAT="
@@ -34,6 +38,7 @@ if not defined VIVADO_BAT if defined XILINX_VIVADO if exist "%XILINX_VIVADO%\bin
 if not defined VIVADO_BAT call :pick_where vivado.bat
 if not defined VIVADO_BAT call :pick_where vivado
 if not defined VIVADO_BAT call :pick_tree "C:\Xilinx\Vivado"
+if not defined VIVADO_BAT call :pick_tree "D:\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles%\Xilinx\Vivado"
 if not defined VIVADO_BAT call :pick_tree "%ProgramFiles(x86)%\Xilinx\Vivado"
 if not defined VIVADO_BAT (
@@ -45,8 +50,13 @@ if not defined VIVADO_BAT (
   exit /b 1
 )
 
-if not exist "fpga\vcu118\build\rivet_vcu118.xpr" (
-  echo ERROR: missing fpga\vcu118\build\rivet_vcu118.xpr
+if defined RIVET_TCLARGS (
+  set "XPR=fpga\vcu118\build\gen4_ep\rivet_vcu118.xpr"
+) else (
+  set "XPR=fpga\vcu118\build\rivet_vcu118.xpr"
+)
+if not exist "%XPR%" (
+  echo ERROR: missing %XPR%
   echo Run create_project.cmd first.
   call :pause_if_explorer
   exit /b 1
@@ -54,7 +64,11 @@ if not exist "fpga\vcu118\build\rivet_vcu118.xpr" (
 
 echo Using %VIVADO_BAT%
 echo Log:   %LOG%
-call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%"
+if defined RIVET_TCLARGS (
+  call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%" -tclargs %RIVET_TCLARGS%
+) else (
+  call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%"
+)
 set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" (

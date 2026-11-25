@@ -14,7 +14,16 @@
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir .. ..]]
-set build_dir  [file join $script_dir build]
+set gen4 0
+if {[info exists argv] && [llength $argv] == 2 &&
+    [lindex $argv 0] eq "4" && [lindex $argv 1] eq "ep"} {
+  set gen4 1
+} elseif {[info exists argv] && [llength $argv] == 1 && [lindex $argv 0] eq "synth"} {
+  # Raw `vivado -tclargs synth` still builds and synthesizes the Gen2 project.
+} elseif {[info exists argv] && [llength $argv] != 0} {
+  error "usage: no arguments, or: 4 ep"
+}
+set build_dir [file join $script_dir build [expr {$gen4 ? "gen4_ep" : ""}]]
 set part       xcvu9p-flga2104-2L-e
 set board      xilinx.com:vcu118:part0:2.4
 
@@ -87,6 +96,26 @@ proc rivet_try_ip_config {obj name value} {
   return 1
 }
 
+proc rivet_collect_v {dir} {
+  set hits [lsort [glob -nocomplain -directory $dir *.v]]
+  foreach sub [lsort [glob -nocomplain -directory $dir -type d *]] {
+    set hits [concat $hits [rivet_collect_v $sub]]
+  }
+  return $hits
+}
+
+proc rivet_decl_range {dir port} {
+  foreach f [rivet_collect_v $dir] {
+    set fh [open $f r]
+    set body [read $fh]
+    close $fh
+    if {[regexp "\\\[(\[0-9\]+):(\[0-9\]+)\\\]\[^\\n\]*\\m${port}\\M" $body -> hi lo]} {
+      return "${hi}:${lo}"
+    }
+  }
+  return ""
+}
+
 file mkdir $build_dir
 create_project rivet_vcu118 $build_dir -part $part -force
 set_property target_language Verilog [current_project]
@@ -99,6 +128,7 @@ rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_
 add_files -norecurse [file normalize [file join $script_dir rtl rivet_vcu118_ep.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pipe_pg239_pad.sv]]
 add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pcie_phy_wrap.sv]]
+add_files -norecurse [file normalize [file join $repo_root fpga common rivet_fpga_pio256.sv]]
 
 foreach f [get_files -of_objects [current_fileset]] {
   set name [get_property NAME $f]
@@ -127,7 +157,14 @@ create_ip -name pcie_phy -vendor xilinx.com -library ip -module_name pcie_phy_0
 set ip [get_ips pcie_phy_0]
 rivet_try_ip_config $ip gt_type          GTY
 rivet_try_ip_config $ip phy_lane         X4
-rivet_try_ip_config $ip phy_max_speed    5.0_GT/s
+if {$gen4} {
+  set phy_speed 16.0_GT/s
+} else {
+  set phy_speed 5.0_GT/s
+}
+if {![rivet_try_ip_config $ip phy_max_speed $phy_speed] && $gen4} {
+  error "PG239 phy_max_speed $phy_speed rejected"
+}
 rivet_try_ip_config $ip phy_refclk_freq  100_MHz
 rivet_try_ip_config $ip phy_userclk_freq 250_MHz
 rivet_try_ip_config $ip phy_async_en     true
@@ -145,11 +182,26 @@ if {!$bank_ok || !$loc_ok || !$clk_ok} {
 }
 generate_target {instantiation_template synthesis} $ip
 
+set ipdir [get_property IP_DIR [get_ips pcie_phy_0]]
+set txw [rivet_decl_range $ipdir phy_txdata]
+if {$txw ne "63:0" && $txw ne "255:0"} {
+  error "phy_txdata width is \[$txw\], expected \[63:0\] or \[255:0\]"
+}
+if {$gen4} {
+  set ratew [rivet_decl_range $ipdir phy_rate]
+  if {$ratew ne "2:0"} {
+    error "phy_rate width is \[$ratew\], expected \[2:0\]"
+  }
+}
+
 set_property top rivet_vcu118_ep [current_fileset]
+if {$gen4} {
+  set_property generic {GEN=4 PHY_RATE_W=3} [current_fileset]
+}
 update_compile_order -fileset sources_1
 
 set do_synth 0
-if {[info exists argv] && [llength $argv] > 0 && [lindex $argv 0] eq "synth"} {
+if {!$gen4 && [info exists argv] && [llength $argv] > 0 && [lindex $argv 0] eq "synth"} {
   set do_synth 1
 }
 if {$do_synth} {

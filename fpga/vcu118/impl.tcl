@@ -9,7 +9,15 @@
 #   vivado -mode batch -source fpga/vcu118/impl.tcl
 
 set script_dir [file normalize [file dirname [info script]]]
-set xpr [file join $script_dir build rivet_vcu118.xpr]
+set gen4 0
+if {[info exists argv] && [llength $argv] == 2 &&
+    [lindex $argv 0] eq "4" && [lindex $argv 1] eq "ep"} {
+  set gen4 1
+} elseif {[info exists argv] && [llength $argv] != 0} {
+  error "usage: no arguments, or: 4 ep"
+}
+set build_dir [file join $script_dir build [expr {$gen4 ? "gen4_ep" : ""}]]
+set xpr [file join $build_dir rivet_vcu118.xpr]
 
 if {![file exists $xpr]} {
   error "Missing $xpr. Run create_project.cmd first."
@@ -56,5 +64,14 @@ if {$wns < 0.0} {
 }
 
 puts "PASS: bitstream timing closed"
+if {$gen4} {
+  set bits [glob -nocomplain -directory [file join $build_dir rivet_vcu118.runs impl_1] *.bit]
+  if {[llength $bits] == 0} {
+    error "no bitstream under impl_1"
+  }
+  set dst [file join $build_dir rivet_vcu118_gen4_ep.bit]
+  file copy -force [lindex $bits 0] $dst
+  puts "Bitstream: $dst"
+}
 puts "Project: $xpr"
 close_project
