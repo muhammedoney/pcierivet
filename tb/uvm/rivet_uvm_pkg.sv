@@ -97,6 +97,7 @@ package rivet_uvm_pkg;
   `include "env/rivet_perf_mon.svh"
   `include "seq/rivet_perf_vseq.svh"
   `include "seq/rivet_gen3_block_seq.svh"
+  `include "seq/rivet_gen4_block_seq.svh"
   `include "seq/rivet_gen3_ts_seq.svh"
   `include "env/rivet_scoreboard.svh"
   `include "env/rivet_coverage.svh"
@@ -143,6 +144,7 @@ package rivet_uvm_pkg;
   `include "tests/rivet_perf_gen2_x4.svh"
   `include "tests/rivet_perf_gen3_x4.svh"
   `include "tests/smoke_gen3_block_x4.svh"
+  `include "tests/smoke_gen4_block_x4.svh"
   `include "tests/smoke_gen3_ts_x4.svh"
 endpackage : rivet_uvm_pkg
 

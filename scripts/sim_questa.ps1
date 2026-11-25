@@ -15,10 +15,14 @@ if (-not (Get-Command vsim -ErrorAction SilentlyContinue)) {
 $TestName = if ($args.Count -ge 1) { $args[0] } else { "smoke_gen2_x1" }
 $Lanes = if ($args.Count -ge 2) { $args[1] } else { "1" }
 $Mode = if ($args.Count -ge 3) { $args[2] } else { "0" }
-# Gen3 block and later EP tests elaborate a 32-bit pipe. Gen2 stays 16-bit.
+# Gen3 tests elaborate a 32-bit pipe. Gen4 tests elaborate a 64-bit pipe.
+# Gen2 stays 16-bit.
 $Gen = 2
 $PipeW = 16
-if ($TestName -match 'gen3') {
+if ($TestName -match 'gen4') {
+  $Gen = 4
+  $PipeW = 64
+} elseif ($TestName -match 'gen3') {
   $Gen = 3
   $PipeW = 32
 }

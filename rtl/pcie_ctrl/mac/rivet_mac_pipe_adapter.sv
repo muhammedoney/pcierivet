@@ -111,10 +111,12 @@ module rivet_mac_pipe_adapter #(
   logic [LANES-1:0]                 rx_detected_d;
   logic [LANES-1:0]                 rx_detected_q;
 
-  // Gen3 block pipe. rate_q is the registered PIPE rate, so Gen1/Gen2 keeps
-  // the datak path. A low rxdata_valid does not advance a block. Start 2'b10
-  // is a Gen4 upper-half marker and is dropped here.
+  // Block pipe. rate_q is the registered PIPE rate, so Gen1/Gen2 keeps the
+  // datak path. A low rxdata_valid does not advance a block. Start 2'b10 is
+  // a Gen4 upper-half marker: accepted at Gen4, dropped at Gen3.
   logic                    gen3_q;
+  logic                    gen4_q;
+  logic                    block_q;
   logic [LANES-1:0]        rx_take_d;
   logic [LANES-1:0]        rx_in_q;
   logic [2*LANES-1:0]      rx_idx_q;
@@ -130,7 +132,20 @@ module rivet_mac_pipe_adapter #(
   logic                    tx_dv_q;
   logic [1:0]              tx_hdr_q;
 
-  assign gen3_q = (rate_q == RIVET_PIPE_RATE_GEN3) && (PIPE_DATA_WIDTH == 32);
+  assign gen3_q  = (rate_q == RIVET_PIPE_RATE_GEN3) && (PIPE_DATA_WIDTH == 32);
+  assign gen4_q  = (rate_q == RIVET_PIPE_RATE_GEN4) && (PIPE_DATA_WIDTH == 64);
+  assign block_q = gen3_q || gen4_q;
+
+  // 16 bytes is four 32-bit words or two 64-bit words.
+  localparam int unsigned BLK_LAST = (PIPE_DATA_WIDTH == 64) ? 1 : 3;
+
+  function automatic logic block_start(input logic [1:0] sb);
+    if (sb == 2'b01)
+      return 1'b1;
+    if ((PIPE_DATA_WIDTH == 64) && (sb == 2'b10))
+      return 1'b1;
+    return 1'b0;
+  endfunction
 
   always_comb begin
     rx_take_d = '0;
@@ -139,6 +154,13 @@ module rivet_mac_pipe_adapter #(
         if (pipe_rxdata_valid_i[l] &&
             (pipe_rxstart_block_i[2*l +: 2] != 2'b10) &&
             ((pipe_rxstart_block_i[2*l +: 2] == 2'b01) || rx_in_q[l]))
+          rx_take_d[l] = 1'b1;
+      end
+    end else if ((PIPE_DATA_WIDTH == 64) && (rate_i == RIVET_PIPE_RATE_GEN4)) begin
+      for (int unsigned l = 0; l < LANES; l++) begin
+        if (pipe_rxdata_valid_i[l] &&
+            (block_start(pipe_rxstart_block_i[2*l +: 2]) ||
+             (rx_in_q[l] && (pipe_rxstart_block_i[2*l +: 2] == 2'b00))))
           rx_take_d[l] = 1'b1;
       end
     end
@@ -207,9 +229,9 @@ module rivet_mac_pipe_adapter #(
       rxelecidle_q       <= pipe_rxelecidle_i;
       rx_detected_q      <= rx_detected_d;
 
-      // 16-byte block = four 32-bit words. Headers accepted on RX come back
-      // on the next TX block start. MAC symbol valid low does not consume a word.
-      if (gen3_q) begin
+      // 16-byte block. Headers accepted on RX come back on the next TX
+      // block start. MAC symbol valid low does not consume a word.
+      if (block_q) begin
         logic [1:0] wr_b, rd_b, hdr_b;
         logic [2:0] n_b;
         logic       push_b, pop_b;
@@ -217,7 +239,7 @@ module rivet_mac_pipe_adapter #(
         rd_b  = hdr_rd_q;
         n_b   = hdr_n_q;
         hdr_b = 2'b01;
-        push_b = rx_take_d[0] && (pipe_rxstart_block_i[1:0] == 2'b01);
+        push_b = rx_take_d[0] && block_start(pipe_rxstart_block_i[1:0]);
         pop_b  = sym_tx_valid_i && (tx_word_q == 2'd0) && (n_b != 3'd0);
         if (pop_b) begin
           hdr_b = hdr_mem[rd_b];
@@ -236,15 +258,17 @@ module rivet_mac_pipe_adapter #(
         rx_acc_v_q <= rx_take_d;
         for (int unsigned l = 0; l < LANES; l++) begin
           if (rx_take_d[l]) begin
+            logic [1:0] sb;
+            sb = pipe_rxstart_block_i[2*l +: 2];
             rx_acc_q[PIPE_DATA_WIDTH*l +: PIPE_DATA_WIDTH] <=
               pipe_rxdata_i[PIPE_DATA_WIDTH*l +: PIPE_DATA_WIDTH];
-            rx_start_q[l] <= (pipe_rxstart_block_i[2*l +: 2] == 2'b01);
-            if (pipe_rxstart_block_i[2*l +: 2] == 2'b01)
+            rx_start_q[l] <= block_start(sb);
+            if (block_start(sb))
               rx_os_q[l] <= (pipe_rxsync_header_i[2*l +: 2] == 2'b10);
-            if (pipe_rxstart_block_i[2*l +: 2] == 2'b01) begin
+            if (block_start(sb)) begin
               rx_in_q[l] <= 1'b1;
               rx_idx_q[2*l +: 2] <= 2'd1;
-            end else if (rx_idx_q[2*l +: 2] == 2'd3) begin
+            end else if (rx_idx_q[2*l +: 2] == 2'(BLK_LAST)) begin
               rx_in_q[l] <= 1'b0;
               rx_idx_q[2*l +: 2] <= 2'd0;
             end else begin
@@ -263,15 +287,15 @@ module rivet_mac_pipe_adapter #(
             end else begin
               tx_start_q <= 1'b0;
               tx_hdr_q   <= 2'b00;
-              tx_word_q  <= (tx_word_q == 2'd3) ? 2'd0 : (tx_word_q + 2'd1);
+              tx_word_q  <= (tx_word_q == 2'(BLK_LAST)) ? 2'd0 : (tx_word_q + 2'd1);
             end
           end else begin
             // Outside Detect, os_tx marks word 0 and OS vs Data directly so
-            // Gen3 block starts stay aligned with the scrambler reseed and SKP.
+            // block starts stay aligned with the scrambler reseed and SKP.
             tx_start_q <= sym_tx_start_i;
             tx_hdr_q   <= sym_tx_start_i ? (sym_tx_os_i ? 2'b10 : 2'b01) : 2'b00;
             tx_word_q  <= sym_tx_start_i ? 2'd1 :
-                          ((tx_word_q == 2'd3) ? 2'd0 : (tx_word_q + 2'd1));
+                          ((tx_word_q == 2'(BLK_LAST)) ? 2'd0 : (tx_word_q + 2'd1));
           end
         end else begin
           tx_dv_q    <= 1'b0;
@@ -294,12 +318,12 @@ module rivet_mac_pipe_adapter #(
     end
   end
 
-  // Gen2 keeps datak. Gen3 drives the low 32 bits of each lane and block sideband.
+  // Gen2 keeps datak. Gen3/Gen4 drive the full lane word and block sideband.
   assign pipe_txdata_o        = txdata_q;
-  assign pipe_txdatak_o       = gen3_q ? '0 : txdatak_q;
-  assign pipe_txdata_valid_o  = gen3_q ? {LANES{tx_dv_q}} : '0;
-  assign pipe_txstart_block_o = gen3_q ? {LANES{tx_start_q}} : '0;
-  assign pipe_txsync_header_o = gen3_q ? {LANES{tx_hdr_q}} : '0;
+  assign pipe_txdatak_o       = block_q ? '0 : txdatak_q;
+  assign pipe_txdata_valid_o  = block_q ? {LANES{tx_dv_q}} : '0;
+  assign pipe_txstart_block_o = block_q ? {LANES{tx_start_q}} : '0;
+  assign pipe_txsync_header_o = block_q ? {LANES{tx_hdr_q}} : '0;
 
   assign pipe_txdetectrx_o       = txdetectrx_q;
   assign pipe_txelecidle_o       = txelecidle_q;
@@ -320,12 +344,12 @@ module rivet_mac_pipe_adapter #(
   assign pipe_as_mac_in_L0_o     = as_mac_in_L0_q;
   assign pipe_cfg_rx_pm_state_o  = 2'b00;
 
-  // RX toward OS RX. Gen3 presents only accepted block words.
-  assign sym_rx_data_o  = gen3_q ? rx_acc_q : rxdata_q;
-  assign sym_rx_datak_o = gen3_q ? '0 : rxdatak_q;
-  assign sym_rx_valid_o = gen3_q ? rx_acc_v_q : rxvalid_q;
-  assign sym_rx_os_o    = gen3_q ? rx_os_q : '0;
-  assign sym_rx_start_o = gen3_q ? rx_start_q : '0;
+  // RX toward OS RX. A block rate presents only accepted block words.
+  assign sym_rx_data_o  = block_q ? rx_acc_q : rxdata_q;
+  assign sym_rx_datak_o = block_q ? '0 : rxdatak_q;
+  assign sym_rx_valid_o = block_q ? rx_acc_v_q : rxvalid_q;
+  assign sym_rx_os_o    = block_q ? rx_os_q : '0;
+  assign sym_rx_start_o = block_q ? rx_start_q : '0;
   assign rxstatus_o     = rxstatus_q;
 
   // Status toward the LTSSM

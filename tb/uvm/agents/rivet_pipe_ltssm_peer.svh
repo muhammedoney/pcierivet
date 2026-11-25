@@ -317,11 +317,12 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   task automatic drive_gen3_block(
       input logic [1:0] sync_hdr,
       input bit         bubble,
-      input logic [7:0] base
+      input logic [7:0] base,
+      input logic [1:0] start_sel = 2'b01
   );
     int unsigned w, l, b;
     int unsigned nwords;
-    logic [31:0] word;
+    logic [63:0] word;
     localparam int unsigned PW = `RIVET_TB_PIPE_W;
     nwords = 128 / PW;
     for (w = 0; w < nwords; w++) begin
@@ -333,7 +334,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         vif.rxdata[l*PW +: PW]       <= word[PW-1:0];
         vif.rxdatak[l*2 +: 2]        <= 2'b00;
         vif.rxdata_valid[l]          <= 1'b1;
-        vif.rxstart_block[l*2 +: 2]  <= (w == 0) ? 2'b01 : 2'b00;
+        vif.rxstart_block[l*2 +: 2]  <= (w == 0) ? start_sel : 2'b00;
         vif.rxsync_header[l*2 +: 2]  <= (w == 0) ? sync_hdr : 2'b00;
         vif.rxelecidle[l]            <= 1'b1;
         vif.rxvalid[l]               <= 1'b0;

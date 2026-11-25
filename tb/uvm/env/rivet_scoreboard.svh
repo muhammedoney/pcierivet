@@ -28,6 +28,7 @@ class rivet_scoreboard extends uvm_scoreboard;
   bit tlp_require_cc;
   bit tlp_require_rc;
   bit gen3_block_mode;
+  bit gen4_block_mode;
   bit gen3_ts_mode;
   bit [1:0] blk_hdrs[8];
   int unsigned blk_hdr_n;
@@ -62,6 +63,7 @@ class rivet_scoreboard extends uvm_scoreboard;
     void'(uvm_config_db#(bit)::get(this, "", "tlp_require_cc", tlp_require_cc));
     void'(uvm_config_db#(bit)::get(this, "", "tlp_require_rc", tlp_require_rc));
     void'(uvm_config_db#(bit)::get(this, "", "gen3_block_mode", gen3_block_mode));
+    void'(uvm_config_db#(bit)::get(this, "", "gen4_block_mode", gen4_block_mode));
     void'(uvm_config_db#(bit)::get(this, "", "gen3_ts_mode", gen3_ts_mode));
     pipe_imp = new("pipe_imp", this);
     axi_imp  = new("axi_imp", this);
@@ -72,7 +74,7 @@ class rivet_scoreboard extends uvm_scoreboard;
 
   function void write_pipe(rivet_pipe_item t);
     pipe_sample_count++;
-    if (gen3_block_mode || gen3_ts_mode) begin
+    if (gen3_block_mode || gen4_block_mode || gen3_ts_mode) begin
       pipe_checked = 1;
       if (t.txstart_block && (blk_hdr_n < 8)) begin
         blk_hdrs[blk_hdr_n] = t.txsync_header;
@@ -105,7 +107,7 @@ class rivet_scoreboard extends uvm_scoreboard;
     accepted = t.tvalid && ((t.tready & 4'hF) != 4'h0);
 
     if (tlp_mode || cfg_mgmt_mode || dllp_fc_mode || ltssm_l0_mode ||
-        companion_mode || gen3_block_mode || gen3_ts_mode) begin
+        companion_mode || gen3_block_mode || gen4_block_mode || gen3_ts_mode) begin
       axi_checked = 1;
       if (accepted) begin
         axi_xfer_count++;
@@ -260,7 +262,8 @@ class rivet_scoreboard extends uvm_scoreboard;
       return;
     end
 
-    if (ltssm_l0_mode || dllp_fc_mode || gen3_block_mode || gen3_ts_mode) begin
+    if (ltssm_l0_mode || dllp_fc_mode || gen3_block_mode || gen4_block_mode ||
+        gen3_ts_mode) begin
       cfg_checked = 1;
       return;
     end
@@ -281,7 +284,7 @@ class rivet_scoreboard extends uvm_scoreboard;
     comp_sample_count++;
     if (comp_sample_count < 5) return;
     if (ltssm_l0_mode || cfg_mgmt_mode || tlp_mode || dllp_fc_mode ||
-        companion_mode || gen3_block_mode || gen3_ts_mode) begin
+        companion_mode || gen3_block_mode || gen4_block_mode || gen3_ts_mode) begin
       comp_checked = 1;
       return;
     end
@@ -348,6 +351,16 @@ class rivet_scoreboard extends uvm_scoreboard;
                     blk_hdr_n, blk_hdrs[0], blk_hdrs[1]))
       else
         `uvm_info(get_type_name(), "Gen3 block headers 10 then 01 on TX", UVM_LOW)
+      return;
+    end
+
+    if (gen4_block_mode) begin
+      if ((blk_hdr_n < 2) || (blk_hdrs[0] !== 2'b10) || (blk_hdrs[1] !== 2'b01))
+        `uvm_error(get_type_name(),
+          $sformatf("Gen4 block headers missing: n=%0d h0=%b h1=%b",
+                    blk_hdr_n, blk_hdrs[0], blk_hdrs[1]))
+      else
+        `uvm_info(get_type_name(), "Gen4 block headers 10 then 01 on TX", UVM_LOW)
       return;
     end
 

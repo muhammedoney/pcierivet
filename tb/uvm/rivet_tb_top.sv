@@ -241,6 +241,7 @@ module rivet_tb_top;
     status_if.block_tx_done   = 1'b0;
     status_if.rx_word_vld     = 1'b0;
     status_if.rx_word         = '0;
+    status_if.rx_word64       = '0;
     status_if.ts_lane_num     = '0;
     status_if.ts_rate_id      = '0;
     status_if.ts_link_num     = '0;
@@ -397,6 +398,8 @@ module rivet_tb_top;
       always @(posedge pclk) begin
         status_if.rx_word_vld <= dut.u_mac.sym_rx_valid_raw[0];
         status_if.rx_word     <= dut.u_mac.sym_rx_data_raw[31:0];
+        if (PIPE_W >= 64)
+          status_if.rx_word64 <= dut.u_mac.sym_rx_data_raw[63:0];
         status_if.ts_lane_num <= dut.u_mac.rx_lane_num[31:0];
         status_if.ts_rate_id  <= dut.u_mac.rx_rate_id;
         status_if.ts_link_num <= dut.u_mac.rx_link_num;

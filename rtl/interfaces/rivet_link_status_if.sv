@@ -36,9 +36,11 @@ interface rivet_link_status_if (
   // Pulse to emit eight Gen3 TX words (two 16-byte blocks) from the adapter.
   logic       block_tx_go;
   logic       block_tx_done;
-  // Accepted Gen3 block word, lane 0. Valid low means the byte stream held.
+  // Accepted block word, lane 0. Valid low means the byte stream held.
+  // rx_word64 is the full lane word when the pipe is 64 bits.
   logic        rx_word_vld;
   logic [31:0] rx_word;
+  logic [63:0] rx_word64;
   // Captured Gen3 TS fields (lane 0 in [7:0]). Scoreboard reads these.
   logic [31:0] ts_lane_num;
   logic [7:0]  ts_rate_id;
