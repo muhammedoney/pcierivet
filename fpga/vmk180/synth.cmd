@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 rem Synthesize the existing VMK180 project. Does not create it.
 rem   fpga\vmk180\synth.cmd
 rem Run fpga\vmk180\create_project.cmd first.
@@ -67,7 +67,7 @@ if defined RIVET_TCLARGS (
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\synth.tcl" -nojournal -log "%LOG%"
 )
-set "RC=%ERRORLEVEL%"
+set "RC=!ERRORLEVEL!"
 echo.
 if not "%RC%"=="0" (
   echo FAILED with exit code %RC% - see %LOG%

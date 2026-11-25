@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 rem Create the local VMK180 Vivado project by running create_project.tcl.
 rem   fpga\vmk180\create_project.cmd
 rem   fpga\vmk180\create_project.cmd 4 ep
@@ -53,7 +53,7 @@ if defined RIVET_TCLARGS (
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\create_project.tcl"
 )
-set "RC=%ERRORLEVEL%"
+set "RC=!ERRORLEVEL!"
 if not "%RC%"=="0" call :pause_if_explorer
 exit /b %RC%
 

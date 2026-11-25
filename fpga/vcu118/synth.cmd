@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 rem Synthesize the existing VCU118 project. Does not create it.
 rem   fpga\vcu118\synth.cmd
 rem Run fpga\vcu118\create_project.cmd first.
@@ -67,7 +67,7 @@ if defined RIVET_TCLARGS (
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\synth.tcl" -nojournal -log "%LOG%"
 )
-set "RC=%ERRORLEVEL%"
+set "RC=!ERRORLEVEL!"
 echo.
 if not "%RC%"=="0" (
   echo FAILED with exit code %RC% - see %LOG%

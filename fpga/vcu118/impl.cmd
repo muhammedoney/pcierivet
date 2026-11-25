@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 rem Implement the existing VCU118 project and write the bitstream.
 rem   fpga\vcu118\impl.cmd
 rem Run fpga\vcu118\create_project.cmd first.
@@ -69,7 +69,7 @@ if defined RIVET_TCLARGS (
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%"
 )
-set "RC=%ERRORLEVEL%"
+set "RC=!ERRORLEVEL!"
 echo.
 if not "%RC%"=="0" (
   echo FAILED with exit code %RC% - see %LOG%

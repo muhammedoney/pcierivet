@@ -104,14 +104,15 @@ proc rivet_collect_v {dir} {
   return $hits
 }
 
-proc rivet_decl_range {dir port} {
-  foreach f [rivet_collect_v $dir] {
-    set fh [open $f r]
-    set body [read $fh]
-    close $fh
-    if {[regexp "\\\[(\[0-9\]+):(\[0-9\]+)\\\]\[^\\n\]*\\m${port}\\M" $body -> hi lo]} {
-      return "${hi}:${lo}"
-    }
+proc rivet_file_range {path port} {
+  if {![file exists $path]} {
+    return ""
+  }
+  set fh [open $path r]
+  set body [read $fh]
+  close $fh
+  if {[regexp "\\\[\\s*(\[0-9\]+)\\s*:\\s*(\[0-9\]+)\\s*\\\]\\s*${port}\\M" $body -> hi lo]} {
+    return "${hi}:${lo}"
   }
   return ""
 }
@@ -182,21 +183,23 @@ if {!$bank_ok || !$loc_ok || !$clk_ok} {
 }
 generate_target {instantiation_template synthesis} $ip
 
-set ipdir [get_property IP_DIR [get_ips pcie_phy_0]]
-set txw [rivet_decl_range $ipdir phy_txdata]
+set stub [file join $build_dir rivet_vcu118.gen sources_1 ip pcie_phy_0 synth pcie_phy_0.v]
+set txw [rivet_file_range $stub phy_txdata]
 if {$txw ne "63:0" && $txw ne "255:0"} {
   error "phy_txdata width is \[$txw\], expected \[63:0\] or \[255:0\]"
 }
-if {$gen4} {
-  set ratew [rivet_decl_range $ipdir phy_rate]
-  if {$ratew ne "2:0"} {
-    error "phy_rate width is \[$ratew\], expected \[2:0\]"
-  }
-}
+set ratew [rivet_file_range $stub phy_rate]
 
 set_property top rivet_vcu118_ep [current_fileset]
 if {$gen4} {
-  set_property generic {GEN=4 PHY_RATE_W=3} [current_fileset]
+  if {$ratew eq "2:0"} {
+    set_property generic {GEN=4 PHY_RATE_W=3} [current_fileset]
+  } elseif {$ratew eq "1:0"} {
+    puts "PG239 phy_rate is \[1:0\] at 16.0 GT/s; PHY_RATE_W=2"
+    set_property generic {GEN=4 PHY_RATE_W=2} [current_fileset]
+  } else {
+    error "phy_rate width is \[$ratew\], expected \[2:0\] or \[1:0\]"
+  }
 }
 update_compile_order -fileset sources_1
 

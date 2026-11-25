@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 rem Implement the existing VMK180 project and write the bitstream.
 rem   fpga\vmk180\impl.cmd
 rem Run fpga\vmk180\create_project.cmd first.
@@ -69,7 +69,7 @@ if defined RIVET_TCLARGS (
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vmk180\impl.tcl" -nojournal -log "%LOG%"
 )
-set "RC=%ERRORLEVEL%"
+set "RC=!ERRORLEVEL!"
 echo.
 if not "%RC%"=="0" (
   echo FAILED with exit code %RC% - see %LOG%

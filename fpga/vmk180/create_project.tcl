@@ -227,14 +227,15 @@ proc rivet_collect_v {dir} {
   return $hits
 }
 
-proc rivet_decl_range {dir port} {
-  foreach f [rivet_collect_v $dir] {
-    set fh [open $f r]
-    set body [read $fh]
-    close $fh
-    if {[regexp "\\\[(\[0-9\]+):(\[0-9\]+)\\\]\[^\\n\]*\\m${port}\\M" $body -> hi lo]} {
-      return "${hi}:${lo}"
-    }
+proc rivet_file_range {path port} {
+  if {![file exists $path]} {
+    return ""
+  }
+  set fh [open $path r]
+  set body [read $fh]
+  close $fh
+  if {[regexp "\\\[\\s*(\[0-9\]+)\\s*:\\s*(\[0-9\]+)\\s*\\\]\\s*${port}\\M" $body -> hi lo]} {
+    return "${hi}:${lo}"
   }
   return ""
 }
@@ -432,16 +433,11 @@ set bd [get_files pcie_phy_bd.bd]
 generate_target {synthesis instantiation_template} $bd
 set wrapper [make_wrapper -files $bd -top -force]
 add_files -norecurse $wrapper
-set txw [rivet_decl_range $build_dir phy_txdata]
+set txw [rivet_file_range $wrapper phy_txdata]
 if {$txw ne "63:0" && $txw ne "255:0"} {
   error "phy_txdata width is \[$txw\], expected \[63:0\] or \[255:0\]"
 }
-if {$gen4} {
-  set ratew [rivet_decl_range $build_dir phy_rate]
-  if {$ratew ne "2:0"} {
-    error "phy_rate width is \[$ratew\], expected \[2:0\]"
-  }
-}
+set ratew [rivet_file_range $wrapper phy_rate]
 
 # DRC CIPS-2: a Versal PDI needs a CIPS so the PMC has a PLM.
 # PL Subsystem keeps DDR and fabric clocks out of this shell.
@@ -478,7 +474,14 @@ puts "CIPS wrapper: $cips_wrapper"
 
 set_property top rivet_vmk180_ep [current_fileset]
 if {$gen4} {
-  set_property generic {GEN=4 PHY_RATE_W=3} [current_fileset]
+  if {$ratew eq "2:0"} {
+    set_property generic {GEN=4 PHY_RATE_W=3} [current_fileset]
+  } elseif {$ratew eq "1:0"} {
+    puts "PG345 phy_rate is \[1:0\] at link_speed 4; PHY_RATE_W=2"
+    set_property generic {GEN=4 PHY_RATE_W=2} [current_fileset]
+  } else {
+    error "phy_rate width is \[$ratew\], expected \[2:0\] or \[1:0\]"
+  }
 }
 update_compile_order -fileset sources_1
 
