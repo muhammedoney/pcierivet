@@ -338,10 +338,16 @@ create_bd_design pcie_phy_bd
 set phy [create_bd_cell -type ip -vlnv [lindex $vlnv 0] pcie_phy_0]
 
 # Names are the PG345 user parameters (component.xml), not the US+ aliases.
-# XCVM1802 is GTY. Width X4 and Gen2 must stick before the PIPE ports are exported.
+# XCVM1802 is GTY. Width X4 must stick before the PIPE ports are exported.
+# Gen4 asks for 16.0 GT/s. A rejected value stops; there is no fallback to 5.0.
 rivet_set_first $phy {gt_type} {GTY}
 set need_width [rivet_set_first $phy {PL_LINK_CAP_MAX_LINK_WIDTH} {X4}]
-set need_speed [rivet_set_first $phy {PL_LINK_CAP_MAX_LINK_SPEED} {5.0_GT/s}]
+if {$gen4} {
+  set cap_speed 16.0_GT/s
+} else {
+  set cap_speed 5.0_GT/s
+}
+set need_speed [rivet_set_first $phy {PL_LINK_CAP_MAX_LINK_SPEED} $cap_speed]
 set need_ref   [rivet_set_first $phy {phy_refclk_freq} {100_MHz}]
 set need_usr   [rivet_set_first $phy {phy_userclk_freq} {250_MHz}]
 rivet_set_first $phy {phy_userclk2_freq} {250_MHz}
@@ -427,6 +433,19 @@ foreach p [lsort [get_bd_intf_ports -quiet]] {
   puts "  [get_property NAME $p]"
 }
 
+# Gen4 GT wizard rejects TXOUTCLK 250. Printed legal values are 500 and 1000.
+if {$gen4} {
+  foreach c [get_bd_cells -quiet -hierarchical *gtwiz*] {
+    set props [list_property $c]
+    if {[lsearch -exact $props CONFIG.TXPROGDIV_FREQ_VAL] >= 0} {
+      if {[catch {set_property CONFIG.TXPROGDIV_FREQ_VAL {500.000} $c} err]} {
+        puts "WARN: TXPROGDIV_FREQ_VAL on $c: $err"
+      } else {
+        puts "TXPROGDIV_FREQ_VAL=500.000 on $c"
+      }
+    }
+  }
+}
 validate_bd_design
 save_bd_design
 set bd [get_files pcie_phy_bd.bd]
