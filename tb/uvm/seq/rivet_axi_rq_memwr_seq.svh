@@ -11,6 +11,8 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
   bit [31:0]   addr_hi = 32'h0;
   bit [7:0]    tag  = 8'h00;
   bit [15:0]   requester_id = 16'h0100;
+  // More than one posts that many TLPs in a single driver burst.
+  int unsigned n_pkt = 1;
 
   function new(string name = "rivet_axi_rq_memwr_seq");
     super.new(name);
@@ -35,14 +37,32 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
     item.use_burst  = 1'b1;
     item.burst_user = rivet_axi_tlp_util::rq_tuser(4'hF,
                           (payload_dw > 1) ? 4'hF : 4'h0);
-    rivet_axi_tlp_util::pack_mem_desc_2beat(
-      addr, payload_dw[10:0], rivet_pkg::RIVET_CQ_REQ_MEMWR, tag, requester_id,
-      b0, b1, addr_hi);
+    if (n_pkt < 1)
+      n_pkt = 1;
+    for (int unsigned pkt = 0; pkt < n_pkt; pkt++) begin
+      bit [7:0] tg;
+      tg = tag + pkt[7:0];
+      rivet_axi_tlp_util::pack_mem_desc_2beat(
+        addr, payload_dw[10:0], rivet_pkg::RIVET_CQ_REQ_MEMWR, tg, requester_id,
+        b0, b1, addr_hi);
     if (axi_w >= 256) begin
-      item.burst_data.push_back({b1, b0});
-      item.burst_keep.push_back(8'h0F);
-      item.burst_last.push_back(1'b0);
-      sent = 0;
+      logic [255:0] desc_beat;
+      logic [7:0]   desc_keep;
+      int unsigned  n0;
+      desc_beat = '0;
+      desc_beat[127:0] = {b1, b0};
+      desc_keep = 8'h0F;
+      n0 = 0;
+      // Up to 16 payload bytes share the descriptor beat.
+      while ((n0 < 4) && (n0 < payload_dw)) begin
+        desc_beat[128 + 32*n0 +: 32] = 32'hA500_0000 + n0;
+        desc_keep[4 + n0] = 1'b1;
+        n0++;
+      end
+      item.burst_data.push_back(desc_beat);
+      item.burst_keep.push_back(desc_keep);
+      item.burst_last.push_back(n0 >= payload_dw);
+      sent = n0;
       while (sent < payload_dw) begin
         logic [255:0] beat;
         logic [7:0]   keep;
@@ -102,6 +122,7 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
         sent += two ? 2 : 1;
         item.burst_last.push_back(sent >= payload_dw);
       end
+    end
     end
     finish_item(item);
   endtask

@@ -13,6 +13,8 @@ class rivet_axi_rq_memrd32_seq extends uvm_sequence #(rivet_axi_st_item);
   bit [3:0]  first_be = 4'hF;
   // 1 keeps the original 1 DW request. 1024 is the PCIe length encoding 0.
   bit [10:0] payload_dw = 11'd1;
+  // More than one sends that many requests in one driver burst.
+  int unsigned n_pkt = 1;
 
   function new(string name = "rivet_axi_rq_memrd32_seq");
     super.new(name);
@@ -42,7 +44,24 @@ class rivet_axi_rq_memrd32_seq extends uvm_sequence #(rivet_axi_st_item);
       addr, payload_dw, rivet_pkg::RIVET_CQ_REQ_MEMRD, tag, requester_id, b0, b1,
       addr_hi);
     u = rivet_axi_tlp_util::rq_tuser(first_be, (payload_dw > 11'd1) ? 4'hF : 4'h0);
-    if (axi_w >= 128) begin
+    if ((n_pkt > 1) && (axi_w >= 128)) begin
+      rivet_axi_st_item item;
+      int unsigned pkt;
+      item = rivet_axi_st_item::type_id::create("rq_burst");
+      start_item(item);
+      item.channel   = "rq";
+      item.use_burst = 1'b1;
+      item.burst_user = u;
+      for (pkt = 0; pkt < n_pkt; pkt++) begin
+        rivet_axi_tlp_util::pack_mem_desc_2beat(
+          addr, payload_dw, rivet_pkg::RIVET_CQ_REQ_MEMRD,
+          tag + pkt[7:0], requester_id, b0, b1, addr_hi);
+        item.burst_data.push_back({b1, b0});
+        item.burst_keep.push_back(8'h0F);
+        item.burst_last.push_back(1'b1);
+      end
+      finish_item(item);
+    end else if (axi_w >= 128) begin
       rivet_axi_st_item item;
       item = rivet_axi_st_item::type_id::create("rq_beat");
       start_item(item);

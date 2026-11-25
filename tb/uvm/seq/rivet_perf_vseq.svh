@@ -390,15 +390,32 @@ class rivet_perf_rq_memwr64_vseq extends rivet_perf_vseq;
         continue;
       repeat (8_000) @(posedge status_vif.pclk);
       perf.arm(dw * 4, 0);
-      for (i = 0; i < n_tlp; i++) begin
-        rivet_axi_rq_memwr_seq wr;
-        wr = rivet_axi_rq_memwr_seq::type_id::create(
-          $sformatf("wr64_dw%0d_%0d", dw, i));
-        wr.payload_dw = dw;
-        wr.addr       = 32'h0000_1000 + (i << 6);
-        wr.addr_hi    = 32'h0000_0001;
-        wr.tag        = i[7:0];
-        wr.start(p_sequencer.rq_sqr);
+      begin
+        int unsigned g;
+        g = 0;
+        void'(uvm_config_db#(int unsigned)::get(m_sequencer, "", "gen", g));
+        if (g >= 4) begin
+          rivet_axi_rq_memwr_seq wr;
+          wr = rivet_axi_rq_memwr_seq::type_id::create(
+            $sformatf("wr64_dw%0d", dw));
+          wr.n_pkt      = n_tlp;
+          wr.payload_dw = dw;
+          wr.addr       = 32'h0000_1000;
+          wr.addr_hi    = 32'h0000_0001;
+          wr.tag        = 8'h00;
+          wr.start(p_sequencer.rq_sqr);
+        end else begin
+          for (i = 0; i < n_tlp; i++) begin
+            rivet_axi_rq_memwr_seq wr;
+            wr = rivet_axi_rq_memwr_seq::type_id::create(
+              $sformatf("wr64_dw%0d_%0d", dw, i));
+            wr.payload_dw = dw;
+            wr.addr       = 32'h0000_1000 + (i << 6);
+            wr.addr_hi    = 32'h0000_0001;
+            wr.tag        = i[7:0];
+            wr.start(p_sequencer.rq_sqr);
+          end
+        end
       end
       perf.disarm();
       if (status_vif.cfg_ltssm_state != 6'h10)
@@ -436,13 +453,28 @@ class rivet_perf_rq_memrd_vseq extends rivet_perf_vseq;
     uvm_config_db#(int unsigned)::set(null, "*", "peer_cpld_dw", dw);
     repeat (8_000) @(posedge status_vif.pclk);
     perf.arm(0, 0, bytes_per);
-    for (i = 0; i < n_tlp; i++) begin
-      rivet_axi_rq_memrd32_seq rd;
-      rd = rivet_axi_rq_memrd32_seq::type_id::create($sformatf("%s_%0d", tag, i));
-      rd.payload_dw = dw[10:0];
-      rd.addr_hi    = addr64 ? 32'h1 : 32'h0;
-      rd.tag        = i[7:0] + 8'h11;
-      rd.start(p_sequencer.rq_sqr);
+    begin
+      int unsigned g;
+      g = 0;
+      void'(uvm_config_db#(int unsigned)::get(m_sequencer, "", "gen", g));
+      if (g >= 4) begin
+        rivet_axi_rq_memrd32_seq rd;
+        rd = rivet_axi_rq_memrd32_seq::type_id::create(tag);
+        rd.n_pkt      = n_tlp;
+        rd.payload_dw = dw[10:0];
+        rd.addr_hi    = addr64 ? 32'h1 : 32'h0;
+        rd.tag        = 8'h11;
+        rd.start(p_sequencer.rq_sqr);
+      end else begin
+        for (i = 0; i < n_tlp; i++) begin
+          rivet_axi_rq_memrd32_seq rd;
+          rd = rivet_axi_rq_memrd32_seq::type_id::create($sformatf("%s_%0d", tag, i));
+          rd.payload_dw = dw[10:0];
+          rd.addr_hi    = addr64 ? 32'h1 : 32'h0;
+          rd.tag        = i[7:0] + 8'h11;
+          rd.start(p_sequencer.rq_sqr);
+        end
+      end
     end
     for (cyc = 0; cyc < 400_000; cyc++) begin
       @(posedge status_vif.pclk);

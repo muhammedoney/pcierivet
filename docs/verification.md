@@ -143,7 +143,7 @@ A Gen4 block is eight symbols. Gen3 on that elaboration still uses the low four 
 | Perf MemWr64 sweep | `.\scripts\sim_questa.ps1 perf_rq_memwr64_gen4_x4 4 0` | PASS through 4096 B |
 | Perf MemRd64 sweep | `.\scripts\sim_questa.ps1 perf_rq_memrd_gen4_x4 4 0` | PASS through 4096 B |
 
-The user port and the DLL beat are 32 bytes at Gen4. `perf_rq_memwr64_gen4_x4` (8 TLPs after Gen4 L0, 4 ns user clock, 25 Nov 2026) printed `mb_s` 333.333, 666.667, 1333.333, 2666.667, 4000.000, 5333.333, 6400.000, 7111.111, 7529.412, 7757.576, 7876.923. `cycles` 24, 24, 24, 24, 32, 48, 80, 144, 272, 528, 1040. `rq_stall=0`, `credit_stall=0`. `perf_rq_memrd_gen4_x4` printed MemRd64 `mb_s` 117.647, 235.294, 444.444, 876.712, 1542.169, 2560.000, 3436.242, 4675.799, 5657.459, 6301.538, 6681.892. `cycles` 68, 68, 72, 73, 83, 100, 149, 219, 362, 650, 1226. `rc_tlast=8` at every size. Both sweeps printed `UVM_ERROR : 0`, `UVM_FATAL : 0`.
+The user port and the DLL beat are 32 bytes at Gen4. `perf_rq_memwr64_gen4_x4` (8 TLPs after Gen4 L0, 4 ns user clock, 25 Nov 2026) printed `mb_s` 888.889, 1777.778, 3555.556, 3764.706, 5120.000, 6243.902, 7013.699, 7474.453, 7728.302, 7861.804, 7930.300. `cycles` 9, 9, 9, 17, 25, 41, 73, 137, 265, 521, 1033. `rq_stall=0`, `credit_stall=0`. `perf_rq_memrd_gen4_x4` printed MemRd64 `mb_s` 117.647, 231.884, 450.704, 876.712, 1542.169, 2612.245, 3580.420, 4970.874, 6150.150, 6965.986, 7447.273. `cycles` 68, 69, 71, 73, 83, 98, 143, 206, 333, 588, 1100. `rc_tlast=8` at every size. Both sweeps printed `UVM_ERROR : 0`, `UVM_FATAL : 0`.
 
 ## Phase 1 UVM build-out (historical)
 

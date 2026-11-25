@@ -531,6 +531,9 @@ module rivet_mac_os_rx #(
   // Playback beat. Gen2 is 8 bytes, Gen3 is 16, Gen4 (64-bit PIPE) is 32.
   localparam int unsigned RX_PLAY_B  = (PIPE_DATA_WIDTH >= 64) ? 32 :
                                        (PIPE_DATA_WIDTH == 32) ? 16 : 8;
+  // Gen4 only. Playback starts once one beat is in RAM, while capture
+  // of that frame is still running.
+  localparam bit           RX_CUT     = (PIPE_DATA_WIDTH >= 64);
   localparam int unsigned RX_PLAY_W  = RX_PLAY_B / 8;
   localparam int unsigned TLP_FRAME_MAX = RIVET_MAC_TLP_BUF_BYTES;
   // Eight max-payload frames in flight. Playback cannot drain while the
@@ -731,6 +734,12 @@ module rivet_mac_os_rx #(
   logic [2:0]              rd_words;
   logic [11:0]             rd_drop;
   logic [12:0]             used_q;
+  // Live playback of the frame still being captured. Gen4 pipe only.
+  logic                    live_q, live_d;
+  logic                    live_closed_q, live_closed_d;
+  logic [12:0]             live_len_q, live_len_d;
+  logic [12:0]             live_sent_q, live_sent_d;
+  logic [TLP_AW-1:0]       live_base_q, live_base_d;
   // A finished DLLP waits here when the beat slot is busy. Framing stays in
   // IDLE/RX_TLP so the next TLP is not dropped while the DLLP waits.
   logic                    dllp_park_q, dllp_park_d;
@@ -819,6 +828,33 @@ module rivet_mac_os_rx #(
     end
   endtask
 
+  // Bytes at addr are readable when capture wrote them on an earlier cycle.
+  // An open frame only releases a full playback beat. A closed frame also
+  // releases its short tail.
+  function automatic logic live_words_ready(
+      input logic [TLP_AW-1:0] addr,
+      input logic [TLP_AW-1:0] wr,
+      input logic [TLP_AW-1:0] base,
+      input logic              closed,
+      input logic [12:0]       len
+  );
+    logic [TLP_AW-1:0] have;
+    logic [12:0]       at_b, left, need;
+    have = wr - addr;
+    if (!closed) begin
+      live_words_ready = (have >= TLP_AW'(RX_PLAY_W));
+    end else begin
+      at_b = 13'(addr - base) * 13'd8;
+      if (at_b >= len) begin
+        live_words_ready = 1'b0;
+      end else begin
+        left = len - at_b;
+        need = (left + 13'd7) >> 3;
+        live_words_ready = (13'(have) >= need);
+      end
+    end
+  endfunction
+
   // Synchronous read-data reset so Versal does not see an async BRAM reset.
   always_ff @(posedge pclk_i) begin
     if (!rst_ni) begin
@@ -826,6 +862,13 @@ module rivet_mac_os_rx #(
       tlp_ram_rd_hi_q <= '0;
       tlp_ram_rd_c_q  <= '0;
       tlp_ram_rd_d_q  <= '0;
+    end else if (tlp_rd_issue && live_q) begin
+      logic [TLP_AW-1:0] have;
+      have = tlp_wr_slot_q - rd_addr_q;
+      tlp_ram_rd_q <= tlp_ram[rd_addr_q];
+      tlp_ram_rd_hi_q <= (have > TLP_AW'(1)) ? tlp_ram[rd_addr_q + TLP_AW'(1)] : '0;
+      tlp_ram_rd_c_q  <= (have > TLP_AW'(2)) ? tlp_ram[rd_addr_q + TLP_AW'(2)] : '0;
+      tlp_ram_rd_d_q  <= (have > TLP_AW'(3)) ? tlp_ram[rd_addr_q + TLP_AW'(3)] : '0;
     end else if (tlp_rd_issue) begin
       tlp_ram_rd_q <= tlp_ram[rd_addr_q];
       if (RX_PLAY_W >= 2)
@@ -838,6 +881,12 @@ module rivet_mac_os_rx #(
   end
 
   always_comb begin
+    logic [12:0] live_rem_b;
+    logic [5:0]  live_n;
+    logic        live_fin;
+    live_rem_b = '0;
+    live_n     = '0;
+    live_fin   = 1'b0;
     rx_pkt_d         = rx_pkt_q;
     rx_body_d        = rx_body_q;
     rx_cnt_d         = rx_cnt_q;
@@ -864,6 +913,11 @@ module rivet_mac_os_rx #(
     rd_words         = 3'd0;
     rd_drop          = '0;
     tlp_rd_issue     = 1'b0;
+    live_d        = live_q;
+    live_closed_d = live_closed_q;
+    live_len_d    = live_len_q;
+    live_sent_d   = live_sent_q;
+    live_base_d   = live_base_q;
     dllp_park_d      = dllp_park_q;
     dllp_park_data_d = dllp_park_data_q;
     dllp_park_err_d  = dllp_park_err_q;
@@ -1171,10 +1225,19 @@ module rivet_mac_os_rx #(
                   tlp_acc_d     = '0;
                   tlp_acc_cnt_d = 3'd0;
                 end
-                frame_push_d      = 1'b1;
-                frame_push_base_d = tlp_base_q;
-                frame_push_len_d  = tlp_len_d;
-                frame_push_err_d  = tlp_err_d;
+                // A frame already in live playback just needs its final
+                // length. Pushing it again would play the bytes twice.
+                if (RX_CUT && live_q && !live_closed_q) begin
+                  live_closed_d = 1'b1;
+                  live_len_d    = tlp_len_d;
+                  if (tlp_err_d)
+                    rd_err_d = 1'b1;
+                end else begin
+                  frame_push_d      = 1'b1;
+                  frame_push_base_d = tlp_base_q;
+                  frame_push_len_d  = tlp_len_d;
+                  frame_push_err_d  = tlp_err_d;
+                end
                 rx_pkt_d          = RX_IDLE;
               end else begin
                 tlp_acc_d     = acc;
@@ -1229,10 +1292,89 @@ module rivet_mac_os_rx #(
           rd_ph_d               = 2'd0;
           rd_drop               = 12'((rd_rem_q + 13'd7) >> 3);
         end
+      end else if (live_q && !live_words_ready(rd_addr_q, tlp_wr_slot_q,
+                                              live_base_q, live_closed_q,
+                                              live_len_q)) begin
+        if (live_closed_q && (live_sent_q >= live_len_q)) begin
+          live_d        = 1'b0;
+          live_closed_d = 1'b0;
+          live_sent_d   = '0;
+          rd_ph_d       = 2'd0;
+        end else begin
+          rd_ph_d = 2'd1;
+        end
       end else begin
         tlp_rd_issue = 1'b1;
         rd_addr_d    = rd_addr_q + 11'(RX_PLAY_W);
         rd_ph_d      = 2'd2;
+      end
+    end else if (live_q && !dll_beat_valid_d) begin
+      if (rd_err_q) begin
+        dll_beat_d            = '0;
+        dll_beat_d.pkt_type   = RIVET_MAC_PKT_TLP;
+        dll_beat_d.sop        = 1'b1;
+        dll_beat_d.eop        = 1'b1;
+        dll_beat_d.err        = 1'b1;
+        dll_beat_d.keep       = 8'hFF;
+        dll_beat_valid_d      = 1'b1;
+        live_d                = 1'b0;
+        live_closed_d         = 1'b0;
+        live_sent_d           = '0;
+        rd_ph_d               = 2'd0;
+      end else begin
+        live_rem_b = 13'(RX_PLAY_B);
+        if (live_closed_q)
+          live_rem_b = (live_len_q > live_sent_q) ? (live_len_q - live_sent_q) : 13'd0;
+        if (live_rem_b != 13'd0) begin
+          live_n = (live_rem_b >= 13'(RX_PLAY_B)) ? 6'(RX_PLAY_B) : live_rem_b[5:0];
+          live_fin = live_closed_q && (live_rem_b <= 13'(live_n));
+          dll_beat_d          = '0;
+          dll_beat_d.pkt_type = RIVET_MAC_PKT_TLP;
+          dll_beat_d.sop      = rd_sop_q;
+          for (int unsigned i = 0; i < 32; i++) begin
+            if (6'(i) < live_n) begin
+              if (i < 8)
+                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_q[8*i +: 8];
+              else if (i < 16)
+                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_hi_q[8*(i-8) +: 8];
+              else if (i < 24)
+                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_c_q[8*(i-16) +: 8];
+              else
+                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_d_q[8*(i-24) +: 8];
+              dll_beat_d.keep[i] = 1'b1;
+            end
+          end
+          dll_beat_d.eop   = live_fin;
+          dll_beat_d.err   = 1'b0;
+          dll_beat_valid_d = 1'b1;
+          rd_sop_d         = 1'b0;
+          live_sent_d      = live_sent_q + 13'(live_n);
+          rd_words         = 3'd1;
+          if (live_n > 6'd8)
+            rd_words = 3'd2;
+          if (live_n > 6'd16)
+            rd_words = 3'd3;
+          if (live_n > 6'd24)
+            rd_words = 3'd4;
+          if (live_fin) begin
+            live_d        = 1'b0;
+            live_closed_d = 1'b0;
+            live_sent_d   = '0;
+            rd_ph_d       = 2'd0;
+            rd_rem_d      = 13'd0;
+          end else if (!live_words_ready(rd_addr_q, tlp_wr_slot_q, live_base_q,
+                                         live_closed_d, live_len_d)) begin
+            rd_ph_d = 2'd1;
+          end else begin
+            rd_addr_d    = rd_addr_q + 11'(rd_words);
+            tlp_rd_issue = 1'b1;
+            rd_ph_d      = 2'd2;
+          end
+        end else begin
+          live_d        = 1'b0;
+          live_closed_d = 1'b0;
+          rd_ph_d       = 2'd0;
+        end
       end
     end else if (!dll_beat_valid_d) begin
       if (rd_rem_q != 13'd0) begin
@@ -1279,6 +1421,24 @@ module rivet_mac_os_rx #(
         rd_ph_d = 2'd0;
       end
     end
+
+    // Start cut-through only while capture is still open. The end-of-packet
+    // cycle pushes the frame instead, so a short TLP is unchanged.
+    if (RX_CUT && !live_d && (rd_ph_q == 2'd0) && (rd_ph_d == 2'd0) &&
+        (q_count_q == 5'd0) && (rx_pkt_q == RX_TLP) && (rx_pkt_d == RX_TLP) &&
+        !tlp_err_q &&
+        ((tlp_wr_slot_q - tlp_base_q) >= TLP_AW'(RX_PLAY_W))) begin
+      live_d        = 1'b1;
+      live_closed_d = 1'b0;
+      live_len_d    = '0;
+      live_sent_d   = '0;
+      live_base_d   = tlp_base_q;
+      rd_addr_d     = tlp_base_q;
+      rd_sop_d      = 1'b1;
+      rd_err_d      = 1'b0;
+      rd_ph_d       = 2'd1;
+      rd_rem_d      = 13'd1;
+    end
   end
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
@@ -1305,6 +1465,11 @@ module rivet_mac_os_rx #(
       rd_err_q         <= 1'b0;
       rd_addr_q        <= '0;
       used_q           <= '0;
+      live_q           <= 1'b0;
+      live_closed_q    <= 1'b0;
+      live_len_q       <= '0;
+      live_sent_q      <= '0;
+      live_base_q      <= '0;
       dllp_park_q      <= 1'b0;
       dllp_park_data_q <= '0;
       dllp_park_err_q  <= 1'b0;
@@ -1328,6 +1493,11 @@ module rivet_mac_os_rx #(
       rd_sop_q         <= rd_sop_d;
       rd_err_q         <= rd_err_d;
       rd_addr_q        <= rd_addr_d;
+      live_q           <= live_d;
+      live_closed_q    <= live_closed_d;
+      live_len_q       <= live_len_d;
+      live_sent_q      <= live_sent_d;
+      live_base_q      <= live_base_d;
       dllp_park_q      <= dllp_park_d;
       dllp_park_data_q <= dllp_park_data_d;
       dllp_park_err_q  <= dllp_park_err_d;
