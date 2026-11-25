@@ -461,8 +461,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     int unsigned com_hold;
     logic [22:0] g3_lfsr[];
     logic [22:0] g3_rx_lfsr[];
-    logic [7:0]  g3_plain[0:3][0:3];
+    logic [7:0]  g3_plain[0:3][0:7];
     bit          g3_frame_beat;
+    bit          g3_wire;
+    int unsigned g3_ns;
     bit          g3_rx_arm;
     bit          g3_rx_data_blk;
     bit          g3_rx_skp_blk;
@@ -537,8 +539,12 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     forever begin
       @(posedge vif.pclk);
       g3_frame_beat = 1'b0;
+      // Gen3 is four symbols. Gen4 is eight. Both use the length-prefixed frame.
+      g3_wire = (peer_gen3 && (vif.rate == 3'd2)) ||
+                (peer_gen4 && ((vif.rate == 3'd2) || (vif.rate == 3'd3)));
+      g3_ns   = (vif.rate == 3'd3) ? 8 : (g3_wire ? 4 : 2);
       for (l = 0; l < 4; l++)
-        for (s = 0; s < 4; s++)
+        for (s = 0; s < 8; s++)
           g3_plain[l][s] = 8'h00;
       cpld_auto = 1'b0;
       void'(uvm_config_db#(bit)::get(null, "*", "peer_cpld_auto", cpld_auto));
@@ -592,6 +598,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       if (vif.rate !== last_rate) begin
         if (detect_ack && (vif.rate != 3'd0 || last_rate != 3'd0))
           rate_ack_left = 4;
+        // A new block rate counts a different number of symbols. Start that
+        // block at offset 0 from the seed, matching the DUT descrambler.
+        if (peer_gen4 && (vif.rate == 3'd3)) begin
+          g3_off = 0;
+          for (l = 0; l < lanes; l++)
+            g3_lfsr[l] = 23'h7FFFFF;
+        end
         last_rate = vif.rate;
       end
       if (rate_ack_left != 0) begin
@@ -825,8 +838,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       if (peer_active) begin
         if (tlp_sending) begin
           automatic int unsigned ns;
-          // Gen3 stripes the length-prefixed TLP across all four symbol times.
-          ns = (peer_gen3 && (vif.rate == 3'd2)) ? 4 : 2;
+          // Gen3 uses four symbols. Gen4 uses eight. Both are length-prefixed.
+          ns = g3_ns;
           for (l = 0; l < peer_lanes; l++) begin
             automatic int unsigned phys;
             automatic logic [15:0] lfsr;
@@ -837,7 +850,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
                 automatic int unsigned stream_idx = tlp_sym + s * peer_lanes + l;
                 automatic int unsigned framed_len;
                 automatic bit          g3_tlp;
-                g3_tlp = peer_gen3 && (vif.rate == 3'd2);
+                g3_tlp = g3_wire;
                 // Gen3 inserts a 2-byte length after STP and drops END.
                 framed_len = g3_tlp ? (tlp_nbytes + 3) : (tlp_nbytes + 2);
                 if (g3_tlp) begin
@@ -883,8 +896,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             peer_lfsr[phys] = lfsr;
           end
           tlp_sym += peer_lanes * ns;
-          if (tlp_sym >= ((peer_gen3 && (vif.rate == 3'd2))
-                          ? (tlp_nbytes + 3) : (tlp_nbytes + 2)))
+          if (tlp_sym >= (g3_wire ? (tlp_nbytes + 3) : (tlp_nbytes + 2)))
             tlp_sending = 1'b0;
         end else if (fc_sending) begin
           for (l = 0; l < peer_lanes; l++) begin
@@ -894,7 +906,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             lfsr = peer_lfsr[phys];
             begin
               automatic int unsigned ns;
-              ns = (peer_gen3 && (vif.rate == 3'd2)) ? 4 : 2;
+              ns = g3_ns;
               for (s = 0; s < ns; s++) begin
                 automatic int unsigned stream_idx = fc_sym + s * peer_lanes + l;
                 if (stream_idx < 8) begin
@@ -902,7 +914,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
                   peer_tmp = fc_sym9;
                 end else
                   peer_tmp = {1'b0, 8'h00};
-                if (peer_gen3 && (vif.rate == 3'd2)) begin
+                if (g3_wire) begin
                   if (phys < 4)
                     g3_plain[phys][s] = peer_tmp[7:0];
                   g3_frame_beat = 1'b1;
@@ -915,7 +927,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             end
             peer_lfsr[phys] = lfsr;
           end
-          fc_sym += peer_lanes * ((peer_gen3 && (vif.rate == 3'd2)) ? 4 : 2);
+          fc_sym += peer_lanes * g3_ns;
           if (fc_sym >= 8) begin
             fc_sending = 1'b0;
             if (ack_inflight) begin
@@ -1048,7 +1060,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             automatic logic [30:0] step;
             if (!data_blk)
               plain = gen3_ts_byte(g3_off + s, ts2, 8'(l), eqc, eqd, rate_b);
-            else if (g3_frame_beat && (s < 4))
+            else if (g3_frame_beat && (s < 8))
               plain = g3_plain[l][s];
             else
               plain = 8'h00;

@@ -51,6 +51,10 @@ module rivet_mac_descrambler #(
   // block data by the adapter registers, and those early bytes are not the
   // peer's first block.
   logic        lfsr23_arm_q, lfsr23_arm_n;
+  logic [2:0]  rate_q;
+  // After the rate becomes Gen4, wait out the adapter pipeline and the
+  // electrical-idle gap, then seed on the first new block.
+  logic        hold_q, gap_q;
   logic [2:0]  skp_left_q [LANES];
   logic [2:0]  skp_left_n [LANES];
   logic [LANES-1:0] os_q;
@@ -77,6 +81,7 @@ module rivet_mac_descrambler #(
       com_pend_n[l]  = com_pend_q[l];
       skp_left_n[l]  = skp_left_q[l];
       if (rivet_pkg::rivet_pipe_block_rate(rate_i) && valid_i[l] && lane_en_i[l] &&
+          !(hold_q && !(gap_q && block_start_i[l])) &&
           (lfsr23_arm_q || block_start_i[l])) begin
         automatic bit skp_word;
         if (!lfsr23_arm_q)
@@ -176,6 +181,9 @@ module rivet_mac_descrambler #(
         skp_left_q[l] <= '0;
       end
       lfsr23_arm_q <= 1'b0;
+      rate_q       <= '0;
+      hold_q       <= 1'b0;
+      gap_q        <= 1'b0;
     end else begin
       data_q  <= data_d;
       datak_q <= datak_i;
@@ -193,9 +201,25 @@ module rivet_mac_descrambler #(
         lfsr23_arm_q <= 1'b0;
         for (int unsigned l = 0; l < LANES; l++)
           lfsr23_q[l] <= RIVET_LFSR23_SEED;
+      end else if ((rate_i == RIVET_PIPE_RATE_GEN4) &&
+                   (rate_q != RIVET_PIPE_RATE_GEN4)) begin
+        // Gen4 counts eight symbols. Wait out the adapter pipeline and the
+        // electrical-idle gap, then seed on the first new block.
+        lfsr23_arm_q <= 1'b0;
+        hold_q       <= 1'b1;
+        gap_q        <= 1'b0;
+      end else if (hold_q) begin
+        lfsr23_arm_q <= 1'b0;
+        if (!valid_i[0])
+          gap_q <= 1'b1;
+        if (gap_q && valid_i[0] && block_start_i[0]) begin
+          hold_q       <= 1'b0;
+          lfsr23_arm_q <= lfsr23_arm_n;
+        end
       end else begin
         lfsr23_arm_q <= lfsr23_arm_n;
       end
+      rate_q <= rate_i;
     end
   end
 

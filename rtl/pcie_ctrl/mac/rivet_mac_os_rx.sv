@@ -574,10 +574,12 @@ module rivet_mac_os_rx #(
       gf_left_q     <= '0;
       for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= '0;
     end else begin
-      // Width 32 is a Gen3 data block. Tokens are the same byte values with
-      // no K bit, and only inside a data block (sync header is not OS).
-      automatic logic gen3_pkt = (PIPE_DATA_WIDTH == 32) &&
-                                 (rate_i == RIVET_PIPE_RATE_GEN3);
+      // A Gen3 32-bit block and a Gen4 64-bit block carry the same tokens
+      // as data bytes, with no K bit, and only inside a data block.
+      automatic logic gen3_pkt = ((PIPE_DATA_WIDTH == 32) &&
+                                  (rate_i == RIVET_PIPE_RATE_GEN3)) ||
+                                 ((PIPE_DATA_WIDTH == 64) &&
+                                  (rate_i == RIVET_PIPE_RATE_GEN4));
       automatic logic ok = (PKT_RX_OK || gen3_pkt) && sym_valid_i[0] && lane_en_i[0];
       automatic logic [NSYM-1:0] en_t, sdp_t, stp_t, end_t, edb_t, k_t;
       automatic logic [7:0] data_t [0:NSYM-1];
@@ -810,14 +812,15 @@ module rivet_mac_os_rx #(
             automatic logic [3:0]  c       = 4'd0;
             automatic logic [63:0] b       = '0;
             automatic logic [4:0]  cap_n   = 5'd0;
-            automatic logic [7:0]  cap_b [0:15];
+            automatic logic [7:0]  cap_b [0:23];
             automatic logic [63:0] cap_lo;
             automatic logic [63:0] cap_hi;
+            automatic logic [55:0] cap_ex;
             automatic logic        err       = 1'b0;
             automatic logic        done      = 1'b0;
             automatic logic        nullified = 1'b0;
 
-            for (int unsigned i = 0; i < 16; i++) cap_b[i] = '0;
+            for (int unsigned i = 0; i < 24; i++) cap_b[i] = '0;
 
             for (int unsigned p = 0; p < NSYM; p++) begin
               if (p0_en_q[p] && !done) begin
@@ -854,8 +857,8 @@ module rivet_mac_os_rx #(
                   end else if (p0_k_q[p]) begin
                     err  = 1'b1;
                     done = 1'b1;
-                  end else if (cap_n < 5'd16) begin
-                    cap_b[cap_n[3:0]] = p0_data_q[p];
+                  end else if (cap_n < 5'd23) begin
+                    cap_b[cap_n] = p0_data_q[p];
                     cap_n = cap_n + 5'd1;
                   end
                 end
@@ -866,6 +869,8 @@ module rivet_mac_os_rx #(
                       cap_b[3], cap_b[2], cap_b[1], cap_b[0]};
             cap_hi = {cap_b[15], cap_b[14], cap_b[13], cap_b[12],
                       cap_b[11], cap_b[10], cap_b[9], cap_b[8]};
+            cap_ex = {cap_b[22], cap_b[21], cap_b[20], cap_b[19],
+                      cap_b[18], cap_b[17], cap_b[16]};
 
             if (saw_sdp) begin
               rx_body_d    = b;
@@ -924,8 +929,16 @@ module rivet_mac_os_rx #(
                     tlp_ram_waddr2 = slot + 12'd1;
                     tlp_ram_wdata2 = cap_hi;
                     tlp_wr_slot_d  = slot + 12'd2;
-                    tlp_acc_d      = '0;
-                    tlp_acc_cnt_d  = 3'd0;
+                    // A Gen4 x4 beat is 32 bytes, so the frame can pass 16
+                    // in this same cycle. The accumulator keeps the tail.
+                    if (n_hi > 5'd8) begin
+                      tlp_acc_d       = cap_ex;
+                      tlp_acc_cnt_d   = 3'(n_hi - 5'd8);
+                      tlp_tail_pend_d = 1'b1;
+                    end else begin
+                      tlp_acc_d     = '0;
+                      tlp_acc_cnt_d = 3'd0;
+                    end
                   end else if (!tlp_err_d && (n_hi != 5'd0)) begin
                     tlp_acc_d       = cap_hi[55:0];
                     tlp_acc_cnt_d   = n_hi[2:0];

@@ -292,7 +292,7 @@ module rivet_mac_os_tx #(
   assign skp_due  = pkt_en_i && skp_due_q;
   // Gen3 SKP is one 16-byte block and starts only on a block boundary.
   assign want_skp = skp_due && at_boundary &&
-                    (PKT_OK || ((rate_i == RIVET_PIPE_RATE_GEN3) && (word_q == 2'd0)));
+                    (PKT_OK || ((gen3_pkt) && (word_q == 2'd0)));
   assign cur = at_boundary
       ? (want_skp ? RIVET_MAC_OS_SKP
                   : (transmitting ? os_req_i : RIVET_MAC_OS_NONE))
@@ -318,9 +318,9 @@ module rivet_mac_os_tx #(
   // Gen3 uses the same beat stream inside a 128b/130b data block. The token
   // byte is not a K-symbol; Gen2 STP/END stay on the K path.
   wire pkt_rate_ok = PKT_OK ||
-                     ((rate_i == RIVET_PIPE_RATE_GEN3) && (word_q == 2'd0));
+                     ((gen3_pkt) && (word_q == 2'd0));
   wire tlp_rate_ok = pkt_rate_ok ||
-                     ((rate_i == RIVET_PIPE_RATE_GEN3) && tlp_follow_q);
+                     ((gen3_pkt) && tlp_follow_q);
   assign want_pkt = pkt_rate_ok && pkt_en_i && at_boundary && !want_skp &&
                     (cur == RIVET_MAC_OS_IDLE) && dllp_ok;
   assign want_tlp = tlp_rate_ok && pkt_en_i && at_boundary && !want_skp &&
@@ -345,8 +345,8 @@ module rivet_mac_os_tx #(
   end
 
   assign pkt_done    = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
-  // Gen3 frame is STP + 2 length bytes + DLL bytes. Gen2 is STP + bytes + END.
-  assign gen3_pkt = (rate_i == RIVET_PIPE_RATE_GEN3);
+  // Gen3 and Gen4 share STP + 2 length bytes + DLL bytes. Gen2 is STP + END.
+  assign gen3_pkt = rivet_pkg::rivet_pipe_block_rate(rate_i);
   assign slot_b   = (tlp_pos_q == 16'd0)
                   ? ((sym_step > 5'd3) ? (sym_step - 5'd3) : 5'd0)
                   : sym_step;
@@ -435,7 +435,7 @@ module rivet_mac_os_tx #(
       end
       // STP length is the DLL frame: seq + TLP + LCRC. The header is in
       // this first beat, after the two sequence bytes.
-      if ((rate_i == RIVET_PIPE_RATE_GEN3) && (beat_n >= 8'd6)) begin
+      if ((gen3_pkt) && (beat_n >= 8'd6)) begin
         frm_b0     = masked_beat[23:16];
         frm_ldw    = {masked_beat[33:32], masked_beat[47:40]};
         frm_hbytes = frm_b0[5] ? 16'd16 : 16'd12;
@@ -571,7 +571,7 @@ module rivet_mac_os_tx #(
           pkt_ptr_d    = '0;
           tlp_closed_d = dll_tx_beat_i.eop;
           mode_d       = dll_tx_beat_i.eop ? ST_TLP_EM : ST_TLP_COL;
-          if ((rate_i == RIVET_PIPE_RATE_GEN3) && !dll_tx_beat_i.eop)
+          if ((gen3_pkt) && !dll_tx_beat_i.eop)
             tlp_flow_d = 1'b1;
         end
       end
@@ -636,7 +636,7 @@ module rivet_mac_os_tx #(
               sym_tmp = pkt_symbol(stream_idx[6:0], pkt_q);
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
             // Gen3 frame token is a data byte. datak is 2 bits per lane.
-            if (rate_i == RIVET_PIPE_RATE_GEN3)
+            if (gen3_pkt)
               sym_tmp[8] = 1'b0;
             if (s < 2)
               sym_datak_d[2*l + s] = sym_tmp[8];
@@ -681,7 +681,7 @@ module rivet_mac_os_tx #(
               sym_tmp = {1'b0, 8'h00};
             end
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
-            if (rate_i == RIVET_PIPE_RATE_GEN3)
+            if (gen3_pkt)
               sym_tmp[8] = 1'b0;
             if (s < 2)
               sym_datak_d[2*l + s] = sym_tmp[8];
@@ -791,7 +791,7 @@ module rivet_mac_os_tx #(
 
       // Keep the data block open for one idle cycle after a Gen3 TLP so
       // the next frame can start before the following block boundary.
-      if (tlp_em_done && (rate_i == RIVET_PIPE_RATE_GEN3))
+      if (tlp_em_done && (gen3_pkt))
         tlp_follow_q <= 1'b1;
       else if ((mode_q == ST_OS) && (word_q == 2'd0) && !take_tlp_start)
         tlp_follow_q <= 1'b0;
