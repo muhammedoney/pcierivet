@@ -6,7 +6,7 @@
 
 | Area | State |
 |------|--------|
-| Mode | Gen2 EP, RC, USP, and DSP closed in sim |
+| Mode | EP, RC, USP, and DSP closed in simulation through Gen4 x4 |
 | Generation | **Gen4 x4 closed in simulation**, including RC config, CplD, directed reset, and opt-in equalization. Gen5 is not started ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
 | Target FPGA | **VMK180** preferred, **VCU118** also in tree. VPK180 is the later Premium path |
