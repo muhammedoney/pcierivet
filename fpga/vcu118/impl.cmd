@@ -67,10 +67,17 @@ echo Log:   %LOG%
 set "RC=1"
 if defined RIVET_TCLARGS (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%" -tclargs %RIVET_TCLARGS%
-  set "RC=!ERRORLEVEL!"
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%"
-  set "RC=!ERRORLEVEL!"
+)
+rem vivado.bat runs popd after the tool, which clears ERRORLEVEL.
+rem The log line at column 0 is the real result. The sourced script echo
+rem is prefixed with "# " and does not match.
+findstr /R /C:"^PASS: bitstream timing closed" "%LOG%" >nul
+if errorlevel 1 (
+  set "RC=1"
+) else (
+  set "RC=0"
 )
 echo.
 if not "!RC!"=="0" (

@@ -804,15 +804,23 @@ module rivet_mac_os_rx #(
     int unsigned bi;
     int unsigned nleft;
     logic [63:0] word;
+    logic [7:0]  bb [64];
+    logic [5:0]  ix;
     acc      = '0;
     acc_n    = '0;
     overflow = 1'b0;
     bi       = 0;
     nleft    = nbytes;
+    for (int unsigned i = 0; i < 64; i++)
+      bb[i] = '0;
+    for (int unsigned i = 0; i < 40; i++)
+      bb[i] = raw_b_bytes[8*i +: 8];
     while ((nleft >= 8) && (nport < 4)) begin
       word = '0;
-      for (int unsigned k = 0; k < 8; k++)
-        word[8*k +: 8] = raw_b_bytes[8*(bi + k) +: 8];
+      for (int unsigned k = 0; k < 8; k++) begin
+        ix = 6'(bi + k);
+        word[8*k +: 8] = bb[ix];
+      end
       rx_push_word(nport, word, slot);
       slot  = slot + TLP_AW'(1);
       bi    = bi + 8;
@@ -822,11 +830,78 @@ module rivet_mac_os_rx #(
       overflow = 1'b1;
     end else begin
       acc_n = 3'(nleft);
-      for (int unsigned k = 0; k < 8; k++)
-        if (k < nleft)
-          acc[8*k +: 8] = raw_b_bytes[8*(bi + k) +: 8];
+      for (int unsigned k = 0; k < 8; k++) begin
+        if (k < nleft) begin
+          ix = 6'(bi + k);
+          acc[8*k +: 8] = bb[ix];
+        end
+      end
     end
   endtask
+
+  // Four RAM words are 8 bytes each. A variable part-select of (i-8) can
+  // address past a 64-bit word, so the byte index is narrowed to 3 bits.
+  function automatic logic [7:0] play_byte(
+      input logic [63:0] w0,
+      input logic [63:0] w1,
+      input logic [63:0] w2,
+      input logic [63:0] w3,
+      input int unsigned idx
+  );
+    logic [7:0] b0 [8];
+    logic [7:0] b1 [8];
+    logic [7:0] b2 [8];
+    logic [7:0] b3 [8];
+    logic [2:0] ix;
+    for (int unsigned k = 0; k < 8; k++) begin
+      b0[3'(k)] = w0[8*3'(k) +: 8];
+      b1[3'(k)] = w1[8*3'(k) +: 8];
+      b2[3'(k)] = w2[8*3'(k) +: 8];
+      b3[3'(k)] = w3[8*3'(k) +: 8];
+    end
+    if (idx < 8) begin
+      ix = 3'(idx);
+      return b0[ix];
+    end else if (idx < 16) begin
+      ix = 3'(idx - 8);
+      return b1[ix];
+    end else if (idx < 24) begin
+      ix = 3'(idx - 16);
+      return b2[ix];
+    end
+    ix = 3'(idx - 24);
+    return b3[ix];
+  endfunction
+
+  // acc is 7 bytes and cap is 32. Their sum stays inside the 40-byte frame.
+  // A byte array keeps the index inside that frame for Vivado.
+  function automatic logic [319:0] pack_acc_cap(
+      input logic [55:0] acc,
+      input logic [2:0]  acc_n,
+      input logic [7:0]  cap [0:31],
+      input logic [5:0]  cap_n
+  );
+    logic [7:0]   rb [64];
+    logic [5:0]   ix;
+    logic [319:0] raw;
+    for (int unsigned i = 0; i < 64; i++)
+      rb[i] = '0;
+    for (int unsigned i = 0; i < 7; i++) begin
+      if (3'(i) < acc_n)
+        rb[3'(i)] = acc[8*3'(i) +: 8];
+    end
+    ix = '0;
+    for (int unsigned i = 0; i < 32; i++) begin
+      if (6'(i) < cap_n) begin
+        ix = {3'b0, acc_n} + 6'(i);
+        rb[ix] = cap[5'(i)];
+      end
+    end
+    raw = '0;
+    for (int unsigned i = 0; i < 40; i++)
+      raw[8*i +: 8] = rb[i];
+    return raw;
+  endfunction
 
   // Bytes at addr are readable when capture wrote them on an earlier cycle.
   // An open frame only releases a full playback beat. A closed frame also
@@ -1189,15 +1264,7 @@ module rivet_mac_os_rx #(
               done = 1'b1;
             end
 
-            raw_b = '0;
-            for (int unsigned i = 0; i < 7; i++) begin
-              if (3'(i) < tlp_acc_cnt_q)
-                raw_b[8*i +: 8] = tlp_acc_q[8*i +: 8];
-            end
-            for (int unsigned i = 0; i < 32; i++) begin
-              if (6'(i) < cap_n)
-                raw_b[8*(int'(tlp_acc_cnt_q) + i) +: 8] = cap_b[i];
-            end
+            raw_b = pack_acc_cap(tlp_acc_q, tlp_acc_cnt_q, cap_b, cap_n);
 
             tlp_len_d = len_ovf ? 13'(TLP_FRAME_MAX) : new_len[12:0];
             tlp_err_d = err | nullified | (done && (new_len == 14'd0));
@@ -1333,14 +1400,8 @@ module rivet_mac_os_rx #(
           dll_beat_d.sop      = rd_sop_q;
           for (int unsigned i = 0; i < 32; i++) begin
             if (6'(i) < live_n) begin
-              if (i < 8)
-                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_q[8*i +: 8];
-              else if (i < 16)
-                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_hi_q[8*(i-8) +: 8];
-              else if (i < 24)
-                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_c_q[8*(i-16) +: 8];
-              else
-                dll_beat_d.data[8*i +: 8] = tlp_ram_rd_d_q[8*(i-24) +: 8];
+              dll_beat_d.data[8*5'(i) +: 8] = play_byte(
+                  tlp_ram_rd_q, tlp_ram_rd_hi_q, tlp_ram_rd_c_q, tlp_ram_rd_d_q, i);
               dll_beat_d.keep[i] = 1'b1;
             end
           end
@@ -1387,14 +1448,8 @@ module rivet_mac_os_rx #(
         dll_beat_d.sop      = rd_sop_q;
         for (int unsigned i = 0; i < 32; i++) begin
           if (6'(i) < n) begin
-            if (i < 8)
-              dll_beat_d.data[8*i +: 8] = tlp_ram_rd_q[8*i +: 8];
-            else if (i < 16)
-              dll_beat_d.data[8*i +: 8] = tlp_ram_rd_hi_q[8*(i-8) +: 8];
-            else if (i < 24)
-              dll_beat_d.data[8*i +: 8] = tlp_ram_rd_c_q[8*(i-16) +: 8];
-            else
-              dll_beat_d.data[8*i +: 8] = tlp_ram_rd_d_q[8*(i-24) +: 8];
+            dll_beat_d.data[8*5'(i) +: 8] = play_byte(
+                tlp_ram_rd_q, tlp_ram_rd_hi_q, tlp_ram_rd_c_q, tlp_ram_rd_d_q, i);
             dll_beat_d.keep[i] = 1'b1;
           end
         end
