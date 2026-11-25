@@ -237,6 +237,10 @@ module rivet_tb_top;
     status_if.rq_watch_arm     = 1'b0;
     status_if.rq_watch_b0      = 8'h00;
     status_if.rq_watch_hit     = 1'b0;
+    status_if.eq_search        = 1'b0;
+    status_if.margin_msg       = 8'h00;
+    status_if.coeff_go         = 1'b0;
+    status_if.coeff_value      = 6'h00;
     status_if.pipe_rate_force = 1'b0;
     status_if.pipe_rate_value = 3'd0;
     status_if.block_tx_go     = 1'b0;
@@ -364,6 +368,44 @@ module rivet_tb_top;
     if (status_if.link_disable_req === 1'b1) force dut.u_mac.link_disable_req = 1'b1;
     else                                     release dut.u_mac.link_disable_req;
   end
+
+  always @(status_if.eq_search) begin
+    if (status_if.eq_search === 1'b1) force dut.u_mac.eq_search = 1'b1;
+    else                              release dut.u_mac.eq_search;
+  end
+
+  always @(status_if.margin_msg) begin
+    if (status_if.margin_msg !== 8'h00) force dut.u_mac.margin_msg = status_if.margin_msg;
+    else                                release dut.u_mac.margin_msg;
+  end
+
+  always @(posedge pclk) begin
+    if (!preset_n) begin
+      status_if.eq_saw_preset0 <= 1'b0;
+      status_if.eq_saw_preset1 <= 1'b0;
+    end else begin
+      if (status_if.eq_search && (status_if.cfg_ltssm_state == 6'h28) &&
+          (pipe_if.txeq_preset[3:0] == 4'h0))
+        status_if.eq_saw_preset0 <= 1'b1;
+      if (status_if.eq_search &&
+          ((status_if.cfg_ltssm_state == 6'h29) ||
+           (status_if.cfg_ltssm_state == 6'h2A) ||
+           (status_if.cfg_ltssm_state == 6'h2B)) &&
+          (pipe_if.txeq_preset[3:0] == 4'h1))
+        status_if.eq_saw_preset1 <= 1'b1;
+    end
+    if (status_if.coeff_go === 1'b1) begin
+      force dut.pipe_rxeq_adapt_done = {LANES{1'b1}};
+      force dut.pipe_rxeq_new_txcoeff = {{(18*LANES-6){1'b0}}, status_if.coeff_value};
+    end else begin
+      release dut.pipe_rxeq_adapt_done;
+      release dut.pipe_rxeq_new_txcoeff;
+    end
+  end
+
+  assign status_if.txmargin    = pipe_if.txmargin;
+  assign status_if.txeq_coeff0 = pipe_if.txeq_coeff[5:0];
+  assign status_if.txeq_ctrl0  = pipe_if.txeq_ctrl[1:0];
 
   // Directed Gen3 block test. Class code must not hierarchical-reference this module.
   always @(status_if.pipe_rate_force or status_if.pipe_rate_value) begin

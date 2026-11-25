@@ -79,6 +79,8 @@ module rivet_ltssm #(
   // Downstream only. Level requests; Upstream ignores them.
   input  logic             hot_reset_req_i,
   input  logic             link_disable_req_i,
+  // Opt-in. EQ0 offers preset 0. With no phase-2 echo it moves to preset 1.
+  input  logic             eq_search_i = 1'b0,
 
   // Ordered-set transmission (rivet_mac_os_tx)
   output rivet_pkg::rivet_mac_os_type_e os_req_o,
@@ -810,7 +812,15 @@ module rivet_ltssm #(
         lane_pad_d = 1'b0;
         speed_ei_d = 1'b0;
         if (IS_DOWNSTREAM) begin
-          if (os_sent_cnt_i >= 12'd1)
+          if (eq_search_i) begin
+            // One ordered set of preset 0 is enough when the partner already
+            // echoes phase 2. Otherwise four sets, then preset 1.
+            if ((os_sent_cnt_i >= 12'd4) ||
+                ((os_sent_cnt_i >= 12'd1) && (rx_eq_ctrl_i[2:0] == 3'd2)))
+              state_d = RIVET_LTSSM_RCVRY_EQ1;
+            else if (timer_expired)
+              state_d = RIVET_LTSSM_DETECT_QUIET;
+          end else if (os_sent_cnt_i >= 12'd1)
             state_d = RIVET_LTSSM_RCVRY_EQ1;
           else if (timer_expired)
             state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -1055,16 +1065,22 @@ module rivet_ltssm #(
                     (state_q == RIVET_LTSSM_RCVRY_EQ1) ||
                     (state_q == RIVET_LTSSM_RCVRY_EQ2) ||
                     (state_q == RIVET_LTSSM_RCVRY_EQ3));
-  assign tx_eq_ctrl_o = eq_master ? 8'h0A :
+  // Preset search stays inside EQ0. EQ1..EQ3 keep preset 1 / 8'h0A.
+  wire eq_preset0 = eq_search_i && IS_DOWNSTREAM &&
+                    (state_q == RIVET_LTSSM_RCVRY_EQ0);
+  assign tx_eq_ctrl_o = eq_preset0 ? 8'h01 :
+                        eq_master ? 8'h0A :
                         (state_q == RIVET_LTSSM_RCVRY_EQ2) ? 8'h02 :
                         (state_q == RIVET_LTSSM_RCVRY_EQ3) ? rx_eq_ctrl_i : 8'h00;
-  assign tx_eq_data_o = eq_master ? 8'h01 :
+  assign tx_eq_data_o = eq_preset0 ? 8'h00 :
+                        eq_master ? 8'h01 :
                         ((state_q == RIVET_LTSSM_RCVRY_EQ2) ||
                          (state_q == RIVET_LTSSM_RCVRY_EQ3)) ? eq_preset_q : 8'h00;
   assign txeq_ctrl_o    = (eq_master ||
                            (state_q == RIVET_LTSSM_RCVRY_EQ2) ||
                            (state_q == RIVET_LTSSM_RCVRY_EQ3)) ? 2'b01 : 2'b00;
-  assign txeq_preset_o  = eq_master ? 4'h1 : eq_preset_q[3:0];
+  assign txeq_preset_o  = eq_preset0 ? 4'h0 :
+                          eq_master ? 4'h1 : eq_preset_q[3:0];
   // tx_train_ctrl_o driven in next-state comb (Hot Reset bit).
 
   assign remote_rate_id_o = remote_rate_q;

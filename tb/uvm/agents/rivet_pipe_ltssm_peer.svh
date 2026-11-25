@@ -60,13 +60,15 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     input logic [7:0]  lane_n,
     input logic [7:0]  eq_ctrl,
     input logic [7:0]  eq_data,
-    input logic [7:0]  rate_b
+    input logic [7:0]  rate_b,
+    input logic [7:0]  train_b = 8'h00
   );
     case (idx[3:0])
       4'd0:    return ts2 ? 8'h2D : 8'h1E;
       4'd1:    return 8'h00;
       4'd2:    return lane_n;
       4'd4:    return rate_b;
+      4'd5:    return train_b;
       4'd6:    return eq_ctrl;
       4'd7:    return eq_data;
       default: return 8'h00;
@@ -485,6 +487,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     bit          g3_left_eq;
     bit          g3_saw_ts2;
     bit          g3_tx_is_ts;
+    bit          g3_dir;
+    int unsigned g3_dir_blk;
     logic [7:0]  g3_dut_eq;
     logic [7:0]  g3_dut_id;
 
@@ -531,7 +535,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     g3_rx_data_blk = 1'b0; g3_rx_skp_blk = 1'b0;
     g3_tx_off = 0; g3_up_ph = 0; g3_up_blk = 0;
     g3_saw_0a = 1'b0; g3_left_eq = 1'b0; g3_saw_ts2 = 1'b0;
-    g3_tx_is_ts = 1'b0;
+    g3_tx_is_ts = 1'b0; g3_dir = 1'b0; g3_dir_blk = 0;
     g3_dut_eq = 8'h00; g3_dut_id = 8'h00;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
@@ -663,9 +667,31 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             (phase_q == P_IDLE) && !recovery_pulse) begin
           vif.rxvalid     <= '0;
           recovery_pulse  = 1'b1;
-          // Gen3 L0 is already 128b/130b, so a DUT ordered set is not a COM.
-          // Restart EQ TS with the speed-change bit for the Gen4 recovery.
-          if (peer_gen4 && (vif.rate == 3'd2)) begin
+          // Hot Reset / Disable, or a downstream port that asked for a TS
+          // reply, at 8 or 16 GT/s. Byte 5 carries the peer's bit. A plain
+          // speed-change recovery does not take this path.
+          begin
+            bit dir_ts;
+            dir_ts = 1'b0;
+            void'(uvm_config_db#(bit)::get(null, "*", "peer_dir_ts", dir_ts));
+            if ((hot_reset_go || disable_go || dir_ts) &&
+                (peer_gen3 || peer_gen4) &&
+                ((vif.rate == 3'd2) || (vif.rate == 3'd3))) begin
+              g3_dir     = 1'b1;
+              g3_dir_blk = 0;
+              g3_speed   = 1'b0;
+              g3_sets    = 0;
+              g3_off     = 0;
+              g3_up_ph   = 0;
+              g3_up_blk  = 0;
+              g3_saw_0a  = 1'b0;
+              g3_left_eq = 1'b0;
+              g3_saw_ts2 = 1'b0;
+              if (dir_ts)
+                uvm_config_db#(bit)::set(null, "*", "peer_dir_ts", 1'b0);
+            end else if (peer_gen4 && (vif.rate == 3'd2)) begin
+            // Gen3 L0 is already 128b/130b, so a DUT ordered set is not a COM.
+            // Restart EQ TS with the speed-change bit for the Gen4 recovery.
             g3_speed = 1'b1;
             g3_sets  = 0;
             g3_off   = 0;
@@ -677,6 +703,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
               g3_saw_0a  = 1'b0;
               g3_left_eq = 1'b0;
               g3_saw_ts2 = 1'b0;
+            end
             end
           end
           if (hot_reset_go || disable_go)
@@ -1074,9 +1101,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           peer_active && (vif.txelecidle != '1)) begin
         bit          ts2;
         bit          data_blk;
-        logic [7:0]  eqc, eqd, rate_b;
+        logic [7:0]  eqc, eqd, rate_b, train_b;
         int unsigned nsym;
         nsym     = (vif.rate == 3'd3) ? 8 : 4;
+        train_b  = 8'h00;
         if (peer_upstream &&
             ((vif.rate == 3'd2) || (vif.rate == 3'd3))) begin
           // Sample the DUT TS byte 6. A block is 16 bytes: four per cycle at
@@ -1138,6 +1166,21 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           else
             rate_b = 8'h0E;
         end
+        // Directed Hot Reset / Link Disable. TS1 for eight blocks, then TS2.
+        // Byte 5 is set here: the 8b/10b train byte stays zero while phase
+        // is logical idle, which is where a block-rate L0 sits.
+        if (g3_dir) begin
+          data_blk = 1'b0;
+          ts2      = (g3_dir_blk >= 8);
+          eqc      = 8'h00;
+          eqd      = 8'h00;
+          train_b  = 8'h00;
+          if (tc_inject_active && hot_reset_enable)
+            train_b[0] = 1'b1;
+          if (tc_inject_active && disable_link_enable)
+            train_b[1] = 1'b1;
+          rate_b   = (vif.rate == 3'd3) ? 8'h1E : 8'h0E;
+        end
         vif.rxdatak       <= '0;
         vif.rxdata_valid  <= '1;
         for (l = 0; l < lanes; l++) begin
@@ -1150,7 +1193,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             automatic logic [7:0]  plain;
             automatic logic [30:0] step;
             if (!data_blk)
-              plain = gen3_ts_byte(g3_off + s, ts2, 8'(l), eqc, eqd, rate_b);
+              plain = gen3_ts_byte(g3_off + s, ts2, 8'(l), eqc, eqd, rate_b, train_b);
             else if (g3_frame_beat && (s < 8))
               plain = g3_plain[l][s];
             else
@@ -1169,7 +1212,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         g3_off = g3_off + nsym;
         if (g3_off >= 16) begin
           g3_off = 0;
-          if (peer_upstream &&
+          if (g3_dir)
+            g3_dir_blk = g3_dir_blk + 1;
+          else if (peer_upstream &&
               ((vif.rate == 3'd2) || (vif.rate == 3'd3))) begin
             case (g3_up_ph)
               0: if (g3_saw_0a) begin
@@ -1217,6 +1262,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         g3_saw_0a = 1'b0;
         g3_left_eq = 1'b0;
         g3_saw_ts2 = 1'b0;
+        g3_dir = 1'b0;
+        g3_dir_blk = 0;
         g3_tx_is_ts = 1'b0;
         g3_dut_eq = 8'h00;
         g3_dut_id = 8'h00;

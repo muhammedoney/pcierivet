@@ -54,7 +54,7 @@ module rivet_tl_rq_wide #(
   logic [127:0] tx_d_q;
   logic [15:0]  tx_k_q;
   logic         tx_l_q, tx_v_q;
-  logic         is_wr_q, is64_q;
+  logic         is_wr_q, is64_q, is_cfg_q;
   logic [9:0]   len_q;
   logic [7:0]   tag_q, hdr0_q;
   logic [5:0]   seq_q;
@@ -100,6 +100,42 @@ module rivet_tl_rq_wide #(
       if (k[i])
         n = n + 5'd4;
     return n;
+  endfunction
+
+  function automatic logic is_cfg_req(input logic [3:0] req);
+    return (req == RIVET_RQ_REQ_CFGRD0) || (req == RIVET_RQ_REQ_CFGRD1) ||
+           (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+  endfunction
+
+  function automatic logic [7:0] cfg_fmt(input logic [3:0] req);
+    unique case (req)
+      RIVET_RQ_REQ_CFGRD0: return RIVET_TLP_B0_CFGRD0;
+      RIVET_RQ_REQ_CFGRD1: return RIVET_TLP_B0_CFGRD1;
+      RIVET_RQ_REQ_CFGWR0: return RIVET_TLP_B0_CFGWR0;
+      default:             return RIVET_TLP_B0_CFGWR1;
+    endcase
+  endfunction
+
+  // Same 12-byte config header as rivet_tl_rq. A write's DW0 follows it.
+  function automatic logic [127:0] build_cfg_hdr(
+      input logic [7:0]  b0,
+      input logic [7:0]  tag,
+      input logic [3:0]  fbe,
+      input logic [15:0] completer,
+      input logic [31:0] addr,
+      input logic [7:0]  bus);
+    logic [127:0] h;
+    h          = '0;
+    h[7:0]     = b0;
+    h[31:24]   = 8'h01;
+    h[47:40]   = bus;
+    h[55:48]   = tag;
+    h[59:56]   = fbe;
+    h[71:64]   = completer[15:8];
+    h[79:72]   = completer[7:0];
+    h[87:80]   = {4'h0, addr[11:8]};
+    h[95:88]   = {addr[7:2], 2'b00};
+    return h;
   endfunction
 
   // 12-byte or 16-byte header in the same byte order as rivet_tl_rq.
@@ -149,6 +185,7 @@ module rivet_tl_rq_wide #(
       tx_v_q   <= 1'b0;
       is_wr_q  <= 1'b0;
       is64_q   <= 1'b0;
+      is_cfg_q <= 1'b0;
       len_q    <= '0;
       tag_q    <= '0;
       hdr0_q   <= '0;
@@ -188,11 +225,35 @@ module rivet_tl_rq_wide #(
             fbe     = s_axis_rq_tuser[3:0];
             lbe     = s_axis_rq_tuser[7:4];
             is64    = (addr_hi != 32'h0);
+            if ((MODE == RIVET_MODE_RC) && is_cfg_req(req)) begin
+              logic [7:0]   cb;
+              logic [127:0] ch;
+              cb       = cfg_fmt(req);
+              ch       = build_cfg_hdr(cb, tag, fbe, b1[55:40], addr, primary_bus_i);
+              is_wr_q  <= (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+              is64_q   <= 1'b0;
+              is_cfg_q <= 1'b1;
+              len_q    <= 10'd1;
+              tag_q    <= tag;
+              hdr0_q   <= cb;
+              if (s_axis_rq_tlast) begin
+                tx_d_q   <= ch;
+                tx_k_q   <= 16'h0FFF;
+                tx_l_q   <= 1'b1;
+                tx_v_q   <= 1'b1;
+                is_cfg_q <= 1'b0;
+                st_q     <= ST_IDLE;
+              end else begin
+                tx_d_q <= ch;
+                st_q   <= ST_DW0;
+              end
+            end else begin
             is_wr   = (req == RIVET_CQ_REQ_MEMWR);
             b0t     = is_wr ? (is64 ? RIVET_TLP_B0_MEMWR64 : RIVET_TLP_B0_MEMWR32)
                             : (is64 ? RIVET_TLP_B0_MEMRD64 : RIVET_TLP_B0_MEMRD32);
             is_wr_q <= is_wr;
             is64_q  <= is64;
+            is_cfg_q <= 1'b0;
             len_q   <= len;
             tag_q   <= tag;
             hdr0_q  <= b0t;
@@ -215,10 +276,18 @@ module rivet_tl_rq_wide #(
               tx_d_q <= build_hdr(b0t, len, tag, fbe, lbe, addr, addr_hi, 1'b0);
               st_q   <= ST_DW0;
             end
+            end
           end
         end
         ST_DW0: begin
-          if (accept) begin
+          if (accept && is_cfg_q) begin
+            tx_d_q[127:96] <= s_axis_rq_tdata[31:0];
+            tx_k_q         <= 16'hFFFF;
+            tx_l_q         <= 1'b1;
+            tx_v_q         <= 1'b1;
+            is_cfg_q       <= 1'b0;
+            st_q           <= ST_IDLE;
+          end else if (accept) begin
             logic [4:0] nb;
             logic [4:0] extra;
             nb    = keep_nbytes4(s_axis_rq_tkeep);

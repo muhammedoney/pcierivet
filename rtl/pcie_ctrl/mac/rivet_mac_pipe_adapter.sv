@@ -69,6 +69,8 @@ module rivet_mac_pipe_adapter #(
   output logic                             pipe_txdeemph_o,
   input  logic [1:0]                       txeq_ctrl_i = 2'b00,
   input  logic [3:0]                       txeq_preset_i = 4'h0,
+  input  logic                             eq_search_i = 1'b0,
+  input  logic [7:0]                       pipe_margin_msg_i = 8'h00,
   output logic [2*LANES-1:0]               pipe_txeq_ctrl_o,
   output logic [4*LANES-1:0]               pipe_txeq_preset_o,
   output logic [6*LANES-1:0]               pipe_txeq_coeff_o,
@@ -340,13 +342,31 @@ module rivet_mac_pipe_adapter #(
   assign pipe_txcompliance_o     = '0;
   assign pipe_rxpolarity_o       = rxpolarity_q;
   assign pipe_powerdown_o        = powerdown_q;
+  logic [5:0] coeff_q;
+  logic       coeff_arm_q;
+
+  // Lane 0's new cursor becomes the transmitted coefficient once adaptation
+  // finishes. eq_search_i is tied off unless a test forces the search.
+  always_ff @(posedge pclk_i or negedge rst_ni) begin
+    if (!rst_ni || !eq_search_i) begin
+      coeff_q     <= '0;
+      coeff_arm_q <= 1'b0;
+    end else if (pipe_rxeq_adapt_done_i[0]) begin
+      coeff_q     <= pipe_rxeq_new_txcoeff_i[5:0];
+      coeff_arm_q <= 1'b1;
+    end
+  end
+
   assign pipe_rate_o             = rate_q;
-  assign pipe_txmargin_o         = 3'b000;
+  assign pipe_txmargin_o         = (pipe_margin_msg_i[7:4] == 4'h1) ?
+                                   pipe_margin_msg_i[2:0] : 3'b000;
   assign pipe_txswing_o          = 1'b0;
   assign pipe_txdeemph_o         = 1'b1; // -3.5 dB default (PG239)
-  assign pipe_txeq_ctrl_o        = {LANES{txeq_ctrl_i}};
+  assign pipe_txeq_ctrl_o        = (eq_search_i && coeff_arm_q) ?
+                                   {LANES{2'b10}} : {LANES{txeq_ctrl_i}};
   assign pipe_txeq_preset_o      = {LANES{txeq_preset_i}};
-  assign pipe_txeq_coeff_o       = '0;
+  assign pipe_txeq_coeff_o       = (eq_search_i && coeff_arm_q) ?
+                                   {LANES{coeff_q}} : '0;
   assign pipe_rxeq_ctrl_o        = '0;
   assign pipe_rxeq_txpreset_o    = '0;
   assign pipe_as_mac_in_detect_o = as_mac_in_detect_q;

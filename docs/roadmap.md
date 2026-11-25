@@ -85,7 +85,7 @@ USP is the same upstream equalization slave as EP. RC and DSP are the downstream
 
 Design: [2026-11-25-gen4-usp-dsp-rc](superpowers/plans/2026-11-25-gen4-usp-dsp-rc.md).
 
-The Gen3 downstream master already transmits EQ byte `8'h0A` and preset `8'h01` at any PIPE rate, so this phase changes no LTSSM RTL. USP uses the existing Gen4 downstream peer. RC and DSP set `peer_upstream`. After Gen3 L0 that slave holds speed-change TS2 (rate byte `8'h9E`) until TxElecIdle, then repeats the equalization walk at 16 GT/s. Each mode reaches L0 at 16 GT/s and posts one RQ MemWr32. Config TLPs at 16 GT/s and switch forwarding are not in this phase.
+The Gen3 downstream master already transmits EQ byte `8'h0A` and preset `8'h01` at any PIPE rate, so this phase changes no LTSSM RTL. USP uses the existing Gen4 downstream peer. RC and DSP set `peer_upstream`. After Gen3 L0 that slave holds speed-change TS2 (rate byte `8'h9E`) until TxElecIdle, then repeats the equalization walk at 16 GT/s. Each mode reaches L0 at 16 GT/s and posts one RQ MemWr32.
 
 | Slice | Content | Gate |
 |-------|---------|------|
@@ -93,7 +93,19 @@ The Gen3 downstream master already transmits EQ byte `8'h0A` and preset `8'h01` 
 | **7B DSP** | `peer_upstream` through both equalizations | `smoke_gen4_l0_dsp_x4`, `smoke_gen4_memwr_dsp_x4` |
 | **7C RC** | Same slave as DSP | `smoke_gen4_l0_rc_x4`, `smoke_gen4_memwr_rc_x4` |
 
-## Phase 8+ — Gen5
+## Phase 8 — Config, completions, reset, switch hop, equalization
+
+Closed 2026-11-25. Gen3 first, then the same shapes at Gen4. Default elaboration is still `GEN=2`, 16-bit PIPE, `MODE=EP`. Preset search stays off unless the testbench forces `eq_search`.
+
+| Slice | Content | Gate |
+|-------|---------|------|
+| **8A Config** | RC Type 0/1 at 8 GT/s and 16 GT/s. The 128-bit and 256-bit RQ packers emit the config header the 64-bit packer already emitted. | `smoke_gen3_cfg_rc_x4`, `smoke_gen4_cfg_rc_x4` |
+| **8B CplD** | USP, DSP, and RC post one CplD after L0 | `smoke_gen3_cpld_{usp,dsp,rc}_x4`, `smoke_gen4_cpld_{usp,dsp,rc}_x4` |
+| **8C Reset** | Hot Reset and Link Disable from L0. Endpoint reacts to TS byte 5. RC originates and the peer answers with a clean directed TS. | `smoke_hot_reset_gen3_x4`, `smoke_hot_reset_gen3_rc_x4`, `smoke_disabled_gen3_x4`, `smoke_disabled_gen3_rc_x4`, and the Gen4 twins |
+| **8D Switch hop** | `rivet_sw_posted_fwd` rewrites a CQ MemWr into the RQ descriptor at 64, 128, and 256 bits and drops config. It is the fabric between two controllers, not a second trained link. | `tb/switch/rivet_sw_fwd_tb.sv` |
+| **8E Equalization** | Opt-in EQ0 sends preset 0. With no phase-2 echo it moves to preset 1 and `8'h0A`. Adaptation done copies the new cursor into `pipe_txeq_coeff` with ctrl `2'b10`. A margin message whose high nibble is `4'h1` drives `pipe_txmargin`. | `smoke_eq_search_gen3_x4`, `smoke_eq_search_gen4_x4` |
+
+## Phase 9+ — Gen5
 
 - Gen5 backlog.
 

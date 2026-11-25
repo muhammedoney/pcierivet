@@ -77,3 +77,71 @@ class rivet_hot_reset_vseq extends uvm_sequence;
     `uvm_info(get_type_name(), "Hot Reset → Detect → L0 OK", UVM_LOW)
   endtask
 endclass : rivet_hot_reset_vseq
+
+// Downstream port already in L0. It originates Hot Reset or Link Disable.
+class rivet_dn_reset_vseq extends uvm_sequence;
+  `uvm_object_utils(rivet_dn_reset_vseq)
+  `uvm_declare_p_sequencer(rivet_virtual_sequencer)
+
+  bit          link_disable = 0;
+  int unsigned retrain_watch = 400_000;
+
+  rivet_link_status_vif status_vif;
+
+  function new(string name = "rivet_dn_reset_vseq");
+    super.new(name);
+  endfunction
+
+  task body();
+    int unsigned cyc;
+    logic [5:0]  prev;
+    logic [5:0]  want;
+    bit          saw;
+    bit          back_l0;
+
+    if (!uvm_config_db#(rivet_link_status_vif)::get(null, "uvm_test_top", "status_vif", status_vif))
+      `uvm_fatal(get_type_name(), "rivet_link_status_if not set")
+
+    want = link_disable ? 6'h20 : 6'h27;
+    prev = status_vif.cfg_ltssm_state;
+    uvm_config_db#(bit)::set(null, "*", "peer_recovery_fired", 1'b0);
+    uvm_config_db#(bit)::set(null, "*", "peer_dir_ts", 1'b1);
+    if (link_disable)
+      status_vif.link_disable_req = 1'b1;
+    else
+      status_vif.hot_reset_req = 1'b1;
+    uvm_config_db#(bit)::set(null, "*", "peer_recovery_go", 1'b1);
+
+    saw = 1'b0;
+    back_l0 = 1'b0;
+    for (cyc = 0; cyc < retrain_watch; cyc++) begin
+      @(posedge status_vif.pclk);
+      if (status_vif.cfg_ltssm_state !== prev) begin
+        `uvm_info(get_type_name(),
+                  $sformatf("LTSSM 0x%02h -> 0x%02h @%0d",
+                            prev, status_vif.cfg_ltssm_state, cyc), UVM_LOW)
+        prev = status_vif.cfg_ltssm_state;
+      end
+      if (status_vif.cfg_ltssm_state == want)
+        saw = 1'b1;
+      if (saw) begin
+        status_vif.hot_reset_req = 1'b0;
+        status_vif.link_disable_req = 1'b0;
+      end
+      if (saw && (status_vif.cfg_ltssm_state == 6'h10) && status_vif.link_up) begin
+        back_l0 = 1'b1;
+        break;
+      end
+    end
+    status_vif.hot_reset_req = 1'b0;
+    status_vif.link_disable_req = 1'b0;
+    if (!saw)
+      `uvm_fatal(get_type_name(),
+        $sformatf("Did not enter 0x%02h", want))
+    if (!back_l0)
+      `uvm_fatal(get_type_name(), "Did not return to L0")
+    `uvm_info(get_type_name(),
+      link_disable ? "Link Disable → Detect → L0 OK"
+                   : "Downstream Hot Reset → Detect → L0 OK", UVM_LOW)
+  endtask
+endclass : rivet_dn_reset_vseq

@@ -171,6 +171,22 @@ USP, DSP, and RC at `GEN=4`, x4, 64-bit pipe. Each row printed `UVM_ERROR : 0` a
 | RC L0 | `.\scripts\sim_questa.ps1 smoke_gen4_l0_rc_x4 4 1` | PASS |
 | RC RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen4_memwr_rc_x4 4 1` | PASS |
 
+## Phase 8 config, completions, reset, switch, EQ (closed 2026-11-25)
+
+RC config Type 0/1, one CplD from USP/DSP/RC, Hot Reset, and Link Disable at 8 GT/s and 16 GT/s. The posted forwarder unit test forwards a MemWr and drops config at 64, 128, and 256 bits. Preset search is off unless `eq_search` is forced: EQ0 offers preset 0, then preset 1. Each row printed `UVM_ERROR : 0` and `UVM_FATAL : 0`, except the forwarder, which printed `PASS`.
+
+| Gate | Command | Status |
+|------|---------|--------|
+| RC config 8 GT/s | `.\scripts\sim_questa.ps1 smoke_gen3_cfg_rc_x4 4 1` | PASS |
+| RC config 16 GT/s | `.\scripts\sim_questa.ps1 smoke_gen4_cfg_rc_x4 4 1` | PASS |
+| USP/DSP/RC CplD Gen3 | `smoke_gen3_cpld_usp_x4` mode 2, `smoke_gen3_cpld_dsp_x4` mode 3, `smoke_gen3_cpld_rc_x4` mode 1 | PASS |
+| USP/DSP/RC CplD Gen4 | `smoke_gen4_cpld_usp_x4` mode 2, `smoke_gen4_cpld_dsp_x4` mode 3, `smoke_gen4_cpld_rc_x4` mode 1 | PASS |
+| Hot Reset / Disable Gen3 | `smoke_hot_reset_gen3_x4` mode 0, `smoke_hot_reset_gen3_rc_x4` mode 1, `smoke_disabled_gen3_x4` mode 0, `smoke_disabled_gen3_rc_x4` mode 1 | PASS |
+| Hot Reset / Disable Gen4 | `smoke_hot_reset_gen4_x4` mode 0, `smoke_hot_reset_gen4_rc_x4` mode 1, `smoke_disabled_gen4_x4` mode 0, `smoke_disabled_gen4_rc_x4` mode 1 | PASS |
+| Posted forwarder | `vsim -c rivet_sw_fwd_tb` | PASS |
+| Preset, coeff, margin Gen3 | `.\scripts\sim_questa.ps1 smoke_eq_search_gen3_x4 4 1` | PASS |
+| Preset, coeff, margin Gen4 | `.\scripts\sim_questa.ps1 smoke_eq_search_gen4_x4 4 1` | PASS |
+
 ## Phase 1 UVM build-out (historical)
 
 | Step | Status |

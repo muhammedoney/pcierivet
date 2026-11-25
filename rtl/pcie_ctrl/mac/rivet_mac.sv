@@ -171,6 +171,12 @@ module rivet_mac #(
   assign aspm_l1_req      = 1'b0;
   assign hot_reset_req    = 1'b0;
   assign link_disable_req = 1'b0;
+  // Opt-in equalization search and a PIPE margin message. Tied off here;
+  // the testbench forces the nets the same way it forces Hot Reset.
+  logic               eq_search;
+  logic [7:0]         margin_msg;
+  assign eq_search  = 1'b0;
+  assign margin_msg = 8'h00;
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] map_tx_data;
   logic [2*LANES-1:0]               map_tx_datak;
@@ -255,6 +261,7 @@ module rivet_mac #(
     .aspm_l1_req_i        (aspm_l1_req),
     .hot_reset_req_i      (hot_reset_req),
     .link_disable_req_i   (link_disable_req),
+    .eq_search_i          (eq_search),
     .os_req_o             (os_req),
     .os_req_valid_o       (os_req_valid),
     .os_cnt_clr_o         (os_cnt_clr),
@@ -550,6 +557,8 @@ module rivet_mac #(
     .pipe_txdeemph_o         (pipe_txdeemph_o),
     .txeq_ctrl_i             (txeq_ctrl),
     .txeq_preset_i           (txeq_preset),
+    .eq_search_i             (eq_search),
+    .pipe_margin_msg_i       (margin_msg),
     .pipe_txeq_ctrl_o        (pipe_txeq_ctrl_o),
     .pipe_txeq_preset_o      (pipe_txeq_preset_o),
     .pipe_txeq_coeff_o       (pipe_txeq_coeff_o),

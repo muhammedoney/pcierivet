@@ -30,6 +30,16 @@ interface rivet_link_status_if (
   logic       rq_watch_arm;
   logic [7:0] rq_watch_b0;
   logic       rq_watch_hit;
+  // Opt-in preset search, coefficient apply, and margin message.
+  logic       eq_search;
+  logic [7:0] margin_msg;
+  logic       coeff_go;
+  logic [5:0] coeff_value;
+  logic       eq_saw_preset0;
+  logic       eq_saw_preset1;
+  logic [2:0] txmargin;
+  logic [5:0] txeq_coeff0;
+  logic [1:0] txeq_ctrl0;
   // TB forces the PIPE adapter rate (rivet_tb_top owns the force).
   logic       pipe_rate_force;
   logic [2:0] pipe_rate_value;

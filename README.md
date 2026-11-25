@@ -7,12 +7,12 @@
 | Area | State |
 |------|--------|
 | Mode | Gen2 EP, RC, USP, and DSP closed in sim |
-| Generation | **Gen4 EP x4 closed in simulation.** Gen5 is not started ([evolution notes](docs/gen-evolution.md)) |
+| Generation | **Gen4 x4 closed in simulation**, including RC config, CplD, directed reset, and opt-in equalization. Gen5 is not started ([evolution notes](docs/gen-evolution.md)) |
 | Lanes | Parametric ×1 / ×2 / ×4 |
 | Target FPGA | **VMK180** preferred, **VCU118** also in tree. VPK180 is the later Premium path |
 | Verification | Phase 1 MVP + Phase 2 Full Gen2 EP (sim) closed; Verilator CI; Vivado BFM side-path |
 
-Phase 1/2 Gen2 EP sim gates, Phase 3 Gen2 port roles, Phase 4 Gen3 EP x4, and Phase 5 Gen4 EP x4 are closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Gen5 backlog, not started.
+Phase 1/2 Gen2 EP sim gates, Phase 3 Gen2 port roles, Phase 4 Gen3 EP x4, Phase 5 Gen4 EP x4, and Phase 6–8 multi-mode config, completions, reset, and opt-in equalization are closed (see [roadmap](docs/roadmap.md), [verification](docs/verification.md)). Next: Gen5 backlog, not started.
 
 ## Measured throughput
 

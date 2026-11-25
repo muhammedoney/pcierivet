@@ -1,4 +1,4 @@
-# Generation evolution (Gen4 EP x4 now, Gen5 not started)
+# Generation evolution (Gen4 x4 closed, Gen5 not started)
 
 **Active sim target: Gen4 EP x4** (`GEN=4`, `PIPE_DATA_WIDTH=64`, 16 GT/s). Default elaboration stays `GEN=2` and a 16-bit pipe so every Gen2 smoke still builds unchanged. Gen5 is not started.
 
@@ -91,4 +91,4 @@ Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac
 
 ## Phase priority reminder
 
-See [roadmap.md](roadmap.md). Phase 4 (Gen3 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-24. Phase 5 (Gen4 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-25. Phase 6 closed on 2026-11-25: at Gen3, USP is the upstream equalization slave (same machine as EP) and RC/DSP are the downstream master, transmitting EQ byte `8'h0A` and preset `8'h01`. Phase 7 closed on 2026-11-25: the same three modes reach L0 at 16 GT/s and post one RQ MemWr32. The master needs no new RTL. The upstream peer holds speed-change TS2 (rate byte `8'h9E`) across the Gen3-to-Gen4 recovery, then repeats the slave walk at rate 3. Next is the Gen5 backlog.
+See [roadmap.md](roadmap.md). Phase 4 (Gen3 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-24. Phase 5 (Gen4 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-25. Phase 6 closed on 2026-11-25: at Gen3, USP is the upstream equalization slave (same machine as EP) and RC/DSP are the downstream master, transmitting EQ byte `8'h0A` and preset `8'h01`. Phase 7 closed on 2026-11-25: the same three modes reach L0 at 16 GT/s and post one RQ MemWr32. The master needs no new RTL. The upstream peer holds speed-change TS2 (rate byte `8'h9E`) across the Gen3-to-Gen4 recovery, then repeats the slave walk at rate 3. Phase 8 closed on 2026-11-25: RC config Type 0/1, CplD from USP/DSP/RC, Hot Reset, and Link Disable at both 8 GT/s and 16 GT/s; a posted CQ-to-RQ forwarder; and an opt-in preset search that falls through to preset 1, then one coefficient and a margin message. Next is the Gen5 backlog.

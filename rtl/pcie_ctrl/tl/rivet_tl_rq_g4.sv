@@ -135,6 +135,41 @@ module rivet_tl_rq_g4 #(
     return n;
   endfunction
 
+  function automatic logic is_cfg_req(input logic [3:0] req);
+    return (req == RIVET_RQ_REQ_CFGRD0) || (req == RIVET_RQ_REQ_CFGRD1) ||
+           (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+  endfunction
+
+  function automatic logic [7:0] cfg_fmt(input logic [3:0] req);
+    unique case (req)
+      RIVET_RQ_REQ_CFGRD0: return RIVET_TLP_B0_CFGRD0;
+      RIVET_RQ_REQ_CFGRD1: return RIVET_TLP_B0_CFGRD1;
+      RIVET_RQ_REQ_CFGWR0: return RIVET_TLP_B0_CFGWR0;
+      default:             return RIVET_TLP_B0_CFGWR1;
+    endcase
+  endfunction
+
+  function automatic logic [127:0] build_cfg_hdr(
+      input logic [7:0]  b0,
+      input logic [7:0]  tag,
+      input logic [3:0]  fbe,
+      input logic [15:0] completer,
+      input logic [31:0] addr,
+      input logic [7:0]  bus);
+    logic [127:0] h;
+    h          = '0;
+    h[7:0]     = b0;
+    h[31:24]   = 8'h01;
+    h[47:40]   = bus;
+    h[55:48]   = tag;
+    h[59:56]   = fbe;
+    h[71:64]   = completer[15:8];
+    h[79:72]   = completer[7:0];
+    h[87:80]   = {4'h0, addr[11:8]};
+    h[95:88]   = {addr[7:2], 2'b00};
+    return h;
+  endfunction
+
   function automatic logic [127:0] build_hdr(
       input logic [7:0]  b0,
       input logic [9:0]  len,
@@ -339,11 +374,18 @@ module rivet_tl_rq_g4 #(
           fbe     = s_axis_rq_tuser[3:0];
           lbe     = s_axis_rq_tuser[7:4];
           is64    = (addr_hi != 32'h0);
-          is_wr   = (req == RIVET_CQ_REQ_MEMWR);
-          b0t     = is_wr ? (is64 ? RIVET_TLP_B0_MEMWR64 : RIVET_TLP_B0_MEMWR32)
+          if ((MODE == RIVET_MODE_RC) && is_cfg_req(req)) begin
+            is_wr = (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+            b0t   = cfg_fmt(req);
+            hdr   = build_cfg_hdr(b0t, tag, fbe, b1[55:40], addr, primary_bus_i);
+            hlen  = 6'd12;
+          end else begin
+            is_wr = (req == RIVET_CQ_REQ_MEMWR);
+            b0t   = is_wr ? (is64 ? RIVET_TLP_B0_MEMWR64 : RIVET_TLP_B0_MEMWR32)
                           : (is64 ? RIVET_TLP_B0_MEMRD64 : RIVET_TLP_B0_MEMRD32);
-          hdr     = build_hdr(b0t, len, tag, fbe, lbe, addr, addr_hi, is64);
-          hlen    = is64 ? 6'd16 : 6'd12;
+            hdr   = build_hdr(b0t, len, tag, fbe, lbe, addr, addr_hi, is64);
+            hlen  = is64 ? 6'd16 : 6'd12;
+          end
           hdr_hold = b0t;
           wr_hold  = is_wr;
           len_hold = len;
@@ -375,11 +417,18 @@ module rivet_tl_rq_g4 #(
           fbe     = s_axis_rq_tuser[3:0];
           lbe     = s_axis_rq_tuser[7:4];
           is64    = (addr_hi != 32'h0);
-          is_wr   = (req == RIVET_CQ_REQ_MEMWR);
-          b0t     = is_wr ? (is64 ? RIVET_TLP_B0_MEMWR64 : RIVET_TLP_B0_MEMWR32)
+          if ((MODE == RIVET_MODE_RC) && is_cfg_req(req)) begin
+            is_wr = (req == RIVET_RQ_REQ_CFGWR0) || (req == RIVET_RQ_REQ_CFGWR1);
+            b0t   = cfg_fmt(req);
+            hdr   = build_cfg_hdr(b0t, tag, fbe, b1[55:40], addr, primary_bus_i);
+            hlen  = 6'd12;
+          end else begin
+            is_wr = (req == RIVET_CQ_REQ_MEMWR);
+            b0t   = is_wr ? (is64 ? RIVET_TLP_B0_MEMWR64 : RIVET_TLP_B0_MEMWR32)
                           : (is64 ? RIVET_TLP_B0_MEMRD64 : RIVET_TLP_B0_MEMRD32);
-          hdr     = build_hdr(b0t, len, tag, fbe, lbe, addr, addr_hi, is64);
-          hlen    = is64 ? 6'd16 : 6'd12;
+            hdr   = build_hdr(b0t, len, tag, fbe, lbe, addr, addr_hi, is64);
+            hlen  = is64 ? 6'd16 : 6'd12;
+          end
           pay_n   = hi_pay_bytes(s_axis_rq_tkeep);
           hdr_hold = b0t;
           wr_hold  = is_wr;
