@@ -7,10 +7,15 @@ Preferred bring-up kit:
 | Kit | AMD Versal Prime Series **VMK180** Evaluation Kit (EK-VMK180-G) |
 | FPGA | **XCVM1802** (Versal Prime, GTY) |
 | Example Vivado part | `xcvm1802-vsva2197-2MP-e-S` |
-| PHY IP | **PG345** generated for XCVM1802 GTY, Gen2 ×4 |
+| PHY IP | **PG345** generated for XCVM1802 GTY, Gen2 ×4. `create_project.cmd 4 ep` asks for `link_speed 4` |
 | Edge | ×8 PCIe, lanes 0–3 on quad 103 (`GTY_QUAD_X0Y3`) |
 
-VPK180 is the later Premium / GTYP / Gen5 kit. The in-tree Versal project is `fpga/vmk180/` and its PHY is still generated as Gen2 ×4. The soft controller's Gen3 and Gen4 x4 paths are simulation-only until a lab PHY is asked for.
+VPK180 is the later Premium / GTYP / Gen5 kit. The no-argument project is still Gen2 x4. `fpga/build_gen4_ep.ps1` builds the Gen4 EP x4 lab image for both kits. Gen3 and the other port roles stay a later plan.
+
+| Command | Image |
+|---------|--------|
+| no arguments | Gen2 x4 EP, `fpga/<board>/build/` |
+| `4 ep` | Gen4 x4 EP, `fpga/<board>/build/gen4_ep/` |
 
 ## UltraScale+ (second choice)
 

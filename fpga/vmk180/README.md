@@ -2,7 +2,7 @@
 
 Local Vivado project for a first lab check on the Versal primary board: does the Gen2 Endpoint reach **L0**, and can the host complete Type 0 config (and BAR0 Mem32 PIO).
 
-The soft controller is the same RTL as simulation and as the VCU118 shell. This project generates a **PG345** `pcie_phy_versal` at Gen2 ×4, so the bitstream stays Gen2. Gen3 and Gen4 x4 are closed in simulation and are not this board image. That netlist is not in git.
+No arguments still generate PG345 at Gen2 x4 into `fpga/vmk180/build/`. `create_project.cmd 4 ep` generates PG345 at `link_speed 4` into `fpga/vmk180/build/gen4_ep/` and the bitstream is `rivet_vmk180_gen4_ep.bit`. Gen3, RC, DSP, and USP images are a later plan. The vendor netlist is not in git.
 
 Primary Versal part: **XCVM1802** on the **VMK180** (EK-VMK180-G). VPK180 (Premium, GTYP) is the later Gen5 path, not this project.
 
@@ -18,7 +18,7 @@ fpga\vmk180\synth.cmd
 fpga\vmk180\impl.cmd
 ```
 
-`create_project.cmd` only creates the project. `synth.cmd` opens `fpga/vmk180/build/rivet_vmk180.xpr` and runs `synth_1`. `impl.cmd` runs synthesis, implementation, and bitstream, and prints each Vivado step in the console. One-shot create-and-synth is still `create_project.cmd synth`.
+`create_project.cmd` only creates the project. `synth.cmd` opens `fpga/vmk180/build/rivet_vmk180.xpr` and runs `synth_1`. `impl.cmd` runs synthesis, implementation, and bitstream, and prints each Vivado step in the console. The same three commands take `4 ep` for the Gen4 project. `synth.cmd` is the synth entry.
 
 Or call Vivado directly:
 
