@@ -523,6 +523,7 @@ module rivet_dll_tlp_rx16 #(
         logic [5:0]   src_b;
         logic [5:0]   room;
         logic [255:0] srcw;
+        logic [31:0]  keep_full;
         acc_t  = acc_q;
         n_t    = acc_n_q;
         left_t = pld_left_q;
@@ -543,8 +544,9 @@ module rivet_dll_tlp_rx16 #(
         if (!play_stall && can_send &&
             ((n_t >= room) || ((left_t == 14'd0) && (n_t != 6'd0)))) begin
           emit_n = (n_t >= room) ? room : n_t;
+          keep_full = keep_prefix(emit_n);
           tl_data_q <= acc_t[DATA_W-1:0];
-          tl_keep_q <= keep_prefix(emit_n)[DATA_W/8-1:0];
+          tl_keep_q <= keep_full[DATA_W/8-1:0];
           tl_v_q    <= 1'b1;
           tl_last_q <= (left_t == 14'd0) && (emit_n == n_t) && !play_open_q;
           tl_sent_q <= 1'b1;

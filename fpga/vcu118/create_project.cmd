@@ -48,14 +48,16 @@ if not defined VIVADO_BAT (
 )
 
 echo Using %VIVADO_BAT%
+set "RC=1"
 if defined RIVET_TCLARGS (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\create_project.tcl" -tclargs %RIVET_TCLARGS%
+  set "RC=!ERRORLEVEL!"
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\create_project.tcl"
+  set "RC=!ERRORLEVEL!"
 )
-set "RC=!ERRORLEVEL!"
-if not "%RC%"=="0" call :pause_if_explorer
-exit /b %RC%
+if not "!RC!"=="0" call :pause_if_explorer
+exit /b !RC!
 
 :pick_where
 for /f "delims=" %%P in ('where %1 2^>nul') do (

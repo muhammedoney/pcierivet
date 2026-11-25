@@ -64,20 +64,22 @@ if not exist "%XPR%" (
 
 echo Using %VIVADO_BAT%
 echo Log:   %LOG%
+set "RC=1"
 if defined RIVET_TCLARGS (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%" -tclargs %RIVET_TCLARGS%
+  set "RC=!ERRORLEVEL!"
 ) else (
   call "%VIVADO_BAT%" -mode batch -source "fpga\vcu118\impl.tcl" -nojournal -log "%LOG%"
+  set "RC=!ERRORLEVEL!"
 )
-set "RC=!ERRORLEVEL!"
 echo.
-if not "%RC%"=="0" (
-  echo FAILED with exit code %RC% - see %LOG%
+if not "!RC!"=="0" (
+  echo FAILED with exit code !RC! - see %LOG%
   call :pause_if_explorer
 ) else (
   echo PASS: impl_1 bitstream. See %LOG%
 )
-exit /b %RC%
+exit /b !RC!
 
 :pick_where
 for /f "delims=" %%P in ('where %1 2^>nul') do (
