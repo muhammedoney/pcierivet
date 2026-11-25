@@ -43,7 +43,7 @@ class rivet_axi_rq_memwr32_seq extends uvm_sequence #(rivet_axi_st_item);
     b2 = {32'h0, data};
     u  = rivet_axi_tlp_util::rq_tuser(first_be, last_be);
 
-    if (axi_w == 128) begin
+    if (axi_w >= 128) begin
       rivet_axi_st_item item;
       item = rivet_axi_st_item::type_id::create("rq_desc");
       start_item(item);

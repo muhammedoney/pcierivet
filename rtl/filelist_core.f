@@ -27,8 +27,10 @@ rtl/pcie_ctrl/tl/rivet_tl_cq.sv
 rtl/pcie_ctrl/tl/rivet_tl_cc.sv
 rtl/pcie_ctrl/tl/rivet_tl_rq.sv
 rtl/pcie_ctrl/tl/rivet_tl_rq_wide.sv
+rtl/pcie_ctrl/tl/rivet_tl_rq_g4.sv
 rtl/pcie_ctrl/tl/rivet_tl_rc.sv
 rtl/pcie_ctrl/tl/rivet_tl_rc_wide.sv
+rtl/pcie_ctrl/tl/rivet_tl_rc_g4.sv
 rtl/pcie_ctrl/tl/rivet_tl_msi.sv
 rtl/pcie_ctrl/tl/rivet_tl_aer.sv
 rtl/pcie_ctrl/tl/rivet_tl_tx_mux.sv

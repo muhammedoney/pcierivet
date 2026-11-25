@@ -15,7 +15,7 @@ package rivet_uvm_pkg;
 `ifndef RIVET_TB_GEN
   `define RIVET_TB_GEN 2
 `endif
-  localparam int unsigned RIVET_UVM_AXI_W = (`RIVET_TB_GEN >= 3) ? 128 : 64;
+  localparam int unsigned RIVET_UVM_AXI_W = rivet_axi_data_width(`RIVET_TB_GEN);
   typedef virtual rivet_pipe_if #(.LANES(`RIVET_TB_LANES), .PIPE_DATA_WIDTH(`RIVET_TB_PIPE_W)) rivet_pipe_vif;
   typedef virtual rivet_link_status_if rivet_link_status_vif;
   typedef virtual rivet_axi_st_if #(
@@ -147,6 +147,7 @@ package rivet_uvm_pkg;
   `include "tests/smoke_companion_gen2_x4.svh"
   `include "tests/rivet_perf_gen2_x4.svh"
   `include "tests/rivet_perf_gen3_x4.svh"
+  `include "tests/rivet_perf_gen4_x4.svh"
   `include "tests/smoke_gen3_block_x4.svh"
   `include "tests/smoke_gen4_block_x4.svh"
   `include "tests/smoke_gen3_ts_x4.svh"

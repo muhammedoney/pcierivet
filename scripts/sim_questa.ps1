@@ -38,7 +38,7 @@ Write-Host "Compiling Rivet UVM (test=$TestName lanes=$Lanes mode=$Mode)..."
   "+define+RIVET_TB_MODE=$Mode" `
   "+define+RIVET_TB_GEN=$Gen" `
   "+define+RIVET_TB_PIPE_W=$PipeW" `
-  $(if ($Gen -ge 3) { "+define+RIVET_RQ_WIDE" }) `
+  $(if ($Gen -ge 4) { "+define+RIVET_RQ_G4" } elseif ($Gen -ge 3) { "+define+RIVET_RQ_WIDE" }) `
   "+incdir+tb/uvm" `
   "+incdir+rtl/interfaces" `
   "+incdir+rtl/pcie_ctrl" `

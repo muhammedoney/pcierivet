@@ -437,6 +437,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     bit          recovery_go;
     bit          recovery_pulse;
     logic [2:0]  last_rate;
+    // Pipe data is one cycle behind the rate pin. Descramble with the
+    // rate that actually scrambled this word.
+    logic [2:0]  rate_d1;
     int unsigned rate_ack_left;
     logic [7:0]  peer_rate_byte;
     logic [7:0]  peer_train_byte;
@@ -506,9 +509,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     tlp_seq = 0;
     tlp_sym = 0; tlp_nbytes = 0; tlp_frame = '0;
     recovery_go = 1'b0; recovery_pulse = 1'b0;
-    last_rate = 3'd0; rate_ack_left = 0; peer_rate_byte = PEER_RATE;
+    last_rate = 3'd0; rate_d1 = 3'd0; rate_ack_left = 0; peer_rate_byte = PEER_RATE;
     g3_off = 0; g3_sets = 0; g3_speed = 1'b0; com_hold = 0; g3_frame_beat = 1'b0;
-    g3_rx_arm = 1'b0; g3_rx_data_blk = 1'b0; g3_rx_skp_blk = 1'b0;
+    g3_rx_arm = 1'b0;
+    g3_rx_data_blk = 1'b0; g3_rx_skp_blk = 1'b0;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
     rxstatus_err_go = 1'b0; rxstatus_err_left = 0;
@@ -681,8 +685,15 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         automatic int unsigned ends_before;
         ends_before = tlp_ends;
       if (perf_rc && peer_active && (vif.txelecidle == '0) &&
-          peer_gen3 && (vif.rate == 3'd2) && (vif.txdata_valid != '0)) begin
+          (vif.txdata_valid != '0) &&
+          (((peer_gen3 || peer_gen4) && (vif.rate == 3'd2)) ||
+           (peer_gen4 && (vif.rate == 3'd3)))) begin
         // Arm on the first data block, matching the DUT scrambler's reseed.
+        // Gen4 entry clears the arm so the next data block reloads the seed.
+        automatic int unsigned rx_ns;
+        rx_ns = (vif.rate == 3'd3) ? 8 : 4;
+        if (peer_gen4 && (vif.rate == 3'd3) && (rate_d1 != 3'd3))
+          g3_rx_arm = 1'b0;
         if (!g3_rx_arm && vif.txstart_block[0] && (vif.txsync_header[1:0] == 2'b01)) begin
           for (l = 0; l < peer_lanes; l++)
             g3_rx_lfsr[l] = 23'h7FFFFF;
@@ -694,7 +705,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
                            (vif.txdata[7:0] == 8'hAA);
         end
         if (g3_rx_arm && !g3_rx_skp_blk) begin
-          for (s = 0; s < 4; s++) begin
+          for (s = 0; s < rx_ns; s++) begin
             for (l = 0; l < peer_lanes; l++) begin
               automatic logic [30:0] step;
               automatic logic [7:0]  raw, sym;
@@ -1094,6 +1105,12 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         vif.rxstart_block <= '0;
         vif.rxsync_header <= '0;
       end
+      // The valid/elecidle guard above misses the rate-change cycle, and
+      // rate_d1 would then already be Gen4 so the arm would keep the Gen3
+      // LFSR for the rest of the link.
+      if (peer_gen4 && (vif.rate == 3'd3) && (rate_d1 != 3'd3))
+        g3_rx_arm = 1'b0;
+      rate_d1 = vif.rate;
     end
   endtask
 endclass : rivet_pipe_ltssm_peer

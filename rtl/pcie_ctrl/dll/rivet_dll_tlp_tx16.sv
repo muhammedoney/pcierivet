@@ -8,7 +8,9 @@
 // earlier beat does not.
 
 module rivet_dll_tlp_tx16 #(
-  parameter int unsigned SLOT_BYTES = 160
+  parameter int unsigned SLOT_BYTES = 160,
+  // 128 emits 16-byte MAC beats. 256 emits 32-byte beats (Gen4 x4).
+  parameter int unsigned WORD_BITS  = 128
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -19,7 +21,7 @@ module rivet_dll_tlp_tx16 #(
   output logic         tl_ready_o,
   input  logic [15:0]  tl_len_i,
   input  logic         tl_last_i,
-  input  logic [127:0] tl_word_i,
+  input  logic [WORD_BITS-1:0] tl_word_i,
   output logic [15:0]  tl_word_idx_o,
 
   input  logic         replay_valid_i,
@@ -37,6 +39,10 @@ module rivet_dll_tlp_tx16 #(
   output logic [15:0]  cap_len_o,
   output logic         cap_hi_valid_o,
   output logic [63:0]  cap_hi_data_o,
+  // Bytes 16..31 of a 32-byte beat. Idle when WORD_BITS is 128.
+  output logic         cap_ex_valid_o,
+  output logic [63:0]  cap_ex0_o,
+  output logic [63:0]  cap_ex1_o,
 
   output rivet_pkg::rivet_dll_mac_tx_beat_t beat_o,
   output logic                              beat_valid_o,
@@ -48,7 +54,7 @@ module rivet_dll_tlp_tx16 #(
 
   import rivet_pkg::*;
 
-  localparam int unsigned BEAT_B = 16;
+  localparam int unsigned BEAT_B = WORD_BITS / 8;
   // Steady state holds the 2-byte sequence skew plus one beat. The
   // rest covers the first packet waiting for a Gen3 block boundary.
   localparam int unsigned ACC_B  = 80;
@@ -79,15 +85,15 @@ module rivet_dll_tlp_tx16 #(
   logic [127:0] hold_q;
   logic [63:0]  cap_acc_q;
   logic [3:0]   cap_n_q;
-  logic         cap_pend_q, cap_last_q, cap_hi_q;
-  logic [63:0]  cap_word_q, cap_hi_word_q;
+  logic         cap_pend_q, cap_last_q, cap_hi_q, cap_ex_q;
+  logic [63:0]  cap_word_q, cap_hi_word_q, cap_ex0_q, cap_ex1_q;
   logic         pref_q, emit_sop_q, replay_q;
   logic         start_rp;
 
   logic         cap_free;
   logic         live_v;
   logic         live_eop;
-  logic [4:0]   live_n;
+  logic [5:0]   live_n;
   logic [6:0]   left_n;
   logic         third_frame;
   logic [15:0]  room_add;
@@ -101,6 +107,9 @@ module rivet_dll_tlp_tx16 #(
   assign cap_len_o      = clen0_q;
   assign cap_hi_valid_o = cap_hi_q;
   assign cap_hi_data_o  = cap_hi_word_q;
+  assign cap_ex_valid_o = cap_ex_q;
+  assign cap_ex0_o      = cap_ex0_q;
+  assign cap_ex1_o      = cap_ex1_q;
   assign tl_word_idx_o  = 16'd0;
 
   assign start_rp = (state_q == ST_IDLE) && pref_q && replay_en_i &&
@@ -114,9 +123,9 @@ module rivet_dll_tlp_tx16 #(
 
   assign cap_free = !cap_pend_q || cap_ready_i;
 
-  // A new packet needs 2 sequence bytes + a 16-byte beat + 4 LCRC bytes.
+  // A new packet needs 2 sequence bytes + one beat + 4 LCRC bytes.
   // An open packet needs at most one more beat and the LCRC.
-  assign room_add = pkt_q ? 16'd20 : 16'd22;
+  assign room_add = pkt_q ? 16'(BEAT_B + 4) : 16'(BEAT_B + 6);
 
   always_comb begin
     live_v   = 1'b0;
@@ -125,34 +134,44 @@ module rivet_dll_tlp_tx16 #(
     if ((state_q != ST_EMIT) && cap_free && (acc_n_q != 6'd0)) begin
       if ((acc_n_q >= 6'(BEAT_B)) && ((eop_n_q == 6'd0) || (eop_n_q > 6'(BEAT_B)))) begin
         live_v   = 1'b1;
-        live_n   = 5'(BEAT_B);
+        live_n   = 6'(BEAT_B);
         live_eop = 1'b0;
       end else if ((eop_n_q != 6'd0) && (eop_n_q <= 6'(BEAT_B)) &&
                    (acc_n_q >= eop_n_q)) begin
         live_v   = 1'b1;
-        live_n   = eop_n_q[4:0];
+        live_n   = eop_n_q[5:0];
         live_eop = 1'b1;
       end
     end
   end
 
   always_comb begin
+    logic [15:0] nb;
+    logic [15:0] need;
     left_n = acc_n_q;
     if (live_v && beat_ready_i)
       left_n = acc_n_q - {1'b0, live_n};
     // Two finished frames already sit in the accumulator. The next beat
     // would be a third, and there is only one slot behind the first end.
+    // A parked beat is sized from its keep, not from a full beat. The max
+    // Gen4 frame is 4118 bytes and the slot is 4128; reserving BEAT_B+4
+    // for a 16-byte tail refuses that tail and never closes the packet.
     third_frame = !pkt_q && (eop2_n_q != 6'd0);
+    nb   = (tl_len_i >= 16'(BEAT_B)) ? 16'(BEAT_B) : tl_len_i;
+    need = room_add;
+    if (tl_valid_i && (nb != 16'd0))
+      need = nb + (pkt_q ? 16'd0 : 16'd2) +
+             (tl_last_i ? 16'(RIVET_TLP_LCRC_BYTES) : 16'd0);
     tl_ready_o = enable_i && !replay_en_i && !start_rp &&
                  (state_q != ST_EMIT) && !third_frame &&
-                 (({1'b0, left_n} + {1'b0, room_add[6:0]}) <= 8'(ACC_B)) &&
-                 ((pay_q + room_add) <= 16'(SLOT_BYTES));
+                 (({1'b0, left_n} + {1'b0, need[6:0]}) <= 8'(ACC_B)) &&
+                 ((pay_q + need) <= 16'(SLOT_BYTES));
   end
 
-  function automatic logic [15:0] len_to_keep16(input logic [15:0] n);
-    logic [15:0] k;
+  function automatic logic [31:0] len_to_keep16(input logic [15:0] n);
+    logic [31:0] k;
     k = '0;
-    for (int unsigned i = 0; i < 16; i++)
+    for (int unsigned i = 0; i < 32; i++)
       if (16'(i) < n)
         k[i] = 1'b1;
     return k;
@@ -160,17 +179,19 @@ module rivet_dll_tlp_tx16 #(
 
   function automatic logic [31:0] fold16(
       input logic [31:0]  crc,
-      input logic [127:0] data,
-      input logic [4:0]   n);
+      input logic [255:0] data,
+      input logic [5:0]   n);
     logic [31:0] c;
-    logic [3:0]  n0, n1;
-    c  = crc;
-    n0 = (n >= 5'd8) ? 4'd8 : n[3:0];
-    n1 = (n > 5'd8) ? 4'(n - 5'd8) : 4'd0;
-    if (n0 != 4'd0)
-      c = rivet_crc32_fold(c, data[63:0], n0);
-    if (n1 != 4'd0)
-      c = rivet_crc32_fold(c, data[127:64], n1);
+    c = crc;
+    for (int unsigned w = 0; w < 4; w++) begin
+      if (n > 6'(w * 8)) begin
+        automatic logic [5:0] left;
+        automatic logic [3:0] nw;
+        left = n - 6'(w * 8);
+        nw   = (left >= 6'd8) ? 4'd8 : left[3:0];
+        c    = rivet_crc32_fold(c, data[64*w +: 64], nw);
+      end
+    end
     return c;
   endfunction
 
@@ -218,12 +239,12 @@ module rivet_dll_tlp_tx16 #(
   function automatic logic [639:0] append_bytes(
       input logic [639:0] acc_in,
       input logic [6:0]   n0,
-      input logic [127:0] src,
-      input logic [4:0]   n);
+      input logic [255:0] src,
+      input logic [5:0]   n);
     logic [639:0] a;
     a = acc_in;
-    for (int unsigned i = 0; i < 16; i++) begin
-      if (5'(i) < n)
+    for (int unsigned i = 0; i < 32; i++) begin
+      if (6'(i) < n)
         a[8*(32'(n0) + i) +: 8] = src[8*i +: 8];
     end
     return a;
@@ -246,7 +267,8 @@ module rivet_dll_tlp_tx16 #(
       beat_o.sop   = emit_sop_q;
       beat_o.eop   = live_eop;
       beat_o.keep  = len_to_keep16(16'(live_n));
-      beat_o.data  = acc_q[127:0];
+      beat_o.data  = '0;
+      beat_o.data[BEAT_B*8-1:0] = acc_q[BEAT_B*8-1:0];
     end
   end
 
@@ -276,8 +298,11 @@ module rivet_dll_tlp_tx16 #(
       cap_pend_q    <= 1'b0;
       cap_last_q    <= 1'b0;
       cap_hi_q      <= 1'b0;
+      cap_ex_q      <= 1'b0;
       cap_word_q    <= '0;
       cap_hi_word_q <= '0;
+      cap_ex0_q     <= '0;
+      cap_ex1_q     <= '0;
       pref_q        <= 1'b0;
       emit_sop_q    <= 1'b0;
       replay_q      <= 1'b0;
@@ -296,9 +321,12 @@ module rivet_dll_tlp_tx16 #(
       logic [3:0]   cap_n;
       logic         cap_pend;
       logic         cap_hi;
+      logic         cap_ex;
       logic         cap_last;
       logic [63:0]  cap_word;
       logic [63:0]  cap_hi_word;
+      logic [63:0]  cap_ex0;
+      logic [63:0]  cap_ex1;
       logic [11:0]  cseq0, cseq1;
       logic [15:0]  clen0, clen1;
       logic [1:0]   cnum;
@@ -317,9 +345,12 @@ module rivet_dll_tlp_tx16 #(
       cap_n        = cap_n_q;
       cap_pend     = cap_pend_q;
       cap_hi       = cap_hi_q;
+      cap_ex       = cap_ex_q;
       cap_last     = cap_last_q;
       cap_word     = cap_word_q;
       cap_hi_word  = cap_hi_word_q;
+      cap_ex0      = cap_ex0_q;
+      cap_ex1      = cap_ex1_q;
       cseq0        = cseq0_q;
       cseq1        = cseq1_q;
       clen0        = clen0_q;
@@ -329,6 +360,7 @@ module rivet_dll_tlp_tx16 #(
       if (cap_pend_q && cap_ready_i) begin
         cap_pend = 1'b0;
         cap_hi   = 1'b0;
+        cap_ex   = 1'b0;
       end
 
       if (state_q == ST_IDLE)
@@ -376,23 +408,47 @@ module rivet_dll_tlp_tx16 #(
         seq_q       <= seq;
       end else begin
         if (live_v && beat_ready_i) begin
-          pack_r_t pk0, pk1;
-          logic [3:0] n_lo, n_hi;
-          n_lo = (live_n >= 5'd8) ? 4'd8 : live_n[3:0];
-          n_hi = (live_n > 5'd8) ? 4'(live_n - 5'd8) : 4'd0;
-          pk0  = pack_bytes(cap_acc, cap_n, acc[63:0], n_lo, live_eop && (n_hi == 4'd0));
+          pack_r_t pk0, pk1, pk2, pk3;
+          logic [3:0] n_lo, n_hi, n_2, n_3;
+          n_lo = (live_n >= 6'd8) ? 4'd8 : live_n[3:0];
+          n_hi = (live_n > 6'd8) ? ((live_n >= 6'd16) ? 4'd8 : 4'(live_n - 6'd8)) : 4'd0;
+          n_2  = (live_n > 6'd16) ? ((live_n >= 6'd24) ? 4'd8 : 4'(live_n - 6'd16)) : 4'd0;
+          n_3  = (live_n > 6'd24) ? 4'(live_n - 6'd24) : 4'd0;
+          pk0  = pack_bytes(cap_acc, cap_n, acc[63:0], n_lo,
+                            live_eop && (n_hi == 4'd0));
           if (n_hi != 4'd0)
-            pk1 = pack_bytes(pk0.acc, pk0.acc_n, acc[127:64], n_hi, live_eop);
+            pk1 = pack_bytes(pk0.acc, pk0.acc_n, acc[127:64], n_hi,
+                             live_eop && (n_2 == 4'd0));
           else
             pk1 = pk0;
-          cap_acc = pk1.acc;
-          cap_n   = pk1.acc_n;
+          if (n_2 != 4'd0)
+            pk2 = pack_bytes(pk1.acc, pk1.acc_n, acc[191:128], n_2,
+                             live_eop && (n_3 == 4'd0));
+          else
+            pk2 = pk1;
+          if (n_3 != 4'd0)
+            pk3 = pack_bytes(pk2.acc, pk2.acc_n, acc[255:192], n_3, live_eop);
+          else
+            pk3 = pk2;
+          cap_acc = pk3.acc;
+          cap_n   = pk3.acc_n;
+          cap_ex  = 1'b0;
           if (pk0.pend) begin
             cap_pend     = 1'b1;
             cap_word     = pk0.word;
             cap_hi       = pk1.pend && (n_hi != 4'd0);
             cap_hi_word  = pk1.word;
-            cap_last     = cap_hi ? pk1.word_last : pk0.word_last;
+            cap_last     = pk0.word_last;
+            if (cap_hi)
+              cap_last = pk1.word_last;
+            if (pk2.pend && (n_2 != 4'd0)) begin
+              cap_ex  = 1'b1;
+              cap_ex0 = pk2.word;
+              cap_ex1 = pk3.word;
+              cap_last = pk2.word_last;
+              if (n_3 != 4'd0)
+                cap_last = pk3.word_last;
+            end
           end else if (pk1.pend && (n_hi != 4'd0)) begin
             cap_pend    = 1'b1;
             cap_word    = pk1.word;
@@ -428,10 +484,10 @@ module rivet_dll_tlp_tx16 #(
         end
 
         if (tl_valid_i && tl_ready_o) begin
-          logic [4:0]  nb;
+          logic [5:0]  nb;
           logic [31:0] lcrc;
-          nb = (tl_len_i >= 16'd16) ? 5'd16 : tl_len_i[4:0];
-          if (nb != 5'd0) begin
+          nb = (tl_len_i >= 16'(BEAT_B)) ? 6'(BEAT_B) : tl_len_i[5:0];
+          if (nb != 6'd0) begin
             if (!pkt) begin
               logic        at_front;
               logic [15:0] seq_w;
@@ -440,20 +496,20 @@ module rivet_dll_tlp_tx16 #(
               seq   = nseq;
               nseq  = nseq + 12'd1;
               crc   = rivet_crc32_fold(32'hFFFF_FFFF, {48'h0, seq_w}, 4'd2);
-              acc   = append_bytes(acc, an, {112'h0, seq_w}, 5'd2);
+              acc   = append_bytes(acc, an, 256'({240'h0, seq_w}), 6'd2);
               an    = an + 6'd2;
               pay   = 16'd2;
               pkt   = 1'b1;
               if (at_front)
                 sop = 1'b1;
             end
-            crc = fold16(crc, tl_word_i, nb);
-            acc = append_bytes(acc, an, tl_word_i, nb);
+            crc = fold16(crc, 256'(tl_word_i), nb);
+            acc = append_bytes(acc, an, 256'(tl_word_i), nb);
             an  = an + {1'b0, nb};
             pay = pay + 16'(nb);
             if (tl_last_i) begin
               lcrc = ~crc;
-              acc  = append_bytes(acc, an, {96'h0, lcrc}, 5'd4);
+              acc  = append_bytes(acc, an, 256'({224'h0, lcrc}), 6'd4);
               an   = an + 6'd4;
               if (eop_n == 6'd0)
                 eop_n = an;
@@ -493,9 +549,12 @@ module rivet_dll_tlp_tx16 #(
         cap_n_q    <= cap_n;
         cap_pend_q <= cap_pend;
         cap_hi_q   <= cap_hi;
+        cap_ex_q   <= cap_ex;
         cap_last_q <= cap_last;
         cap_word_q    <= cap_word;
         cap_hi_word_q <= cap_hi_word;
+        cap_ex0_q     <= cap_ex0;
+        cap_ex1_q     <= cap_ex1;
         cseq0_q       <= cseq0;
         cseq1_q       <= cseq1;
         clen0_q       <= clen0;

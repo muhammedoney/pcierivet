@@ -153,10 +153,10 @@ module rivet_mac_os_tx #(
     endcase
   endfunction
 
-  function automatic logic [7:0] keep_nbytes(input logic [15:0] k);
+  function automatic logic [7:0] keep_nbytes(input logic [31:0] k);
     logic [7:0] n;
     n = '0;
-    for (int unsigned i = 0; i < 16; i++)
+    for (int unsigned i = 0; i < 32; i++)
       n += 8'(k[i]);
     return n;
   endfunction
@@ -215,7 +215,8 @@ module rivet_mac_os_tx #(
   logic                   pkt_done;
   logic                   take_dllp;
   logic [2:0]             n_en;
-  logic [4:0]             sym_step;
+  // Gen4 x4 moves 32 symbols in one cycle. A 5-bit stride wraps that to 0.
+  logic [5:0]             sym_step;
   logic                   dllp_ok;
   logic                   tlp_ok;
   logic                   want_pkt;
@@ -236,14 +237,17 @@ module rivet_mac_os_tx #(
 
   // Block RAM: a 4 KB frame does not belong in the old 32-deep LUTRAM.
   (* ram_style = "block" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
-  logic                   tlp_ram_we, tlp_ram_we2;
-  logic [TLP_AW-1:0]      tlp_ram_waddr, tlp_ram_waddr2;
-  logic [63:0]            tlp_ram_wdata, tlp_ram_wdata2;
+  logic                   tlp_ram_we, tlp_ram_we2, tlp_ram_we3, tlp_ram_we4;
+  logic [TLP_AW-1:0]      tlp_ram_waddr, tlp_ram_waddr2, tlp_ram_waddr3, tlp_ram_waddr4;
+  logic [63:0]            tlp_ram_wdata, tlp_ram_wdata2, tlp_ram_wdata3, tlp_ram_wdata4;
   logic [63:0]            tlp_ram_rdata;
   logic [63:0]            tlp_ram_rdata_b;
+  logic [63:0]            tlp_ram_rdata_c;
+  logic [63:0]            tlp_ram_rdata_d;
 
-  // 32-byte window. Gen3 reads two 8-byte RAM words per cycle.
-  logic [255:0]           emit_buf_q, emit_buf_d;
+  // 64-byte window. Gen3 reads two RAM words. Gen4 reads four so a
+  // 32-byte stride can refill in the same cycle it is consumed.
+  logic [511:0]           emit_buf_q, emit_buf_d;
   logic [5:0]             emit_cnt_q, emit_cnt_d;
   logic [TLP_AW-1:0]      tlp_wr_slot_q, tlp_wr_slot_d;
   logic [TLP_AW-1:0]      tlp_rd_slot_q, tlp_rd_slot_d;
@@ -258,9 +262,9 @@ module rivet_mac_os_tx #(
   // Gen2 END is at tlp_len+1. Gen3 has no END; the frame is STP + length + tlp_len.
   logic                   tlp_closed_q, tlp_closed_d;
   logic                   emit_fire;
-  logic [4:0]             take_b_c;
+  logic [5:0]             take_b_c;
   logic                   gen3_pkt;
-  logic [4:0]             slot_b;
+  logic [5:0]             slot_b;
   logic [15:0]            pay_sent;
   logic [15:0]            pay_left;
 
@@ -278,12 +282,18 @@ module rivet_mac_os_tx #(
 
   assign tlp_ram_rdata   = tlp_ram[tlp_rd_slot_q];
   assign tlp_ram_rdata_b = tlp_ram[tlp_rd_slot_q + TLP_AW'(1)];
+  assign tlp_ram_rdata_c = tlp_ram[tlp_rd_slot_q + TLP_AW'(2)];
+  assign tlp_ram_rdata_d = tlp_ram[tlp_rd_slot_q + TLP_AW'(3)];
 
   always_ff @(posedge pclk_i) begin
     if (tlp_ram_we)
       tlp_ram[tlp_ram_waddr] <= tlp_ram_wdata;
     if (tlp_ram_we2)
       tlp_ram[tlp_ram_waddr2] <= tlp_ram_wdata2;
+    if (tlp_ram_we3)
+      tlp_ram[tlp_ram_waddr3] <= tlp_ram_wdata3;
+    if (tlp_ram_we4)
+      tlp_ram[tlp_ram_waddr4] <= tlp_ram_wdata4;
   end
 
   assign at_boundary  = (ptr_q == 5'd0) && (mode_q == ST_OS);
@@ -309,7 +319,7 @@ module rivet_mac_os_tx #(
                    (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_DLLP) &&
                    dll_tx_beat_i.sop && dll_tx_beat_i.eop &&
                    (dll_tx_beat_i.keep[7:0] == 8'hFF) &&
-                   (dll_tx_beat_i.keep[15:8] == 8'h00);
+                   (dll_tx_beat_i.keep[31:8] == 24'h0);
   assign tlp_ok = dll_tx_valid_i &&
                   (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_TLP) &&
                   (dll_tx_beat_i.keep != 8'h00);
@@ -338,17 +348,16 @@ module rivet_mac_os_tx #(
       if (lane_en_i[li]) n_en = n_en + 3'd1;
     if (n_en == 3'd0) n_en = 3'(LANES);
     // Gen3 on a 64-bit pipe is four symbols, so a x4 step stays 16.
-    // A Gen4 x4 step is 32 and does not fit this 5-bit count; clamp so a
-    // DLLP still completes instead of adding a zero stride forever.
+    // Gen4 x4 is 32 symbols. The stride is six bits so that step stays 32.
     step_i   = int'(n_en) * rivet_pkg::rivet_pipe_nsym(rate_i);
-    sym_step = (step_i > 31) ? 5'd31 : 5'(step_i);
+    sym_step = (step_i > 63) ? 6'd63 : 6'(step_i);
   end
 
   assign pkt_done    = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
   // Gen3 and Gen4 share STP + 2 length bytes + DLL bytes. Gen2 is STP + END.
   assign gen3_pkt = rivet_pkg::rivet_pipe_block_rate(rate_i);
   assign slot_b   = (tlp_pos_q == 16'd0)
-                  ? ((sym_step > 5'd3) ? (sym_step - 5'd3) : 5'd0)
+                  ? ((sym_step > 6'd3) ? (sym_step - 6'd3) : 6'd0)
                   : sym_step;
   assign pay_sent = (tlp_pos_q == 16'd0) ? 16'd0 : (tlp_pos_q - 16'd3);
   assign pay_left = (tlp_len_q > pay_sent) ? (tlp_len_q - pay_sent) : 16'd0;
@@ -357,9 +366,13 @@ module rivet_mac_os_tx #(
       : ((tlp_pos_q == 16'd0) ? {1'b0, (sym_step[3:0] - 4'd1)}
                               : {1'b0, sym_step[3:0]});
   // END exists only after EOP. Until then the length is still growing.
+  // Gen4's stride is 32 symbols. Treating "pos + stride" as already done
+  // suppresses the last partial block, so the tail never reaches the wire.
   assign tlp_em_done = tlp_closed_q &&
-                       ((tlp_pos_q + 16'(sym_step)) >=
-                        (tlp_len_q + (gen3_pkt ? 16'd3 : 16'd2)));
+                       ((sym_step > 6'd16)
+                         ? (tlp_pos_q >= (tlp_len_q + 16'd3))
+                         : ((tlp_pos_q + 16'(sym_step)) >=
+                            (tlp_len_q + (gen3_pkt ? 16'd3 : 16'd2))));
   assign emit_fire   = (tlp_flow_q || (mode_q == ST_TLP_EM)) && !tlp_em_done &&
                        ({1'b0, take_b_c} <= emit_cnt_q);
   assign in_pkt_emit = take_dllp || (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) ||
@@ -368,27 +381,34 @@ module rivet_mac_os_tx #(
       (mode_q == ST_OS) && !in_pkt_emit && set_done && (cur == RIVET_MAC_OS_SKP);
 
   always_comb begin
-    logic [127:0] masked_beat;
+    logic [255:0] masked_beat;
     logic [63:0]  masked_lo;
     logic [7:0]   beat_n;
-    logic [4:0]   take_b;
+    logic [5:0]   take_b;
     logic [127:0] shifted;
-    logic [255:0] wide;
+    logic [511:0] wide;
     logic [5:0]   rem_cnt;
     logic         wide_beat;
+    logic         quad_beat;
     logic [7:0]   frm_b0;
     logic [9:0]   frm_ldw;
     logic [15:0]  frm_hbytes, frm_pbytes;
     logic [5:0]   base_c, n_c;
-    logic [255:0] merged;
+    logic [511:0] merged;
 
     tlp_ram_we     = 1'b0;
     tlp_ram_we2    = 1'b0;
+    tlp_ram_we3    = 1'b0;
+    tlp_ram_we4    = 1'b0;
     tlp_ram_waddr  = tlp_wr_slot_q;
     tlp_ram_waddr2 = tlp_wr_slot_q;
+    tlp_ram_waddr3 = tlp_wr_slot_q;
+    tlp_ram_waddr4 = tlp_wr_slot_q;
     tlp_ram_wdata2 = '0;
+    tlp_ram_wdata3 = '0;
+    tlp_ram_wdata4 = '0;
     masked_beat    = '0;
-    for (int unsigned i = 0; i < 16; i++) begin
+    for (int unsigned i = 0; i < 32; i++) begin
       if (dll_tx_beat_i.keep[i])
         masked_beat[8*i +: 8] = dll_tx_beat_i.data[8*i +: 8];
     end
@@ -402,7 +422,8 @@ module rivet_mac_os_tx #(
     tlp_len_d     = tlp_len_q;
     frame_len_d   = frame_len_q;
     beat_n        = keep_nbytes(dll_tx_beat_i.keep);
-    wide_beat     = beat_n > 8'd8;
+    quad_beat     = beat_n > 8'd16;
+    wide_beat     = (beat_n > 8'd8) && !quad_beat;
     frm_b0        = '0;
     frm_ldw       = '0;
     frm_hbytes    = '0;
@@ -419,11 +440,25 @@ module rivet_mac_os_tx #(
       tlp_ram_we    = 1'b1;
       tlp_ram_waddr = '0;
       tlp_len_d     = beat_n;
-      if (wide_beat) begin
+      if (quad_beat) begin
+        tlp_ram_we2    = 1'b1;
+        tlp_ram_we3    = 1'b1;
+        tlp_ram_we4    = 1'b1;
+        tlp_ram_waddr2 = TLP_AW'(1);
+        tlp_ram_waddr3 = TLP_AW'(2);
+        tlp_ram_waddr4 = TLP_AW'(3);
+        tlp_ram_wdata2 = masked_beat[127:64];
+        tlp_ram_wdata3 = masked_beat[191:128];
+        tlp_ram_wdata4 = masked_beat[255:192];
+        emit_buf_d     = {256'd0, masked_beat};
+        emit_cnt_d     = 6'(beat_n);
+        tlp_wr_slot_d  = TLP_AW'(4);
+        tlp_rd_slot_d  = TLP_AW'(4);
+      end else if (wide_beat) begin
         tlp_ram_we2    = 1'b1;
         tlp_ram_waddr2 = TLP_AW'(1);
         tlp_ram_wdata2 = masked_beat[127:64];
-        emit_buf_d     = {128'd0, masked_beat};
+        emit_buf_d     = {384'd0, masked_beat[127:0]};
         emit_cnt_d     = 6'(beat_n);
         tlp_wr_slot_d  = TLP_AW'(2);
         tlp_rd_slot_d  = TLP_AW'(2);
@@ -447,7 +482,20 @@ module rivet_mac_os_tx #(
       end
     end else if (take_tlp_col) begin
       tlp_len_d = tlp_len_q + 16'(beat_n);
-      if (wide_beat) begin
+      if (quad_beat) begin
+        tlp_ram_we     = 1'b1;
+        tlp_ram_we2    = 1'b1;
+        tlp_ram_we3    = 1'b1;
+        tlp_ram_we4    = 1'b1;
+        tlp_ram_waddr  = tlp_wr_slot_q;
+        tlp_ram_waddr2 = tlp_wr_slot_q + TLP_AW'(1);
+        tlp_ram_waddr3 = tlp_wr_slot_q + TLP_AW'(2);
+        tlp_ram_waddr4 = tlp_wr_slot_q + TLP_AW'(3);
+        tlp_ram_wdata2 = masked_beat[127:64];
+        tlp_ram_wdata3 = masked_beat[191:128];
+        tlp_ram_wdata4 = masked_beat[255:192];
+        tlp_wr_slot_d  = tlp_wr_slot_q + TLP_AW'(4);
+      end else if (wide_beat) begin
         tlp_ram_we     = 1'b1;
         tlp_ram_waddr  = tlp_wr_slot_q;
         tlp_ram_we2    = 1'b1;
@@ -470,14 +518,45 @@ module rivet_mac_os_tx #(
         end
       end
     end
+    // Gen4 collects the frame before the pipe starts. Pull RAM words
+    // into the window so the first stride is ready on the EOP cycle.
+    if ((sym_step > 6'd16) && !emit_fire && !take_tlp_start &&
+        ((mode_q == ST_TLP_COL) || (mode_q == ST_TLP_EM))) begin
+      if ((emit_cnt_q + 6'd32 <= 6'd64) &&
+          ((tlp_rd_slot_q + TLP_AW'(3)) < tlp_wr_slot_q)) begin
+        emit_buf_d[8*int'(emit_cnt_q) +: 64]           = tlp_ram_rdata;
+        emit_buf_d[8*int'(emit_cnt_q + 6'd8) +: 64]    = tlp_ram_rdata_b;
+        emit_buf_d[8*int'(emit_cnt_q + 6'd16) +: 64]   = tlp_ram_rdata_c;
+        emit_buf_d[8*int'(emit_cnt_q + 6'd24) +: 64]   = tlp_ram_rdata_d;
+        emit_cnt_d    = emit_cnt_q + 6'd32;
+        tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(4);
+      end else if ((emit_cnt_q + 6'd16 <= 6'd64) &&
+                   ((tlp_rd_slot_q + TLP_AW'(1)) < tlp_wr_slot_q)) begin
+        emit_buf_d[8*int'(emit_cnt_q) +: 64]        = tlp_ram_rdata;
+        emit_buf_d[8*int'(emit_cnt_q + 6'd8) +: 64] = tlp_ram_rdata_b;
+        emit_cnt_d    = emit_cnt_q + 6'd16;
+        tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(2);
+      end
+    end
     if (emit_fire && !take_tlp_start) begin
       // Gen2 consumes sym_step-1 bytes on the STP beat and sym_step thereafter.
       // Gen3 consumes sym_step-3 on the length beat, then sym_step.
       take_b = take_b_c;
       if (gen3_pkt) begin
         wide    = emit_buf_q >> (8 * int'(take_b));
-        rem_cnt = emit_cnt_q - {1'b0, take_b};
-        if ((rem_cnt + 6'd16 <= 6'd32) &&
+        rem_cnt = emit_cnt_q - take_b;
+        // Gen4 stride is 32 bytes. Refill four words or the next beat
+        // underruns and would insert idle inside the TLP.
+        if ((sym_step > 6'd16) && (rem_cnt + 6'd32 <= 6'd64) &&
+            ((tlp_rd_slot_q + TLP_AW'(3)) < tlp_wr_slot_q)) begin
+          emit_buf_d = wide;
+          emit_buf_d[8*int'(rem_cnt) +: 64]          = tlp_ram_rdata;
+          emit_buf_d[8*int'(rem_cnt + 6'd8) +: 64]   = tlp_ram_rdata_b;
+          emit_buf_d[8*int'(rem_cnt + 6'd16) +: 64]  = tlp_ram_rdata_c;
+          emit_buf_d[8*int'(rem_cnt + 6'd24) +: 64]  = tlp_ram_rdata_d;
+          emit_cnt_d    = rem_cnt + 6'd32;
+          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(4);
+        end else if ((rem_cnt + 6'd16 <= ((sym_step > 6'd16) ? 6'd64 : 6'd32)) &&
             ((tlp_rd_slot_q + TLP_AW'(1)) < tlp_wr_slot_q)) begin
           emit_buf_d = wide;
           emit_buf_d[8*int'(rem_cnt) +: 64]      = tlp_ram_rdata;
@@ -531,8 +610,8 @@ module rivet_mac_os_tx #(
       n_c    = 6'(beat_n);
       base_c = emit_cnt_d;
       merged = emit_buf_d;
-      if (({1'b0, base_c} + {1'b0, n_c}) <= 7'd32) begin
-        for (int unsigned i = 0; i < 16; i++) begin
+      if (({1'b0, base_c} + {1'b0, n_c}) <= 7'd64) begin
+        for (int unsigned i = 0; i < 32; i++) begin
           if (6'(i) < n_c)
             merged[8*(int'(base_c) + i) +: 8] = masked_beat[8*i +: 8];
         end
@@ -654,7 +733,11 @@ module rivet_mac_os_tx #(
             automatic int unsigned sym_i;
             sym_i = s * int'(n_en) + ord;
             idx   = tlp_pos_q + 16'(sym_i);
-            if (gen3_pkt) begin
+            // Wait for a full stride. A Gen4 underrun drops sym_valid so
+            // these bytes never reach the wire. Gen3 still idles the beat.
+            if (gen3_pkt && !emit_fire) begin
+              sym_tmp = {1'b0, 8'h00};
+            end else if (gen3_pkt) begin
               if (idx == 16'd0) begin
                 sym_tmp = {1'b0, RIVET_SYM_STP};
               end else if (idx == 16'd1) begin
@@ -711,9 +794,17 @@ module rivet_mac_os_tx #(
     end
   end
 
-  assign sym_valid_d = take_dllp ||
+  // Gen4 x4 steps 32 bytes. Emitting a data word while the buffer is
+  // short inserts 00 inside the TLP and the peer's length count ends early.
+  // Drop valid instead: the scrambler and the peer both freeze, and the
+  // next word is a block start that does not reseed an armed LFSR.
+  wire tlp_underrun;
+  assign tlp_underrun = ((mode_q == ST_TLP_EM) || tlp_flow_q) &&
+                        (sym_step > 6'd16) && !emit_fire;
+  assign sym_valid_d = !tlp_underrun &&
+                       (take_dllp ||
                        (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) || tlp_flow_q ||
-                       (cur != RIVET_MAC_OS_NONE);
+                       (cur != RIVET_MAC_OS_NONE));
   assign sym_blk_start_d = rivet_pkg::rivet_pipe_block_rate(rate_i) && sym_valid_d &&
                            (word_q == 2'd0);
 

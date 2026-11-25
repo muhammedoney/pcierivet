@@ -181,19 +181,20 @@ package rivet_pkg;
   } rivet_mac_os_type_e;
 
   // DLL -> MAC TX payload beat (AXI-ST-like; not user AXI-ST).
-  // 16 bytes per beat. Gen2 fills data[63:0] and keep[7:0] only.
+  // 32 bytes per beat. Gen2 fills data[63:0] and keep[7:0]. Gen3 fills
+  // data[127:0] and keep[15:0]. Gen4 x4 fills all 32 bytes.
   typedef struct packed {
-    logic [127:0]         data;
-    logic [15:0]          keep;
+    logic [255:0]         data;
+    logic [31:0]          keep;
     logic                 sop;
     logic                 eop;
     rivet_mac_pkt_type_e  pkt_type;
   } rivet_dll_mac_tx_beat_t;
 
-  // MAC -> DLL RX payload beat. Same 16-byte layout as the TX beat.
+  // MAC -> DLL RX payload beat. Same 32-byte layout as the TX beat.
   typedef struct packed {
-    logic [127:0]         data;
-    logic [15:0]          keep;
+    logic [255:0]         data;
+    logic [31:0]          keep;
     logic                 sop;
     logic                 eop;
     logic                 err;
@@ -639,6 +640,16 @@ package rivet_pkg;
   // negotiated_width encoding in rivet_mac_dll_sb_t: raw lane count.
   function automatic logic [2:0] rivet_width_encode(int unsigned lanes);
     return lanes[2:0];
+  endfunction
+
+  // User-port width at a 4 ns clock. Gen2 x4 is 8 bytes, Gen3 x4 is 16,
+  // Gen4 x4 is 32 (one pipe cycle of 8 bytes per lane).
+  function automatic int unsigned rivet_axi_data_width(input int unsigned gen);
+    if (gen >= RIVET_GEN4)
+      return 256;
+    if (gen >= RIVET_GEN3)
+      return 128;
+    return 64;
   endfunction
 
   // Default AXI-ST data width for Gen2 stub (widens with gen/lanes later).

@@ -10,37 +10,57 @@ Endpoint `rivet_pcie_ctrl` at PIPE, 4 lanes. The chart below is the plotted set:
 | Gen3 x4, 8 GT/s, 128b/130b | 3938 MB/s |
 | Gen4 x4, 16 GT/s, 128b/130b | 7877 MB/s |
 
-A full beat every 4 ns user clock is 2000 MB/s on the Gen2 64-bit port and 4000 MB/s on the Gen3/Gen4 128-bit port. The Gen4 line rate sits above that user-port ceiling. Payload sizes are 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, and 4096 bytes.
+A full beat every 4 ns user clock is 2000 MB/s on the Gen2 64-bit port, 4000 MB/s on the Gen3 128-bit port, and 8000 MB/s on the Gen4 256-bit port. Payload sizes are 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, and 4096 bytes.
 
 ## Plotted sweeps
 
-Eight TLPs per size. Blank Gen4 cells were not printed: from 512 bytes up, RQ `tready` stayed low, so that curve stops at 256 bytes. The Gen4 MemRd64 sweep printed unmatched RC tags and is not a measured series.
+Eight TLPs per size. Gen4 RQ/RC is 256 bits and the DLL beat is 32 bytes. Both Gen4 sweeps printed every size through 4096 bytes.
 
-| Bytes | Gen2 MemWr64 | Gen2 read | Gen3 MemWr64 | Gen3 MemRd64 | Gen4 MemWr64 |
-|---:|---:|---:|---:|---:|---:|
-| 4 | 250.000 | 79.208 | 333.333 | 108.108 | 333.333 |
-| 8 | 500.000 | 146.789 | 666.667 | 192.771 | 666.667 |
-| 16 | 800.000 | 285.714 | 1333.333 | 390.244 | 1333.333 |
-| 32 | 1142.857 | 450.704 | 2000.000 | 711.111 | 2000.000 |
-| 64 | 1438.202 | 723.164 | 2666.667 | 1185.185 | 2666.667 |
-| 128 | 1651.613 | 1019.920 | 3200.000 | 1630.573 | 3200.000 |
-| 256 | 1790.210 | 1292.929 | 3506.849 | 2226.087 | 3555.556 |
-| 512 | 1889.299 | 1497.076 | 3737.226 | 2752.688 | |
-| 1024 | 1943.074 | 1625.397 | 3820.896 | 3103.030 | |
-| 2048 | 1970.178 | 1698.176 | 3908.397 | 3313.916 | |
-| 4096 | 1983.055 | 1737.065 | 3953.668 | 3430.486 | |
+| Bytes | Gen2 MemWr64 | Gen2 read | Gen3 MemWr64 | Gen3 MemRd64 | Gen4 MemWr64 | Gen4 MemRd64 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 250.000 | 79.208 | 333.333 | 108.108 | 333.333 | 117.647 |
+| 8 | 500.000 | 146.789 | 666.667 | 192.771 | 666.667 | 235.294 |
+| 16 | 800.000 | 285.714 | 1333.333 | 390.244 | 1333.333 | 444.444 |
+| 32 | 1142.857 | 450.704 | 2000.000 | 711.111 | 2666.667 | 876.712 |
+| 64 | 1438.202 | 723.164 | 2666.667 | 1185.185 | 4000.000 | 1542.169 |
+| 128 | 1651.613 | 1019.920 | 3200.000 | 1630.573 | 5333.333 | 2560.000 |
+| 256 | 1790.210 | 1292.929 | 3506.849 | 2226.087 | 6400.000 | 3436.242 |
+| 512 | 1889.299 | 1497.076 | 3737.226 | 2752.688 | 7111.111 | 4675.799 |
+| 1024 | 1943.074 | 1625.397 | 3820.896 | 3103.030 | 7529.412 | 5657.459 |
+| 2048 | 1970.178 | 1698.176 | 3908.397 | 3313.916 | 7757.576 | 6301.538 |
+| 4096 | 1983.055 | 1737.065 | 3953.668 | 3430.486 | 7876.923 | 6681.892 |
 
-Gen4 MemWr64 (`perf_rq_memwr64_gen4_x4`, 25 Nov 2026, 8 TLPs after Gen4 L0) also printed the cycle counts. `rq_stall=0` and `credit_stall=0`. `UVM_ERROR : 0`, `UVM_FATAL : 0`.
+Gen4 MemWr64 (`perf_rq_memwr64_gen4_x4`, 25 Nov 2026, 8 TLPs after Gen4 L0) printed `rq_stall=0` and `credit_stall=0`. `UVM_ERROR : 0`, `UVM_FATAL : 0`.
 
 | Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | MB/s |
 |---:|---:|---:|---:|---:|
 | 1 DW | 4 | 32 | 24 | 333.333 |
 | 2 DW | 8 | 64 | 24 | 666.667 |
 | 4 DW | 16 | 128 | 24 | 1333.333 |
-| 8 DW | 32 | 256 | 32 | 2000.000 |
-| 16 DW | 64 | 512 | 48 | 2666.667 |
-| 32 DW | 128 | 1024 | 80 | 3200.000 |
-| 64 DW | 256 | 2048 | 144 | 3555.556 |
+| 8 DW | 32 | 256 | 24 | 2666.667 |
+| 16 DW | 64 | 512 | 32 | 4000.000 |
+| 32 DW | 128 | 1024 | 48 | 5333.333 |
+| 64 DW | 256 | 2048 | 80 | 6400.000 |
+| 128 DW | 512 | 4096 | 144 | 7111.111 |
+| 256 DW | 1024 | 8192 | 272 | 7529.412 |
+| 512 DW | 2048 | 16384 | 528 | 7757.576 |
+| 1024 DW | 4096 | 32768 | 1040 | 7876.923 |
+
+Gen4 MemRd64 (`perf_rq_memrd_gen4_x4`, same bench) counts CplD payload on RC. MemRd32 printed the same `mb_s` from 64 bytes up. Every size printed `rq_stall=0`, `credit_stall=0`, `rc_tlast=8`. `UVM_ERROR : 0`, `UVM_FATAL : 0`.
+
+| Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | MB/s |
+|---:|---:|---:|---:|---:|
+| 1 DW | 4 | 32 | 68 | 117.647 |
+| 2 DW | 8 | 64 | 68 | 235.294 |
+| 4 DW | 16 | 128 | 72 | 444.444 |
+| 8 DW | 32 | 256 | 73 | 876.712 |
+| 16 DW | 64 | 512 | 83 | 1542.169 |
+| 32 DW | 128 | 1024 | 100 | 2560.000 |
+| 64 DW | 256 | 2048 | 149 | 3436.242 |
+| 128 DW | 512 | 4096 | 219 | 4675.799 |
+| 256 DW | 1024 | 8192 | 362 | 5657.459 |
+| 512 DW | 2048 | 16384 | 650 | 6301.538 |
+| 1024 DW | 4096 | 32768 | 1226 | 6681.892 |
 
 ## Gen2 posted write, 22 Nov 2026
 

@@ -42,7 +42,7 @@ class rivet_axi_rq_memrd32_seq extends uvm_sequence #(rivet_axi_st_item);
       addr, payload_dw, rivet_pkg::RIVET_CQ_REQ_MEMRD, tag, requester_id, b0, b1,
       addr_hi);
     u = rivet_axi_tlp_util::rq_tuser(first_be, (payload_dw > 11'd1) ? 4'hF : 4'h0);
-    if (axi_w == 128) begin
+    if (axi_w >= 128) begin
       rivet_axi_st_item item;
       item = rivet_axi_st_item::type_id::create("rq_beat");
       start_item(item);

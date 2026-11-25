@@ -48,6 +48,7 @@ module rivet_mac_scrambler #(
   // First Gen3 data word reloads the seed. Training blocks advance a
   // different count than the bytes a partner sees on the pipe.
   logic        lfsr23_data_q, lfsr23_data_n;
+  logic [2:0]  rate_q;
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_scr;
   logic [PIPE_DATA_WIDTH*LANES-1:0] data_q;
   logic [2*LANES-1:0]               datak_q;
@@ -67,9 +68,12 @@ module rivet_mac_scrambler #(
         automatic logic skp_word = os_word &&
                                    (data_i[PIPE_DATA_WIDTH*l +: 8] == RIVET_SYM_SKP_BLK);
         if (!skp_word) begin
-          if (!os_word && !lfsr23_data_q)
+          // Reload on a block boundary only. A mid-block reseed after the
+          // Gen4 rate change leaves the peer, which arms on start_block,
+          // one clock off for the rest of the link.
+          if (!os_word && !lfsr23_data_q && blk_start_i)
             lfsr23_next[l] = RIVET_LFSR23_SEED;
-          if (!os_word)
+          if (!os_word && (lfsr23_data_q || blk_start_i))
             lfsr23_data_n = 1'b1;
           for (int unsigned s = 0; s < SYMS; s++) begin
             automatic logic [7:0]  din;
@@ -121,6 +125,7 @@ module rivet_mac_scrambler #(
         lfsr23_q[l] <= RIVET_LFSR23_SEED;
       end
       lfsr23_data_q <= 1'b0;
+      rate_q        <= rivet_pkg::RIVET_PIPE_RATE_GEN1;
     end else begin
       data_q      <= data_scr;
       datak_q     <= datak_i;
@@ -131,10 +136,16 @@ module rivet_mac_scrambler #(
         lfsr_q[l]   <= lfsr_next[l];
         lfsr23_q[l] <= lfsr23_next[l];
       end
-      if (!rivet_pkg::rivet_pipe_block_rate(rate_i))
+      // The first Gen4 data word reloads the seed. A continuous LFSR
+      // would still be on the Gen3 schedule.
+      if ((rate_i == rivet_pkg::RIVET_PIPE_RATE_GEN4) &&
+          (rate_q != rivet_pkg::RIVET_PIPE_RATE_GEN4))
+        lfsr23_data_q <= 1'b0;
+      else if (!rivet_pkg::rivet_pipe_block_rate(rate_i))
         lfsr23_data_q <= 1'b0;
       else
         lfsr23_data_q <= lfsr23_data_n;
+      rate_q <= rate_i;
     end
   end
 

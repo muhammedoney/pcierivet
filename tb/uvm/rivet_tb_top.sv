@@ -22,7 +22,9 @@ module rivet_tb_top;
 `ifndef RIVET_TB_PIPE_W
   `define RIVET_TB_PIPE_W 16
 `endif
-`ifdef RIVET_RQ_WIDE
+`ifdef RIVET_RQ_G4
+  `define RIVET_RQ_INST dut.g_rq256.u_tl_rq
+`elsif RIVET_RQ_WIDE
   `define RIVET_RQ_INST dut.g_rq128.u_tl_rq
 `else
   `define RIVET_RQ_INST dut.g_rq64.u_tl_rq
@@ -32,7 +34,7 @@ module rivet_tb_top;
   localparam int unsigned MODE   = `RIVET_TB_MODE;
   localparam int unsigned GEN    = `RIVET_TB_GEN;
   localparam int unsigned PIPE_W = `RIVET_TB_PIPE_W;
-  localparam int unsigned AXI_W = (GEN >= 3) ? 128 : 64;
+  localparam int unsigned AXI_W = rivet_pkg::rivet_axi_data_width(GEN);
   localparam int unsigned KEEP_W = AXI_W / 32;
 
   logic user_clk;

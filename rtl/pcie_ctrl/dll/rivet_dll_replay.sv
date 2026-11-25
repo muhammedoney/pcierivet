@@ -20,6 +20,10 @@ module rivet_dll_replay #(
   // Second word of a 16-byte capture. Stays low on the 8-byte path.
   input  logic        cap_hi_valid_i = 1'b0,
   input  logic [63:0] cap_hi_data_i  = '0,
+  // Words 2 and 3 of a 32-byte capture. Idle unless cap_ex_valid_i.
+  input  logic        cap_ex_valid_i = 1'b0,
+  input  logic [63:0] cap_ex0_i      = '0,
+  input  logic [63:0] cap_ex1_i      = '0,
   input  logic [11:0] cap_seq_i,
   input  logic [15:0] cap_len_i,
 
@@ -97,6 +101,10 @@ module rivet_dll_replay #(
       word_q[{wr_q, wr_word_q}] <= cap_data_i;
       if (cap_hi_valid_i)
         word_q[{wr_q, WORD_W'(wr_word_q + 1'b1)}] <= cap_hi_data_i;
+      if (cap_ex_valid_i) begin
+        word_q[{wr_q, WORD_W'(wr_word_q + 2'd2)}] <= cap_ex0_i;
+        word_q[{wr_q, WORD_W'(wr_word_q + 2'd3)}] <= cap_ex1_i;
+      end
     end
   end
 
@@ -161,7 +169,8 @@ module rivet_dll_replay #(
         if (!filling_q)
           count_q <= count_q + 16'd1;
       end else if (cap_fire) begin
-        wr_word_q <= wr_word_q + (cap_hi_valid_i ? WORD_W'(2) : WORD_W'(1));
+        wr_word_q <= wr_word_q + (cap_ex_valid_i ? WORD_W'(4) :
+                                  cap_hi_valid_i ? WORD_W'(2) : WORD_W'(1));
         if (!filling_q) begin
           filling_q <= 1'b1;
           count_q   <= count_q + 16'd1;

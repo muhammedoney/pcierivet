@@ -7,7 +7,10 @@ module rivet_cdc_axis #(
   parameter int unsigned DATA_W  = 64,
   parameter int unsigned KEEP_W  = DATA_W / 32,
   parameter int unsigned USER_W  = 1,
-  parameter int unsigned DEPTH   = 32  // KEEP_W-scaled depth → ~16 beats
+  // Depth is in keep-slots, and the FIFO stores DEPTH/KEEP_W beats.
+  // 32 slots is 16 beats on a 64-bit port and only 4 on a 256-bit port,
+  // which is too shallow for the async pointer sync to stay full.
+  parameter int unsigned DEPTH   = 256
 ) (
   input  logic               s_clk_i,
   input  logic               s_rst_ni,

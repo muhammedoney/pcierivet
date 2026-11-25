@@ -231,8 +231,9 @@ module rivet_pcie_ctrl #(
   logic [7:0]  cr_cons_ph_a, cr_cons_nph_a, cr_cons_cplh_a;
   logic [11:0] cr_cons_pd_a, cr_cons_npd_a, cr_cons_cpld_a;
 
-  // Gen3 user port is 128 bits and the DLL TX beat matches it. Gen2 stays 64.
-  localparam int unsigned TL_W = (AXI_DATA_WIDTH == 128) ? 128 : 64;
+  // User port and DLL beat: Gen2 is 64, Gen3 is 128, Gen4 is 256.
+  localparam int unsigned TL_W = (AXI_DATA_WIDTH >= 256) ? 256 :
+                                 (AXI_DATA_WIDTH >= 128) ? 128 : 64;
   localparam int unsigned TL_K = TL_W / 8;
 
   logic [TL_W-1:0] tl_rx_tdata;
@@ -465,7 +466,7 @@ module rivet_pcie_ctrl #(
     .DATA_W (AXI_DATA_WIDTH),
     .KEEP_W (AXI_KEEP_WIDTH),
     .USER_W (AXI_CQ_USER_W),
-    .DEPTH  (32)
+    .DEPTH  (256)
   ) u_cdc_cq (
     .s_clk_i    (pclk),
     .s_rst_ni   (pclk_rst_sync_n),
@@ -508,7 +509,7 @@ module rivet_pcie_ctrl #(
     .DATA_W (AXI_DATA_WIDTH),
     .KEEP_W (AXI_KEEP_WIDTH),
     .USER_W (AXI_CC_USER_W),
-    .DEPTH  (32)
+    .DEPTH  (256)
   ) u_cdc_cc (
     .s_clk_i    (user_clk),
     .s_rst_ni   (user_rst_sync_n),
@@ -564,13 +565,13 @@ module rivet_pcie_ctrl #(
   endfunction
 
   // Config request types are only legal on the root port. On the 64-bit
-  // port the type is descriptor beat 1. On the 128-bit port both halves
-  // ride in beat 0, with the type at [78:75].
-  // Zero-extend so the 128-bit descriptor index is legal when the port is 64.
+  // port the type is descriptor beat 1. On the 128- and 256-bit ports both
+  // halves ride in beat 0, with the type at [78:75].
+  // Zero-extend so the wide descriptor index is legal when the port is 64.
   wire [127:0] rq_desc_w = 128'(s_axis_rq_tdata);
-  wire [3:0] rq_req_now = (AXI_DATA_WIDTH == 128) ? rq_desc_w[78:75]
+  wire [3:0] rq_req_now = (AXI_DATA_WIDTH >= 128) ? rq_desc_w[78:75]
                                                   : rq_desc_w[14:11];
-  wire       rq_desc_beat = (AXI_DATA_WIDTH == 128) ? (rq_ph_q == 2'd0)
+  wire       rq_desc_beat = (AXI_DATA_WIDTH >= 128) ? (rq_ph_q == 2'd0)
                                                     : (rq_ph_q == 2'd1);
   assign rq_user_cfg_stall = (MODE != RIVET_MODE_RC) && rq_desc_beat &&
                              s_axis_rq_tvalid && rq_is_cfg(rq_req_now);
@@ -589,7 +590,7 @@ module rivet_pcie_ctrl #(
     else if (rq_user_fire) begin
       if (s_axis_rq_tlast)
         rq_ph_q <= 2'd0;
-      else if (AXI_DATA_WIDTH == 128)
+      else if (AXI_DATA_WIDTH >= 128)
         rq_ph_q <= 2'd2;
       else if (rq_ph_q == 2'd0)
         rq_ph_q <= 2'd1;
@@ -602,7 +603,7 @@ module rivet_pcie_ctrl #(
     .DATA_W (AXI_DATA_WIDTH),
     .KEEP_W (AXI_KEEP_WIDTH),
     .USER_W (AXI_RQ_USER_W),
-    .DEPTH  (32)
+    .DEPTH  (256)
   ) u_cdc_rq (
     .s_clk_i    (user_clk),
     .s_rst_ni   (user_rst_sync_n),
@@ -623,7 +624,34 @@ module rivet_pcie_ctrl #(
   );
 
   generate
-    if (AXI_DATA_WIDTH == 128) begin : g_rq128
+    if (AXI_DATA_WIDTH >= 256) begin : g_rq256
+      rivet_tl_rq_g4 #(.MODE(MODE)) u_tl_rq (
+        .clk_i             (pclk),
+        .rst_ni            (pclk_rst_sync_n),
+        .bus_master_en_i   (bus_master_en),
+        .primary_bus_i     (primary_bus),
+        .s_axis_rq_tdata   (rq_p_tdata),
+        .s_axis_rq_tkeep   (rq_p_tkeep),
+        .s_axis_rq_tlast   (rq_p_tlast),
+        .s_axis_rq_tvalid  (rq_p_tvalid),
+        .s_axis_rq_tready  (rq_p_tready),
+        .s_axis_rq_tuser   (rq_p_tuser),
+        .tx_tdata_o        (rq_tx_d),
+        .tx_tkeep_o        (rq_tx_k),
+        .tx_tlast_o        (rq_tx_l),
+        .tx_tvalid_o       (rq_tx_v),
+        .tx_tready_i       (rq_tx_r),
+        .tx_accept_o       (cr_tx_acc_rq),
+        .tx_hdr0_o         (cr_tx_h0_rq),
+        .tx_len_dw_o       (cr_tx_len_rq),
+        .rq_seq_num_o      (rq_seq_p),
+        .rq_seq_num_vld_o  (rq_seq_vld_p),
+        .rq_tag_o          (rq_tag_p),
+        .rq_tag_vld_o      (rq_tag_vld_p),
+        .rq_tag_av_o       (rq_tag_av_p),
+        .tag_free_i        (rq_tag_free_p)
+      );
+    end else if (AXI_DATA_WIDTH == 128) begin : g_rq128
       rivet_tl_rq_wide #(.MODE(MODE)) u_tl_rq (
         .clk_i             (pclk),
         .rst_ni            (pclk_rst_sync_n),
@@ -687,7 +715,28 @@ module rivet_pcie_ctrl #(
   logic [AXI_RC_USER_W-1:0]  rc_p_tuser, rc_u_tuser;
 
   generate
-    if (AXI_DATA_WIDTH == 128) begin : g_rc128
+    if (AXI_DATA_WIDTH >= 256) begin : g_rc256
+      rivet_tl_rc_g4 #(.DATA_W(AXI_DATA_WIDTH)) u_tl_rc (
+        .clk_i            (pclk),
+        .rst_ni           (pclk_rst_sync_n),
+        .rx_tdata_i       (rc_rx_d),
+        .rx_tkeep_i       (rc_rx_k),
+        .rx_tlast_i       (rc_rx_l),
+        .rx_tvalid_i      (rc_rx_v),
+        .rx_abort_i       (tl_rx_abort),
+        .rx_tready_o      (rc_rx_r),
+        .m_axis_rc_tdata  (rc_p_tdata),
+        .m_axis_rc_tkeep  (rc_p_tkeep),
+        .m_axis_rc_tlast  (rc_p_tlast),
+        .m_axis_rc_tvalid (rc_p_tvalid),
+        .m_axis_rc_tready (rc_p_tready),
+        .m_axis_rc_tuser  (rc_p_tuser),
+        .rx_accept_o      (cr_rx_acc_rc),
+        .rx_hdr0_o        (cr_rx_h0_rc),
+        .rx_len_dw_o      (cr_rx_len_rc),
+        .tag_free_o       (rq_tag_free_p)
+      );
+    end else if (AXI_DATA_WIDTH == 128) begin : g_rc128
       rivet_tl_rc_wide #(.DATA_W(AXI_DATA_WIDTH)) u_tl_rc (
         .clk_i            (pclk),
         .rst_ni           (pclk_rst_sync_n),
@@ -736,7 +785,7 @@ module rivet_pcie_ctrl #(
     .DATA_W (AXI_DATA_WIDTH),
     .KEEP_W (AXI_KEEP_WIDTH),
     .USER_W (AXI_RC_USER_W),
-    .DEPTH  (32)
+    .DEPTH  (256)
   ) u_cdc_rc (
     .s_clk_i    (pclk),
     .s_rst_ni   (pclk_rst_sync_n),

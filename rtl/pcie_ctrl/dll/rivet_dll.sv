@@ -25,7 +25,8 @@ module rivet_dll #(
            ((REPLAY_SLOT_BYTES + (LANES * 2) - 1) / (LANES * 2))) + 256,
   parameter int unsigned REPLAY_NUM_LIMIT  = 3,
   parameter int unsigned TL_DATA_W         = rivet_pkg::RIVET_TL_DLL_DATA_W,
-  // TX beat width. 64 keeps the 8-byte transmitter. 128 streams 16 bytes.
+  // TX beat width. 64 keeps the 8-byte transmitter. 128 streams 16
+  // bytes. 256 streams 32 bytes, one Gen4 x4 pipe cycle.
   parameter int unsigned TX_DATA_W         = rivet_pkg::RIVET_TL_DLL_DATA_W
 ) (
   input  logic pclk_i,
@@ -109,6 +110,8 @@ module rivet_dll #(
   logic [TX_DATA_W-1:0]           tx_word;
   logic                           cap_hi_v;
   logic [63:0]                    cap_hi_d;
+  logic                           cap_ex_v;
+  logic [63:0]                    cap_ex0, cap_ex1;
   logic                           rep_full, rep_empty;
   logic [15:0]                    rep_occ;
 
@@ -230,6 +233,7 @@ module rivet_dll #(
   // falls during replay, and replay_ready needs ST_IDLE.
   assign replay_req = replay_pend_q && !rep_empty && !rep_active &&
                       tx_idle && (dl_state == RIVET_DL_ACTIVE) && !replay_en;
+
   // replay_done is still high the cycle replay_active falls. Starting
   // again on that cycle re-enters replay after the SM has already left it.
   assign rep_start  = replay_en && !replay_done && !rep_active && !rep_empty;
@@ -430,6 +434,9 @@ module rivet_dll #(
     .cap_len_i       (cap_len),
     .cap_hi_valid_i  (cap_hi_v),
     .cap_hi_data_i   (cap_hi_d),
+    .cap_ex_valid_i  (cap_ex_v),
+    .cap_ex0_i       (cap_ex0),
+    .cap_ex1_i       (cap_ex1),
     .ack_valid_i     (ack_to_buf),
     .ack_seq_i       (ack_seq_to_buf),
     .replay_start_i  (rep_start),
@@ -504,8 +511,11 @@ module rivet_dll #(
   );
 
   generate
-    if (TX_DATA_W == 128) begin : g_tx16
-      rivet_dll_tlp_tx16 #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_tx (
+    if (TX_DATA_W != 64) begin : g_tx16
+      rivet_dll_tlp_tx16 #(
+        .SLOT_BYTES(REPLAY_SLOT_BYTES),
+        .WORD_BITS (TX_DATA_W)
+      ) u_tlp_tx (
         .clk_i           (pclk_i),
         .rst_ni          (rst_ni),
         .enable_i        (tlp_tx_en && !rep_full && !rep_active && !replay_req),
@@ -530,6 +540,9 @@ module rivet_dll #(
         .cap_len_o       (cap_len),
         .cap_hi_valid_o  (cap_hi_v),
         .cap_hi_data_o   (cap_hi_d),
+        .cap_ex_valid_o  (cap_ex_v),
+        .cap_ex0_o       (cap_ex0),
+        .cap_ex1_o       (cap_ex1),
         .beat_o          (tlp_beat),
         .beat_valid_o    (tlp_v),
         .beat_ready_i    (tlp_r),
@@ -539,6 +552,9 @@ module rivet_dll #(
     end else begin : g_tx8
       assign cap_hi_v = 1'b0;
       assign cap_hi_d = '0;
+      assign cap_ex_v = 1'b0;
+      assign cap_ex0  = '0;
+      assign cap_ex1  = '0;
       rivet_dll_tlp_tx #(.SLOT_BYTES(REPLAY_SLOT_BYTES)) u_tlp_tx (
         .clk_i           (pclk_i),
         .rst_ni          (rst_ni),
@@ -691,8 +707,11 @@ module rivet_dll #(
   );
 
   generate
-    if (TL_DATA_W == 128) begin : g_rx16
-      rivet_dll_tlp_rx16 #(.SLOT_BYTES(RX_SLOT_BYTES)) u_tlp_rx (
+    if (TL_DATA_W != 64) begin : g_rx16
+      rivet_dll_tlp_rx16 #(
+        .SLOT_BYTES(RX_SLOT_BYTES),
+        .DATA_W    (TL_DATA_W)
+      ) u_tlp_rx (
         .clk_i           (pclk_i),
         .rst_ni          (rst_ni),
         .enable_i        (rx_enable_q),

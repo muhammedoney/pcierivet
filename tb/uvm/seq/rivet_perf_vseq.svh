@@ -328,7 +328,7 @@ class rivet_perf_rq_sweep_vseq extends rivet_perf_vseq;
     // end at 1024 DW (4096 B). Length 1024 is the PCIe wire encoding 0.
     sizes = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     wait_l0();
-    start_sidebands(800_000, 1'b0, 1'b1);
+    start_sidebands(2_000_000, 1'b0, 1'b1);
     cfg_rw = rivet_cfg_mgmt_rw_seq::type_id::create("cfg_rw");
     cfg_rw.start(p_sequencer.cfg_sqr);
     for (s = 0; s < sizes.size(); s++) begin
@@ -367,6 +367,8 @@ class rivet_perf_rq_memwr64_vseq extends rivet_perf_vseq;
   `uvm_object_utils(rivet_perf_rq_memwr64_vseq)
 
   int unsigned n_tlp = 8;
+  // Payload sizes above this are skipped. Default keeps the full sweep.
+  int unsigned max_dw = 1024;
 
   function new(string name = "rivet_perf_rq_memwr64_vseq");
     super.new(name);
@@ -378,12 +380,14 @@ class rivet_perf_rq_memwr64_vseq extends rivet_perf_vseq;
     int unsigned s;
     sizes = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     wait_l0();
-    start_sidebands(800_000, 1'b0, 1'b1);
+    start_sidebands(2_000_000, 1'b0, 1'b1);
     cfg_rw = rivet_cfg_mgmt_rw_seq::type_id::create("cfg_rw");
     cfg_rw.start(p_sequencer.cfg_sqr);
     for (s = 0; s < sizes.size(); s++) begin
       int unsigned dw, i;
       dw = sizes[s];
+      if (dw > max_dw)
+        continue;
       repeat (8_000) @(posedge status_vif.pclk);
       perf.arm(dw * 4, 0);
       for (i = 0; i < n_tlp; i++) begin
@@ -417,6 +421,7 @@ class rivet_perf_rq_memrd_vseq extends rivet_perf_vseq;
   `uvm_object_utils(rivet_perf_rq_memrd_vseq)
 
   int unsigned n_tlp = 8;
+  int unsigned max_dw = 1024;
 
   function new(string name = "rivet_perf_rq_memrd_vseq");
     super.new(name);
@@ -460,13 +465,15 @@ class rivet_perf_rq_memrd_vseq extends rivet_perf_vseq;
     int unsigned s;
     sizes = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     wait_l0();
-    start_sidebands(500_000, 1'b0, 1'b1);
+    start_sidebands(2_000_000, 1'b0, 1'b1);
     cfg_rw = rivet_cfg_mgmt_rw_seq::type_id::create("cfg_rw");
     cfg_rw.start(p_sequencer.cfg_sqr);
     for (s = 0; s < sizes.size(); s++)
-      burst(1'b0, sizes[s]);
+      if (sizes[s] <= max_dw)
+        burst(1'b0, sizes[s]);
     for (s = 0; s < sizes.size(); s++)
-      burst(1'b1, sizes[s]);
+      if (sizes[s] <= max_dw)
+        burst(1'b1, sizes[s]);
     wait fork;
   endtask
 endclass : rivet_perf_rq_memrd_vseq

@@ -12,7 +12,7 @@ module rivet_gen4_lint_top;
     .GEN             (4),
     .LANES           (4),
     .PIPE_DATA_WIDTH (64),
-    .AXI_DATA_WIDTH  (128)
+    .AXI_DATA_WIDTH  (256)
   ) u ();
   /* verilator lint_on PINMISSING */
 endmodule

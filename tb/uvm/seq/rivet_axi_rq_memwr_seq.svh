@@ -38,7 +38,29 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
     rivet_axi_tlp_util::pack_mem_desc_2beat(
       addr, payload_dw[10:0], rivet_pkg::RIVET_CQ_REQ_MEMWR, tag, requester_id,
       b0, b1, addr_hi);
-    if (axi_w == 128) begin
+    if (axi_w >= 256) begin
+      item.burst_data.push_back({b1, b0});
+      item.burst_keep.push_back(8'h0F);
+      item.burst_last.push_back(1'b0);
+      sent = 0;
+      while (sent < payload_dw) begin
+        logic [255:0] beat;
+        logic [7:0]   keep;
+        int unsigned  n;
+        beat = '0;
+        keep = '0;
+        n    = 0;
+        while ((n < 8) && ((sent + n) < payload_dw)) begin
+          beat[32*n +: 32] = 32'hA500_0000 + sent + n;
+          keep[n] = 1'b1;
+          n++;
+        end
+        item.burst_data.push_back(beat);
+        item.burst_keep.push_back(keep);
+        sent += n;
+        item.burst_last.push_back(sent >= payload_dw);
+      end
+    end else if (axi_w == 128) begin
       item.burst_data.push_back({b1, b0});
       item.burst_keep.push_back(4'hF);
       item.burst_last.push_back(1'b0);

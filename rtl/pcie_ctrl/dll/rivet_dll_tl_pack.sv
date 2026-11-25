@@ -41,24 +41,25 @@ module rivet_dll_tl_pack #(
     if ((SLOT_BYTES % WORD_BYTES) != 0)
       $error("rivet_dll_tl_pack SLOT_BYTES (%0d) must be a multiple of %0d",
              SLOT_BYTES, WORD_BYTES);
-    if ((KEEP_W != 8) && (KEEP_W != 16))
-      $error("rivet_dll_tl_pack beat must be 8 or 16 bytes");
+    if ((KEEP_W != 8) && (KEEP_W != 16) && (KEEP_W != 32))
+      $error("rivet_dll_tl_pack beat must be 8, 16, or 32 bytes");
   end
 `endif
 
   logic [7:0]        nbytes;
   logic [DATA_W-1:0] beat_packed;
-  logic [4:0]        keep_pref [0:KEEP_W];
+  // Six bits so a 32-byte beat does not wrap the prefix sum.
+  logic [5:0]        keep_pref [0:KEEP_W];
 
   always_comb begin
-    keep_pref[0] = 5'd0;
+    keep_pref[0] = 6'd0;
     for (int unsigned i = 0; i < KEEP_W; i++)
-      keep_pref[i + 1] = keep_pref[i] + 5'(s_tkeep_i[i]);
+      keep_pref[i + 1] = keep_pref[i] + 6'(s_tkeep_i[i]);
     nbytes      = 8'(keep_pref[KEEP_W]);
     beat_packed = '0;
     for (int unsigned b = 0; b < KEEP_W; b++) begin
       for (int unsigned i = 0; i < KEEP_W; i++) begin
-        if (s_tkeep_i[i] && (keep_pref[i] == 5'(b)))
+        if (s_tkeep_i[i] && (keep_pref[i] == 6'(b)))
           beat_packed[8*b +: 8] = s_tdata_i[8*i +: 8];
       end
     end
