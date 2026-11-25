@@ -800,14 +800,22 @@ module rivet_ltssm #(
         end
       end
 
-      // Upstream slave equalization at 8.0 GT/s. One fixed preset. Byte 6 of
-      // the partner TS is {success, 4'b0, phase[2:0]} and byte 7 is the preset.
+      // Equalization at 8.0 GT/s. One fixed preset. Byte 6 of a TS is
+      // {success, 4'b0, phase[2:0]} and byte 7 is the preset.
+      // Upstream (EP, USP) is the slave and waits for the partner.
+      // Downstream (RC, DSP) is the master and transmits 8'h0A / preset 1.
       RIVET_LTSSM_RCVRY_EQ0: begin
         os_req_o   = RIVET_MAC_OS_TS1;
         link_pad_d = 1'b0;
         lane_pad_d = 1'b0;
         speed_ei_d = 1'b0;
-        if (rx_rate_id_i[3] && (ts1_lane_any_i || ts1_link_any_i || ts1_pad_any_i))
+        if (IS_DOWNSTREAM) begin
+          if (os_sent_cnt_i >= 12'd1)
+            state_d = RIVET_LTSSM_RCVRY_EQ1;
+          else if (timer_expired)
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+        end else if (rx_rate_id_i[3] &&
+                     (ts1_lane_any_i || ts1_link_any_i || ts1_pad_any_i))
           state_d = RIVET_LTSSM_RCVRY_EQ1;
         else if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -817,7 +825,12 @@ module rivet_ltssm #(
         os_req_o   = RIVET_MAC_OS_TS1;
         link_pad_d = 1'b0;
         lane_pad_d = 1'b0;
-        if (rx_eq_ctrl_i[2:0] == 3'd2)
+        if (IS_DOWNSTREAM) begin
+          if (os_sent_cnt_i >= 12'd1)
+            state_d = RIVET_LTSSM_RCVRY_EQ2;
+          else if (timer_expired)
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+        end else if (rx_eq_ctrl_i[2:0] == 3'd2)
           state_d = RIVET_LTSSM_RCVRY_EQ2;
         else if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -827,7 +840,12 @@ module rivet_ltssm #(
         os_req_o   = RIVET_MAC_OS_TS1;
         link_pad_d = 1'b0;
         lane_pad_d = 1'b0;
-        if (rx_eq_ctrl_i[3])
+        if (IS_DOWNSTREAM) begin
+          if ((rx_eq_ctrl_i[2:0] == 3'd2) || rx_eq_ctrl_i[3])
+            state_d = RIVET_LTSSM_RCVRY_EQ3;
+          else if (timer_expired)
+            state_d = RIVET_LTSSM_DETECT_QUIET;
+        end else if (rx_eq_ctrl_i[3])
           state_d = RIVET_LTSSM_RCVRY_EQ3;
         else if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -1029,13 +1047,24 @@ module rivet_ltssm #(
                            | (((want_speed_chg || want_downshift || want_gen3 ||
                                want_gen4) && in_rec_ts)
                               ? (8'h01 << RIVET_TS_RATE_SPEED_CHANGE_BIT) : 8'h00);
-  assign tx_eq_ctrl_o = (state_q == RIVET_LTSSM_RCVRY_EQ2) ? 8'h02 :
+  // Downstream master offers phase 2, the success bit, and preset 1
+  // for the whole EQ walk. Upstream slave still requests phase 2 in EQ2
+  // and echoes the partner byte in EQ3.
+  wire eq_master = IS_DOWNSTREAM &&
+                   ((state_q == RIVET_LTSSM_RCVRY_EQ0) ||
+                    (state_q == RIVET_LTSSM_RCVRY_EQ1) ||
+                    (state_q == RIVET_LTSSM_RCVRY_EQ2) ||
+                    (state_q == RIVET_LTSSM_RCVRY_EQ3));
+  assign tx_eq_ctrl_o = eq_master ? 8'h0A :
+                        (state_q == RIVET_LTSSM_RCVRY_EQ2) ? 8'h02 :
                         (state_q == RIVET_LTSSM_RCVRY_EQ3) ? rx_eq_ctrl_i : 8'h00;
-  assign tx_eq_data_o = ((state_q == RIVET_LTSSM_RCVRY_EQ2) ||
+  assign tx_eq_data_o = eq_master ? 8'h01 :
+                        ((state_q == RIVET_LTSSM_RCVRY_EQ2) ||
                          (state_q == RIVET_LTSSM_RCVRY_EQ3)) ? eq_preset_q : 8'h00;
-  assign txeq_ctrl_o    = ((state_q == RIVET_LTSSM_RCVRY_EQ2) ||
+  assign txeq_ctrl_o    = (eq_master ||
+                           (state_q == RIVET_LTSSM_RCVRY_EQ2) ||
                            (state_q == RIVET_LTSSM_RCVRY_EQ3)) ? 2'b01 : 2'b00;
-  assign txeq_preset_o  = eq_preset_q[3:0];
+  assign txeq_preset_o  = eq_master ? 4'h1 : eq_preset_q[3:0];
   // tx_train_ctrl_o driven in next-state comb (Hot Reset bit).
 
   assign remote_rate_id_o = remote_rate_q;

@@ -91,4 +91,4 @@ Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac
 
 ## Phase priority reminder
 
-See [roadmap.md](roadmap.md). Phase 4 (Gen3 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-24. Phase 5 (Gen4 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-25. Next is the Gen5 backlog, not started.
+See [roadmap.md](roadmap.md). Phase 4 (Gen3 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-24. Phase 5 (Gen4 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-25. Phase 6 closed on 2026-11-25: at Gen3, USP is the upstream equalization slave (same machine as EP) and RC/DSP are the downstream master, transmitting EQ byte `8'h0A` and preset `8'h01`. Gen4 multi-mode is not started. Next is the Gen5 backlog.

@@ -145,6 +145,19 @@ A Gen4 block is eight symbols. Gen3 on that elaboration still uses the low four 
 
 The user port and the DLL beat are 32 bytes at Gen4. `perf_rq_memwr64_gen4_x4` (8 TLPs after Gen4 L0, 4 ns user clock, 25 Nov 2026) printed `mb_s` 888.889, 1777.778, 3555.556, 4923.077, 6095.238, 6918.919, 7420.290, 7699.248, 7846.743, 7922.631, 7961.127. `cycles` 9, 9, 9, 13, 21, 37, 69, 133, 261, 517, 1029. `rq_stall=0`, `credit_stall=0`. From 32 bytes up the burst packs the next descriptor into the last 16 bytes of each TLP. `perf_rq_memrd_gen4_x4` printed MemRd64 `mb_s` 117.647, 231.884, 450.704, 876.712, 1542.169, 2612.245, 3580.420, 4970.874, 6150.150, 6965.986, 7447.273. `cycles` 68, 69, 71, 73, 83, 98, 143, 206, 333, 588, 1100. `rc_tlast=8` at every size. Both sweeps printed `UVM_ERROR : 0`, `UVM_FATAL : 0`.
 
+## Phase 6 Gen3 port roles (closed 2026-11-25)
+
+USP, DSP, and RC at `GEN=3`, x4, 32-bit pipe. Each row printed `UVM_ERROR : 0` and `UVM_FATAL : 0`. USP uses the Endpoint peer. DSP and RC set `peer_upstream` so the peer adopts Link# `8'h00` and Lane# 0..3 and answers equalization as the upstream slave. The same-day EP and Gen2 regressions `smoke_gen3_l0_x4`, `smoke_gen3_memwr_x4`, and `smoke_gen2_x4` also printed `UVM_ERROR : 0` and `UVM_FATAL : 0`.
+
+| Gate | Command | Status |
+|------|---------|--------|
+| USP L0 | `.\scripts\sim_questa.ps1 smoke_gen3_l0_usp_x4 4 2` | PASS |
+| USP RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen3_memwr_usp_x4 4 2` | PASS |
+| DSP L0 | `.\scripts\sim_questa.ps1 smoke_gen3_l0_dsp_x4 4 3` | PASS |
+| DSP RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen3_memwr_dsp_x4 4 3` | PASS |
+| RC L0 | `.\scripts\sim_questa.ps1 smoke_gen3_l0_rc_x4 4 1` | PASS |
+| RC RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen3_memwr_rc_x4 4 1` | PASS |
+
 ## Phase 1 UVM build-out (historical)
 
 | Step | Status |
