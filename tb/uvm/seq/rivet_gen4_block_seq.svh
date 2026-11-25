@@ -1,7 +1,7 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 // Two 16-byte blocks on a 64-bit pipe. One block starts at rxstart_block 2'b10.
-// The same stimulus at Gen3 rate must not enter the byte stream.
+// At Gen3 rate that 10 start must still not enter the byte stream.
 
 class rivet_gen4_block_seq extends uvm_sequence;
   `uvm_object_utils(rivet_gen4_block_seq)
@@ -55,7 +55,7 @@ class rivet_gen4_block_seq extends uvm_sequence;
     repeat (4) @(posedge status_vif.pclk);
 
     fork
-      drive_pair(peer);
+      peer.drive_gen3_block(2'b10, 1'b1, 8'h10, 2'b10);
       collect_words(status_vif, got);
     join
     if (got.size() != 0)

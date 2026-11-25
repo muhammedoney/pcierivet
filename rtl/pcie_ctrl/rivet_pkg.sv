@@ -122,7 +122,23 @@ package rivet_pkg;
   localparam logic [7:0] RIVET_SYM_SKP_BLK   = 8'hAA;
   localparam logic [7:0] RIVET_SYM_EIOS_BLK  = 8'h66;
   localparam logic [7:0] RIVET_TS_RATE_GEN3  = 8'h0E;
+  // Bit 4 advertises 16 GT/s. Bits 1–3 stay set, same pattern as Gen3.
+  localparam logic [7:0] RIVET_TS_RATE_GEN4  = 8'h1E;
   localparam int unsigned RIVET_TS_RATE_SPEED_CHANGE_BIT = 7;
+
+  // Symbols carried in one pipe word. Gen1/Gen2 use the low 16 bits even when
+  // the elaboration is wider. Gen3 is four symbols. Gen4 is eight.
+  function automatic bit rivet_pipe_block_rate(input logic [2:0] rate);
+    return (rate == RIVET_PIPE_RATE_GEN3) || (rate == RIVET_PIPE_RATE_GEN4);
+  endfunction
+
+  function automatic int unsigned rivet_pipe_nsym(input logic [2:0] rate);
+    if (rate == RIVET_PIPE_RATE_GEN4)
+      return 8;
+    if (rate == RIVET_PIPE_RATE_GEN3)
+      return 4;
+    return 2;
+  endfunction
 
   // TS Training Control (Symbol 5) bit positions.
   localparam int unsigned RIVET_TS_TC_HOT_RESET  = 0;

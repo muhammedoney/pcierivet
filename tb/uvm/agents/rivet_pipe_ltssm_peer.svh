@@ -20,6 +20,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            disable_link_enable = 0; // set TS training-control Disable Link
   bit            gen3_block_only = 0;     // drive blocks, do not run the LTSSM
   bit            peer_gen3 = 0;           // advertise 8 GT/s and send blocks after Recovery.Speed
+  bit            peer_gen4 = 0;           // advertise 16 GT/s, then a second EQ at Gen4
   logic [2:0]    rxstatus_err_code = 3'b100; // RxStatus injected by peer_rxstatus_err_go
   int unsigned   peer_lanes = 0;         // 0 = all DUT lanes; else narrower partner
   bit            peer_lane_reverse = 0;  // assign Lane# W-1..0 on phys 0..W-1
@@ -52,13 +53,14 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     input bit          ts2,
     input logic [7:0]  lane_n,
     input logic [7:0]  eq_ctrl,
-    input logic [7:0]  eq_data
+    input logic [7:0]  eq_data,
+    input logic [7:0]  rate_b
   );
     case (idx[3:0])
       4'd0:    return ts2 ? 8'h2D : 8'h1E;
       4'd1:    return 8'h00;
       4'd2:    return lane_n;
-      4'd4:    return 8'h0E;
+      4'd4:    return rate_b;
       4'd6:    return eq_ctrl;
       4'd7:    return eq_data;
       default: return 8'h00;
@@ -91,6 +93,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     void'(uvm_config_db#(bit)::get(this, "", "disable_link_enable", disable_link_enable));
     void'(uvm_config_db#(bit)::get(this, "", "gen3_block_only", gen3_block_only));
     void'(uvm_config_db#(bit)::get(this, "", "peer_gen3", peer_gen3));
+    void'(uvm_config_db#(bit)::get(this, "", "peer_gen4", peer_gen4));
     void'(uvm_config_db#(logic [2:0])::get(this, "", "rxstatus_err_code", rxstatus_err_code));
     void'(uvm_config_db#(int unsigned)::get(this, "", "lanes", lanes));
     void'(uvm_config_db#(int unsigned)::get(this, "", "peer_lanes", peer_lanes));
@@ -454,6 +457,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     bit          cpld_auto;
     int unsigned g3_off;
     int unsigned g3_sets;
+    bit          g3_speed;
     int unsigned com_hold;
     logic [22:0] g3_lfsr[];
     logic [22:0] g3_rx_lfsr[];
@@ -501,7 +505,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
     tlp_sym = 0; tlp_nbytes = 0; tlp_frame = '0;
     recovery_go = 1'b0; recovery_pulse = 1'b0;
     last_rate = 3'd0; rate_ack_left = 0; peer_rate_byte = PEER_RATE;
-    g3_off = 0; g3_sets = 0; com_hold = 0; g3_frame_beat = 1'b0;
+    g3_off = 0; g3_sets = 0; g3_speed = 1'b0; com_hold = 0; g3_frame_beat = 1'b0;
     g3_rx_arm = 1'b0; g3_rx_data_blk = 1'b0; g3_rx_skp_blk = 1'b0;
     peer_train_byte = 8'h00; hot_reset_go = 1'b0; disable_go = 1'b0;
     tc_inject_active = 1'b0;
@@ -570,8 +574,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
       send_lane_pad = (phase_q != P_TS1_LANE) && (phase_q != P_TS2_CFG);
       send_os       = peer_active && (phase_q != P_IDLE);
       // Advertise Gen2, or 8 GT/s when peer_gen3. Speed-change bit in Recovery TS.
-      peer_rate_byte = peer_gen3 ? 8'h0E : PEER_RATE;
-      if ((speed_change_enable || peer_gen3) && send_os && !send_link_pad)
+      peer_rate_byte = peer_gen4 ? 8'h1E : (peer_gen3 ? 8'h0E : PEER_RATE);
+      if ((speed_change_enable || peer_gen3 || peer_gen4) && send_os && !send_link_pad)
         peer_rate_byte = peer_rate_byte | 8'h80;
       peer_train_byte = 8'h00;
       if (tc_inject_active && send_os && !send_link_pad) begin
@@ -622,6 +626,13 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             (phase_q == P_IDLE) && !recovery_pulse) begin
           vif.rxvalid     <= '0;
           recovery_pulse  = 1'b1;
+          // Gen3 L0 is already 128b/130b, so a DUT ordered set is not a COM.
+          // Restart EQ TS with the speed-change bit for the Gen4 recovery.
+          if (peer_gen4 && (vif.rate == 3'd2)) begin
+            g3_speed = 1'b1;
+            g3_sets  = 0;
+            g3_off   = 0;
+          end
           if (hot_reset_go || disable_go)
             tc_inject_active = 1'b1;
           uvm_config_db#(bit)::set(null, "*", "peer_recovery_go", 1'b0);
@@ -1001,31 +1012,43 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         endcase
       end
 
-      // After the PIPE rate is 8 GT/s, replace the 8b/10b symbols with 16-byte
-      // blocks. The first blocks carry EQ phase 2 plus the success bit and
-      // preset 1 so the upstream slave can leave equalization, then TS2, then
-      // data blocks the DUT treats as logical idle.
-      if (peer_gen3 && peer_active && (vif.rate == 3'd2) && (vif.txelecidle != '1)) begin
+      // After the PIPE rate is 8 GT/s or 16 GT/s, replace the 8b/10b symbols
+      // with 16-byte blocks. The first blocks carry EQ phase 2 plus the
+      // success bit and preset 1, then TS2, then data blocks. peer_gen4
+      // repeats that walk at Gen4, and sets the speed-change bit when the
+      // DUT leaves Gen3 L0.
+      if (((peer_gen3 && (vif.rate == 3'd2)) ||
+           (peer_gen4 && ((vif.rate == 3'd2) || (vif.rate == 3'd3)))) &&
+          peer_active && (vif.txelecidle != '1)) begin
         bit          ts2;
         bit          data_blk;
-        logic [7:0]  eqc, eqd;
+        logic [7:0]  eqc, eqd, rate_b;
+        int unsigned nsym;
+        nsym     = (vif.rate == 3'd3) ? 8 : 4;
         ts2      = (g3_sets >= 24) && (g3_sets < 40);
         data_blk = (g3_sets >= 40);
         eqc      = (ts2 || data_blk) ? 8'h00 : 8'h0A;
         eqd      = (ts2 || data_blk) ? 8'h00 : 8'h01;
+        if (vif.rate == 3'd3)
+          rate_b = 8'h1E;
+        else if (g3_speed)
+          rate_b = 8'h8E;
+        else
+          rate_b = 8'h0E;
         vif.rxdatak       <= '0;
         vif.rxdata_valid  <= '1;
         for (l = 0; l < lanes; l++) begin
           automatic logic [22:0] lfsr;
           lfsr = g3_lfsr[l];
+          vif.rxdata[l*PW +: PW] <= '0;
           vif.rxstart_block[2*l +: 2] <= (g3_off == 0) ? 2'b01 : 2'b00;
           vif.rxsync_header[2*l +: 2] <= data_blk ? 2'b01 : 2'b10;
-          for (s = 0; s < 4; s++) begin
+          for (s = 0; s < nsym; s++) begin
             automatic logic [7:0]  plain;
             automatic logic [30:0] step;
             if (!data_blk)
-              plain = gen3_ts_byte(g3_off + s, ts2, 8'(l), eqc, eqd);
-            else if (g3_frame_beat)
+              plain = gen3_ts_byte(g3_off + s, ts2, 8'(l), eqc, eqd, rate_b);
+            else if (g3_frame_beat && (s < 4))
               plain = g3_plain[l][s];
             else
               plain = 8'h00;
@@ -1040,17 +1063,18 @@ class rivet_pipe_ltssm_peer extends uvm_component;
           g3_lfsr[l] = lfsr;
         end
         g3_frame_beat = 1'b0;
-        g3_off = g3_off + 4;
+        g3_off = g3_off + nsym;
         if (g3_off >= 16) begin
           g3_off  = 0;
           g3_sets = g3_sets + 1;
         end
         if (data_blk)
           phase_q = P_IDLE;
-      end else if (peer_gen3) begin
-        g3_off = 0;
-        g3_sets = 0;
-        if (vif.rate != 3'd2) begin
+      end else if (peer_gen3 || peer_gen4) begin
+        g3_off   = 0;
+        g3_sets  = 0;
+        g3_speed = 1'b0;
+        if ((vif.rate != 3'd2) && (vif.rate != 3'd3)) begin
           for (l = 0; l < lanes; l++)
             g3_lfsr[l] = 23'h7FFFFF;
         end

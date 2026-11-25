@@ -76,7 +76,7 @@ module rivet_mac_descrambler #(
       os_left_n[l]   = os_left_q[l];
       com_pend_n[l]  = com_pend_q[l];
       skp_left_n[l]  = skp_left_q[l];
-      if ((rate_i == RIVET_PIPE_RATE_GEN3) && valid_i[l] && lane_en_i[l] &&
+      if (rivet_pkg::rivet_pipe_block_rate(rate_i) && valid_i[l] && lane_en_i[l] &&
           (lfsr23_arm_q || block_start_i[l])) begin
         automatic bit skp_word;
         if (!lfsr23_arm_q)
@@ -87,14 +87,18 @@ module rivet_mac_descrambler #(
                     (data_i[PIPE_DATA_WIDTH*l +: 8] == RIVET_SYM_SKP_BLK));
         if (os_block_i[l] && skp_word) begin
           if (block_start_i[l])
-            skp_left_n[l] = 3'd3;
+            skp_left_n[l] = (rate_i == RIVET_PIPE_RATE_GEN4) ? 3'd1 : 3'd3;
           else
             skp_left_n[l] = skp_left_q[l] - 3'd1;
         end else begin
           skp_left_n[l] = 3'd0;
           for (int unsigned s = 0; s < SYMS; s++) begin
-            automatic logic [7:0]  din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+            automatic logic [7:0]  din;
             automatic logic [30:0] step;
+            // Gen3 on a 64-bit pipe uses the low four symbols.
+            if ((rate_i == RIVET_PIPE_RATE_GEN3) && (s >= 4))
+              continue;
+            din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
             step = rivet_lfsr23_byte(lfsr23_next[l]);
             lfsr23_next[l] = step[30:8];
             if (!os_block_i[l])
@@ -110,7 +114,7 @@ module rivet_mac_descrambler #(
           automatic logic [7:0]  nxt;
           automatic logic        this_os;
           // 32-bit pipe, Gen1/Gen2: only the low 16 bits are symbols.
-          if ((PIPE_DATA_WIDTH == 32) && (s >= 2))
+          if ((PIPE_DATA_WIDTH > 16) && (s >= 2))
             continue;
           din   = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           is_k  = datak_i[2*l + s];
@@ -185,7 +189,7 @@ module rivet_mac_descrambler #(
         com_pend_q[l] <= com_pend_n[l];
         skp_left_q[l] <= skp_left_n[l];
       end
-      if (rate_i != RIVET_PIPE_RATE_GEN3) begin
+      if (!rivet_pkg::rivet_pipe_block_rate(rate_i)) begin
         lfsr23_arm_q <= 1'b0;
         for (int unsigned l = 0; l < LANES; l++)
           lfsr23_q[l] <= RIVET_LFSR23_SEED;

@@ -132,12 +132,15 @@ module rivet_mac_pipe_adapter #(
   logic                    tx_dv_q;
   logic [1:0]              tx_hdr_q;
 
-  assign gen3_q  = (rate_q == RIVET_PIPE_RATE_GEN3) && (PIPE_DATA_WIDTH == 32);
+  // Gen3 on a 64-bit elaboration still uses four low symbols per word.
+  // Start 2'b10 stays a Gen4-only accept in rx_take below.
+  assign gen3_q  = (rate_q == RIVET_PIPE_RATE_GEN3) &&
+                   ((PIPE_DATA_WIDTH == 32) || (PIPE_DATA_WIDTH == 64));
   assign gen4_q  = (rate_q == RIVET_PIPE_RATE_GEN4) && (PIPE_DATA_WIDTH == 64);
   assign block_q = gen3_q || gen4_q;
 
-  // 16 bytes is four 32-bit words or two 64-bit words.
-  localparam int unsigned BLK_LAST = (PIPE_DATA_WIDTH == 64) ? 1 : 3;
+  // 16 bytes is four Gen3 words or two Gen4 words.
+  wire [1:0] blk_last = gen4_q ? 2'd1 : 2'd3;
 
   function automatic logic block_start(input logic [1:0] sb);
     if (sb == 2'b01)
@@ -150,6 +153,13 @@ module rivet_mac_pipe_adapter #(
   always_comb begin
     rx_take_d = '0;
     if (PIPE_DATA_WIDTH == 32) begin
+      for (int unsigned l = 0; l < LANES; l++) begin
+        if (pipe_rxdata_valid_i[l] &&
+            (pipe_rxstart_block_i[2*l +: 2] != 2'b10) &&
+            ((pipe_rxstart_block_i[2*l +: 2] == 2'b01) || rx_in_q[l]))
+          rx_take_d[l] = 1'b1;
+      end
+    end else if ((PIPE_DATA_WIDTH == 64) && (rate_i == RIVET_PIPE_RATE_GEN3)) begin
       for (int unsigned l = 0; l < LANES; l++) begin
         if (pipe_rxdata_valid_i[l] &&
             (pipe_rxstart_block_i[2*l +: 2] != 2'b10) &&
@@ -268,7 +278,7 @@ module rivet_mac_pipe_adapter #(
             if (block_start(sb)) begin
               rx_in_q[l] <= 1'b1;
               rx_idx_q[2*l +: 2] <= 2'd1;
-            end else if (rx_idx_q[2*l +: 2] == 2'(BLK_LAST)) begin
+            end else if (rx_idx_q[2*l +: 2] == blk_last) begin
               rx_in_q[l] <= 1'b0;
               rx_idx_q[2*l +: 2] <= 2'd0;
             end else begin
@@ -287,7 +297,7 @@ module rivet_mac_pipe_adapter #(
             end else begin
               tx_start_q <= 1'b0;
               tx_hdr_q   <= 2'b00;
-              tx_word_q  <= (tx_word_q == 2'(BLK_LAST)) ? 2'd0 : (tx_word_q + 2'd1);
+              tx_word_q  <= (tx_word_q == blk_last) ? 2'd0 : (tx_word_q + 2'd1);
             end
           end else begin
             // Outside Detect, os_tx marks word 0 and OS vs Data directly so
@@ -295,7 +305,7 @@ module rivet_mac_pipe_adapter #(
             tx_start_q <= sym_tx_start_i;
             tx_hdr_q   <= sym_tx_start_i ? (sym_tx_os_i ? 2'b10 : 2'b01) : 2'b00;
             tx_word_q  <= sym_tx_start_i ? 2'd1 :
-                          ((tx_word_q == 2'(BLK_LAST)) ? 2'd0 : (tx_word_q + 2'd1));
+                          ((tx_word_q == blk_last) ? 2'd0 : (tx_word_q + 2'd1));
           end
         end else begin
           tx_dv_q    <= 1'b0;

@@ -93,7 +93,7 @@ module rivet_mac_os_tx #(
                                            input logic [7:0]         lane_num);
     logic [8:0] sym;
     sym = {1'b0, 8'h00};
-    if (rate_i == RIVET_PIPE_RATE_GEN3) begin
+    if (rivet_pkg::rivet_pipe_block_rate(rate_i)) begin
       case (os_type)
         RIVET_MAC_OS_TS1, RIVET_MAC_OS_TS2: begin
           case (idx)
@@ -138,7 +138,7 @@ module rivet_mac_os_tx #(
   endfunction
 
   function automatic logic [4:0] os_length(input rivet_mac_os_type_e os_type);
-    if ((rate_i == RIVET_PIPE_RATE_GEN3) &&
+    if (rivet_pkg::rivet_pipe_block_rate(rate_i) &&
         ((os_type == RIVET_MAC_OS_TS1) || (os_type == RIVET_MAC_OS_TS2) ||
          (os_type == RIVET_MAC_OS_SKP) || (os_type == RIVET_MAC_OS_EIOS) ||
          (os_type == RIVET_MAC_OS_FTS)))
@@ -297,10 +297,9 @@ module rivet_mac_os_tx #(
       ? (want_skp ? RIVET_MAC_OS_SKP
                   : (transmitting ? os_req_i : RIVET_MAC_OS_NONE))
       : cur_q;
-  // Gen1/Gen2 on a 32-bit pipe use the low 16 bits (two symbols). Gen3 uses all four.
+  // Gen1/Gen2 use the low 16 bits. Gen3 uses four symbols. Gen4 uses eight.
   wire [4:0] os_step;
-  assign os_step = ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3))
-                 ? 5'd2 : 5'(SYMS);
+  assign os_step = 5'(rivet_pkg::rivet_pipe_nsym(rate_i));
   assign len          = os_length(cur);
   assign set_done     = (ptr_q + os_step) >= len;
   assign ptr_next     = set_done ? 5'd0 : (ptr_q + os_step);
@@ -333,11 +332,16 @@ module rivet_mac_os_tx #(
   assign dll_tx_ready_o = take_dllp || take_tlp_start || take_tlp_col;
 
   always_comb begin
+    int unsigned step_i;
     n_en = '0;
     for (int unsigned li = 0; li < LANES; li++)
       if (lane_en_i[li]) n_en = n_en + 3'd1;
     if (n_en == 3'd0) n_en = 3'(LANES);
-    sym_step = 5'(n_en) * 5'(SYMS);
+    // Gen3 on a 64-bit pipe is four symbols, so a x4 step stays 16.
+    // A Gen4 x4 step is 32 and does not fit this 5-bit count; clamp so a
+    // DLLP still completes instead of adding a zero stride forever.
+    step_i   = int'(n_en) * rivet_pkg::rivet_pipe_nsym(rate_i);
+    sym_step = (step_i > 31) ? 5'd31 : 5'(step_i);
   end
 
   assign pkt_done    = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
@@ -697,7 +701,7 @@ module rivet_mac_os_tx #(
               sym_datak_d[2*l + s] = sym_tmp[8];
               if ((!sym_tmp[8] &&
                    ((cur == RIVET_MAC_OS_TS1) || (cur == RIVET_MAC_OS_TS2))) ||
-                  ((rate_i == RIVET_PIPE_RATE_GEN3) &&
+                  (rivet_pkg::rivet_pipe_block_rate(rate_i) &&
                    (cur != RIVET_MAC_OS_NONE) && (cur != RIVET_MAC_OS_IDLE)))
                 sym_os_d_d[2*l + s] = 1'b1;
             end
@@ -710,7 +714,7 @@ module rivet_mac_os_tx #(
   assign sym_valid_d = take_dllp ||
                        (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) || tlp_flow_q ||
                        (cur != RIVET_MAC_OS_NONE);
-  assign sym_blk_start_d = (rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_d &&
+  assign sym_blk_start_d = rivet_pkg::rivet_pipe_block_rate(rate_i) && sym_valid_d &&
                            (word_q == 2'd0);
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
@@ -776,10 +780,11 @@ module rivet_mac_os_tx #(
         if (sent_q != CNT_MAX) sent_q <= sent_q + 1'b1;
       end
 
-      // L0 Symbol-Time counter for SKP scheduling. Reset outside Gen3 and
-      // while idle/silent in Recovery.Speed so word 0 aligns with the first
-      // Gen3 block emitted after the rate change.
-      if ((rate_i != RIVET_PIPE_RATE_GEN3) || !sym_valid_d)
+      // Block-word counter. Reset outside 128b/130b so word 0 aligns with the
+      // first block after a rate change. Gen3 is four words. Gen4 is two.
+      if (!rivet_pkg::rivet_pipe_block_rate(rate_i) || !sym_valid_d)
+        word_q <= 2'd0;
+      else if ((rate_i == RIVET_PIPE_RATE_GEN4) && (word_q == 2'd1))
         word_q <= 2'd0;
       else
         word_q <= word_q + 2'd1;

@@ -268,13 +268,19 @@ module rivet_ltssm #(
   // Desire Gen1→Gen2 change when both advertise 5.0 GT/s and we are still Gen1.
   wire remote_gen2_ok = remote_rate_q[2];
   wire remote_gen3_ok = remote_rate_q[3];
+  wire remote_gen4_ok = remote_rate_q[4];
   // One speed change per Recovery visit (speed_chg_done_q), so a peer that keeps
   // bit 7 set cannot bounce Gen1 → Gen2 → Gen1 within the same Recovery.
+  // L0 clears speed_chg_done every cycle, including L0 at Gen3, so the next
+  // Recovery can change speed. A Gen2 downshift never sits at rate Gen3.
   wire want_speed_chg = SPEED_CHANGE_EN && (GEN >= 2) && !speed_chg_done_q &&
                         (rate_q == RIVET_PIPE_RATE_GEN1) && remote_gen2_ok;
   // Gen2 → 8.0 GT/s when GEN supports it and the partner advertises bit 3.
   wire want_gen3 = SPEED_CHANGE_EN && (GEN >= 3) && !speed_chg_done_q &&
                    (rate_q == RIVET_PIPE_RATE_GEN2) && remote_gen3_ok;
+  // Gen3 → 16.0 GT/s when GEN supports it and the partner advertises bit 4.
+  wire want_gen4 = SPEED_CHANGE_EN && (GEN >= 4) && !speed_chg_done_q &&
+                   (rate_q == RIVET_PIPE_RATE_GEN3) && remote_gen4_ok;
   // Gen2 → Gen1 when both sides request a change while running at 5.0 GT/s
   // and the partner still advertises Gen2. A Gen3 advertisement wins instead.
   wire want_downshift = SPEED_CHANGE_EN && (GEN >= 2) && !speed_chg_done_q &&
@@ -282,7 +288,8 @@ module rivet_ltssm #(
                         !want_gen3;
   wire in_rec_ts = (state_q == RIVET_LTSSM_RECOVERY_RCVRLOCK) ||
                    (state_q == RIVET_LTSSM_RECOVERY_RCVRCFG);
-  wire mutual_speed_chg = (want_speed_chg || want_downshift || want_gen3) &&
+  wire mutual_speed_chg = (want_speed_chg || want_downshift || want_gen3 ||
+                           want_gen4) &&
                           rx_rate_id_i[RIVET_TS_RATE_SPEED_CHANGE_BIT];
   // FTS count when leaving Tx_L0s: partner's advertised N_FTS, at least 4.
   wire [11:0] l0s_fts_count = (remote_nfts_q < 8'd4) ? 12'd4 : {4'h0, remote_nfts_q};
@@ -713,8 +720,11 @@ module rivet_ltssm #(
           os_req_o = RIVET_MAC_OS_EIOS;
           if (os_sent_cnt_i >= 12'd2) begin
             speed_ei_d = 1'b1;
-            // Gen2 → 8.0 GT/s when advertised, else Gen2 → Gen1, else Gen1 → Gen2.
-            if (want_gen3)
+            // Gen3 → 16.0 GT/s, else Gen2 → 8.0 GT/s, else Gen2 → Gen1,
+            // else Gen1 → Gen2.
+            if (want_gen4)
+              rate_d = RIVET_PIPE_RATE_GEN4;
+            else if (want_gen3)
               rate_d = RIVET_PIPE_RATE_GEN3;
             else if (rate_q == RIVET_PIPE_RATE_GEN2)
               rate_d = RIVET_PIPE_RATE_GEN1;
@@ -727,8 +737,9 @@ module rivet_ltssm #(
           os_req_o  = RIVET_MAC_OS_NONE;
           phy_ack_d = phy_ack_q | (phystatus_i & lane_en_q);
           if ((phy_ack_d & lane_en_q) == lane_en_q)
-            state_d = (rate_q == RIVET_PIPE_RATE_GEN3) ? RIVET_LTSSM_RCVRY_EQ0
-                                                      : RIVET_LTSSM_RECOVERY_RCVRLOCK;
+            state_d = ((rate_q == RIVET_PIPE_RATE_GEN3) ||
+                       (rate_q == RIVET_PIPE_RATE_GEN4)) ? RIVET_LTSSM_RCVRY_EQ0
+                                                        : RIVET_LTSSM_RECOVERY_RCVRLOCK;
         end
         if (timer_expired)
           state_d = RIVET_LTSSM_DETECT_QUIET;
@@ -1011,10 +1022,12 @@ module rivet_ltssm #(
   assign tx_link_pad_o   = link_pad_q;
   assign tx_lane_pad_o   = lane_pad_q;
   assign tx_n_fts_o      = N_FTS_ADV;
-  assign tx_rate_id_o    = ((GEN >= 3 && SPEED_CHANGE_EN) ? RIVET_TS_RATE_GEN3 :
+  assign tx_rate_id_o    = ((GEN >= 4 && SPEED_CHANGE_EN) ? RIVET_TS_RATE_GEN4 :
+                             (GEN >= 3 && SPEED_CHANGE_EN) ? RIVET_TS_RATE_GEN3 :
                              (GEN >= 2 && SPEED_CHANGE_EN) ? RIVET_TS_RATE_GEN2
                                                          : RIVET_TS_RATE_GEN1)
-                           | (((want_speed_chg || want_downshift || want_gen3) && in_rec_ts)
+                           | (((want_speed_chg || want_downshift || want_gen3 ||
+                               want_gen4) && in_rec_ts)
                               ? (8'h01 << RIVET_TS_RATE_SPEED_CHANGE_BIT) : 8'h00);
   assign tx_eq_ctrl_o = (state_q == RIVET_LTSSM_RCVRY_EQ2) ? 8'h02 :
                         (state_q == RIVET_LTSSM_RCVRY_EQ3) ? rx_eq_ctrl_i : 8'h00;

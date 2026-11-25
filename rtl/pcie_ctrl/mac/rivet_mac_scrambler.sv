@@ -61,7 +61,7 @@ module rivet_mac_scrambler #(
     for (int unsigned l = 0; l < LANES; l++) begin
       lfsr_next[l] = lfsr_q[l];
       lfsr23_next[l] = lfsr23_q[l];
-      if ((rate_i == RIVET_PIPE_RATE_GEN3) && valid_i && lane_en_i[l]) begin
+      if (rivet_pkg::rivet_pipe_block_rate(rate_i) && valid_i && lane_en_i[l]) begin
         // One OS flag covers the 4-byte word. SKP does not advance the LFSR.
         automatic logic os_word  = os_d_i[2*l];
         automatic logic skp_word = os_word &&
@@ -72,8 +72,12 @@ module rivet_mac_scrambler #(
           if (!os_word)
             lfsr23_data_n = 1'b1;
           for (int unsigned s = 0; s < SYMS; s++) begin
-            automatic logic [7:0]  din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+            automatic logic [7:0]  din;
             automatic logic [30:0] step;
+            // Gen3 on a 64-bit pipe uses the low four symbols.
+            if ((rate_i == RIVET_PIPE_RATE_GEN3) && (s >= 4))
+              continue;
+            din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
             step = rivet_lfsr23_byte(lfsr23_next[l]);
             lfsr23_next[l] = step[30:8];
             if (!os_word)
@@ -87,7 +91,7 @@ module rivet_mac_scrambler #(
           automatic logic        os_d;
           automatic logic [23:0] step;
           // 32-bit pipe, Gen1/Gen2: only the low 16 bits are symbols.
-          if ((PIPE_DATA_WIDTH == 32) && (s >= 2))
+          if ((PIPE_DATA_WIDTH > 16) && (s >= 2))
             continue;
           din  = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           is_k = datak_i[2*l + s];
@@ -121,13 +125,13 @@ module rivet_mac_scrambler #(
       data_q      <= data_scr;
       datak_q     <= datak_i;
       valid_q     <= valid_i;
-      os_q        <= (rate_i == RIVET_PIPE_RATE_GEN3) ? (|os_d_i) : 1'b0;
-      blk_start_q <= (rate_i == RIVET_PIPE_RATE_GEN3) ? blk_start_i : 1'b0;
+      os_q        <= rivet_pkg::rivet_pipe_block_rate(rate_i) ? (|os_d_i) : 1'b0;
+      blk_start_q <= rivet_pkg::rivet_pipe_block_rate(rate_i) ? blk_start_i : 1'b0;
       for (int unsigned l = 0; l < LANES; l++) begin
         lfsr_q[l]   <= lfsr_next[l];
         lfsr23_q[l] <= lfsr23_next[l];
       end
-      if (rate_i != RIVET_PIPE_RATE_GEN3)
+      if (!rivet_pkg::rivet_pipe_block_rate(rate_i))
         lfsr23_data_q <= 1'b0;
       else
         lfsr23_data_q <= lfsr23_data_n;

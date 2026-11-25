@@ -110,8 +110,22 @@ module rivet_mac_os_rx #(
         blk_n_q[l] <= '0;
         for (int unsigned j = 0; j < 12; j++) blk_q[l][j] <= '0;
       end
-    end else if (rate_i != RIVET_PIPE_RATE_GEN3) begin
+    end else if (!rivet_pkg::rivet_pipe_block_rate(rate_i)) begin
       for (int unsigned l = 0; l < LANES; l++) blk_n_q[l] <= '0;
+    end else if (rate_i == RIVET_PIPE_RATE_GEN4) begin
+      // Two 8-byte words. Bytes 0–7 are stored on the start word and parsed
+      // when the second word arrives.
+      for (int unsigned l = 0; l < LANES; l++) begin
+        if (sym_valid_i[l] && os_block_i[l] && block_start_i[l]) begin
+          for (int unsigned s = 0; s < 8; s++) begin
+            if (s < SYMS)
+              blk_q[l][s] <= sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+          end
+          blk_n_q[l] <= 5'd8;
+        end else if (sym_valid_i[l] && os_block_i[l] && (blk_n_q[l] == 5'd8)) begin
+          blk_n_q[l] <= '0;
+        end
+      end
     end else begin
       for (int unsigned l = 0; l < LANES; l++) begin
         if (sym_valid_i[l] && os_block_i[l] && block_start_i[l]) begin
@@ -125,7 +139,7 @@ module rivet_mac_os_rx #(
             if ((s < SYMS) && ((blk_n_q[l] + 5'(s)) < 5'd12))
               blk_q[l][blk_n_q[l] + s] <= sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
           end
-          blk_n_q[l] <= blk_n_q[l] + 5'(SYMS);
+          blk_n_q[l] <= blk_n_q[l] + 5'd4;
         end else if (sym_valid_i[l] && os_block_i[l] && (blk_n_q[l] == 5'd12)) begin
           blk_n_q[l] <= '0;
         end
@@ -140,8 +154,8 @@ module rivet_mac_os_rx #(
       end
     end else begin
       for (int unsigned l = 0; l < LANES; l++) begin
-        // Gen1/Gen2 on a 32-bit pipe: shift two symbols from the low 16 bits.
-        if ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3)) begin
+        // Gen1/Gen2 on a wide pipe: shift two symbols from the low 16 bits.
+        if ((PIPE_DATA_WIDTH > 16) && !rivet_pkg::rivet_pipe_block_rate(rate_i)) begin
           for (int unsigned i = WIN - 1; i >= 2; i--) win_q[l][i] <= win_q[l][i-2];
           for (int unsigned s = 0; s < 2; s++) begin
             win_q[l][1-s] <= {sym_valid_i[l],
@@ -201,8 +215,10 @@ module rivet_mac_os_rx #(
       cap_eq_ctrl[l]  = '0;
       cap_eq_data[l]  = '0;
 
-      if ((rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_i[l] && os_block_i[l] &&
-          !block_start_i[l] && (blk_n_q[l] == 5'd12) &&
+      if (rivet_pkg::rivet_pipe_block_rate(rate_i) && sym_valid_i[l] && os_block_i[l] &&
+          !block_start_i[l] &&
+          (((rate_i == RIVET_PIPE_RATE_GEN3) && (blk_n_q[l] == 5'd12)) ||
+           ((rate_i == RIVET_PIPE_RATE_GEN4) && (blk_n_q[l] == 5'd8))) &&
           ((blk_q[l][0] == RIVET_SYM_TS1_BLK) || (blk_q[l][0] == RIVET_SYM_TS2_BLK))) begin
         hit_any_ts[l]   = 1'b1;
         cap_link_num[l] = blk_q[l][1];
@@ -227,12 +243,12 @@ module rivet_mac_os_rx #(
       end
 
       // A Gen3 data block (sync header 01) is logical idle for Recovery.Idle.
-      if ((rate_i == RIVET_PIPE_RATE_GEN3) && sym_valid_i[l] && !os_block_i[l])
+      if (rivet_pkg::rivet_pipe_block_rate(rate_i) && sym_valid_i[l] && !os_block_i[l])
         hit_idle[l] = 1'b1;
 
       // Idle / K activity on the newest symbols of this lane.
       for (int unsigned s = 0; s < SYMS; s++) begin
-        if ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3) && (s >= 2))
+        if (s >= rivet_pkg::rivet_pipe_nsym(rate_i))
           continue;
         if (sym_valid_i[l]) begin
           if ((s < 2) && sym_datak_i[2*l + s]) hit_k[l] = 1'b1;
@@ -254,7 +270,7 @@ module rivet_mac_os_rx #(
         id_ts2_inv = 1'b1;
         is_ts1     = 1'b0;
         is_ts2     = 1'b0;
-        if ((PIPE_DATA_WIDTH == 32) && (rate_i != RIVET_PIPE_RATE_GEN3) && (a >= 2))
+        if (a >= rivet_pkg::rivet_pipe_nsym(rate_i))
           continue;
 
         for (int unsigned j = 0; j < RIVET_TS_LEN; j++) begin
@@ -280,7 +296,7 @@ module rivet_mac_os_rx #(
           end
         end
 
-        if ((rate_i != RIVET_PIPE_RATE_GEN3) && all_valid && com_ok) begin
+        if (!rivet_pkg::rivet_pipe_block_rate(rate_i) && all_valid && com_ok) begin
           is_ts1 = id_ts1 || id_ts1_inv;
           is_ts2 = id_ts2 || id_ts2_inv;
 
