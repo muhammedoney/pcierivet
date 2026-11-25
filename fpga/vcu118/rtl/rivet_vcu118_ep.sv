@@ -7,7 +7,10 @@
 //
 // pcie_phy_0 is created by fpga/vcu118/create_project.tcl (not checked in).
 
-module rivet_vcu118_ep (
+module rivet_vcu118_ep #(
+  parameter int unsigned GEN        = 2,
+  parameter int unsigned PHY_RATE_W = 2
+) (
   input  logic        sys_clk_p,
   input  logic        sys_clk_n,
   input  logic        pcie_perst_n,
@@ -22,7 +25,9 @@ module rivet_vcu118_ep (
 );
 
   localparam int unsigned LANES           = 4;
-  localparam int unsigned PIPE_DATA_WIDTH = 16;
+  localparam int unsigned PIPE_DATA_WIDTH = (GEN == 4) ? 64 : 16;
+  localparam int unsigned AXI_DATA_WIDTH  = (GEN == 4) ? 256 : 64;
+  localparam int unsigned AXI_KEEP_WIDTH  = AXI_DATA_WIDTH / 32;
 
   logic sys_rst_n;
   logic sys_clk;
@@ -77,8 +82,8 @@ module rivet_vcu118_ep (
   logic [2*LANES-1:0]               mac_rxdatak;
   logic [LANES-1:0]                 pipe_phystatus_rst_bus;
 
-  logic [63:0] cq_tdata, cc_tdata;
-  logic [1:0]  cq_tkeep, cc_tkeep;
+  logic [AXI_DATA_WIDTH-1:0] cq_tdata, cc_tdata;
+  logic [AXI_KEEP_WIDTH-1:0] cq_tkeep, cc_tkeep;
   logic        cq_tlast, cq_tvalid, cq_tready;
   logic        cc_tlast, cc_tvalid;
   logic [3:0]  cc_tready;
@@ -109,7 +114,8 @@ module rivet_vcu118_ep (
   rivet_pcie_phy_wrap #(
     .BOARD           (rivet_pkg::RIVET_BOARD_VCU118),
     .LANES           (LANES),
-    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH),
+    .PHY_RATE_W      (PHY_RATE_W)
   ) u_phy (
     .phy_refclk         (sys_clk_bufg),
     .phy_gtrefclk       (sys_clk_gt),
@@ -165,29 +171,51 @@ module rivet_vcu118_ep (
     .pcie_link_reach_target (link_up)
   );
 
-  rivet_tl_pio_app u_pio (
-    .clk_i            (user_clk),
-    .rst_ni           (sys_rst_n & phy_ready),
-    .m_axis_cq_tdata  (cq_tdata),
-    .m_axis_cq_tkeep  (cq_tkeep),
-    .m_axis_cq_tlast  (cq_tlast),
-    .m_axis_cq_tvalid (cq_tvalid),
-    .m_axis_cq_tready (cq_tready),
-    .m_axis_cq_tuser  (cq_tuser),
-    .s_axis_cc_tdata  (cc_tdata),
-    .s_axis_cc_tkeep  (cc_tkeep),
-    .s_axis_cc_tlast  (cc_tlast),
-    .s_axis_cc_tvalid (cc_tvalid),
-    .s_axis_cc_tready (cc_tready),
-    .s_axis_cc_tuser  (cc_tuser)
-  );
+  generate
+    if (GEN == 4) begin : g_pio256
+      rivet_fpga_pio256 u_pio (
+        .clk_i            (user_clk),
+        .rst_ni           (sys_rst_n & phy_ready),
+        .m_axis_cq_tdata  (cq_tdata),
+        .m_axis_cq_tkeep  (cq_tkeep),
+        .m_axis_cq_tlast  (cq_tlast),
+        .m_axis_cq_tvalid (cq_tvalid),
+        .m_axis_cq_tready (cq_tready),
+        .m_axis_cq_tuser  (cq_tuser),
+        .s_axis_cc_tdata  (cc_tdata),
+        .s_axis_cc_tkeep  (cc_tkeep),
+        .s_axis_cc_tlast  (cc_tlast),
+        .s_axis_cc_tvalid (cc_tvalid),
+        .s_axis_cc_tready (cc_tready),
+        .s_axis_cc_tuser  (cc_tuser)
+      );
+    end else begin : g_pio64
+      rivet_tl_pio_app u_pio (
+        .clk_i            (user_clk),
+        .rst_ni           (sys_rst_n & phy_ready),
+        .m_axis_cq_tdata  (cq_tdata),
+        .m_axis_cq_tkeep  (cq_tkeep),
+        .m_axis_cq_tlast  (cq_tlast),
+        .m_axis_cq_tvalid (cq_tvalid),
+        .m_axis_cq_tready (cq_tready),
+        .m_axis_cq_tuser  (cq_tuser),
+        .s_axis_cc_tdata  (cc_tdata),
+        .s_axis_cc_tkeep  (cc_tkeep),
+        .s_axis_cc_tlast  (cc_tlast),
+        .s_axis_cc_tvalid (cc_tvalid),
+        .s_axis_cc_tready (cc_tready),
+        .s_axis_cc_tuser  (cc_tuser)
+      );
+    end
+  endgenerate
 
   rivet_pcie_ctrl #(
     .MODE              (0),
-    .GEN               (2),
+    .GEN               (GEN),
     .SPEED_CHANGE_EN   (1'b1),
     .LANES             (LANES),
     .PIPE_DATA_WIDTH   (PIPE_DATA_WIDTH),
+    .AXI_DATA_WIDTH    (AXI_DATA_WIDTH),
     .LTSSM_TIMER_SCALE (1),
     .N_TS1_POLLING     (1024)
   ) u_ctrl (
