@@ -805,7 +805,9 @@ module rivet_mac_os_rx #(
     int unsigned nleft;
     logic [63:0] word;
     logic [7:0]  bb [64];
+    logic [7:0]  ab [8];
     logic [5:0]  ix;
+    logic [2:0]  ak;
     acc      = '0;
     acc_n    = '0;
     overflow = 1'b0;
@@ -832,12 +834,16 @@ module rivet_mac_os_rx #(
       overflow = 1'b1;
     end else begin
       acc_n = 3'(nleft);
-      for (int unsigned k = 0; k < 8; k++) begin
+      for (int unsigned k = 0; k < 8; k++)
+        ab[3'(k)] = '0;
+      for (int unsigned k = 0; k < 7; k++) begin
         if (k < nleft) begin
+          ak = 3'(k);
           ix = 6'(bi + k);
-          acc[8*k +: 8] = bb[ix];
+          ab[ak] = bb[ix];
         end
       end
+      acc = {ab[6], ab[5], ab[4], ab[3], ab[2], ab[1], ab[0]};
     end
   endtask
 
