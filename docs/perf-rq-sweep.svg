@@ -1,106 +1,116 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 600" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 820" role="img" aria-labelledby="title desc">
   <title id="title">Rivet x4 throughput versus payload</title>
-  <desc id="desc">Endpoint at PIPE, 4 lanes, eight TLPs per size, 4 ns user clock. Heavy lines are Gen4. Lighter lines are Gen3, then Gen2, on the same 0 to 8000 MB/s scale. Grouped figures at the right are MB/s at a 4096-byte TLP. Gen4 wire 7877 MB/s. Gen4 MemWr64 888.889, 1777.778, 3555.556, 4923.077, 6095.238, 6918.919, 7420.290, 7699.248, 7846.743, 7922.631, 7961.127. Gen4 MemRd64 117.647, 231.884, 450.704, 876.712, 1542.169, 2612.245, 3580.420, 4970.874, 6150.150, 6965.986, 7447.273. Gen3 wire 3938 MB/s. Gen3 MemWr64 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, 3953.668. Gen3 MemRd64 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, 3430.486. Gen2 wire 2000 MB/s. Gen2 MemWr64 250.000, 500.000, 800.000, 1142.857, 1438.202, 1651.613, 1790.210, 1889.299, 1943.074, 1970.178, 1983.055. Gen2 read 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, 1737.065.</desc>
-  <rect width="1120" height="600" fill="#ffffff"/>
-  <text x="72" y="36" fill="#5c6570" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="0.14em">4 LANES · ENDPOINT AT PIPE</text>
-  <text x="776" y="36" fill="#5c6570" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="0.14em">MB/s AT 4096 BYTES</text>
-  <text x="72" y="62" fill="#1f2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="600">Rivet x4 throughput vs payload</text>
-  <text x="72" y="84" fill="#5c6570" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">Heavy lines are Gen4. Lighter lines are Gen3, then Gen2, on the same scale.</text>
-  <g fill="none" stroke="#e7ebef" stroke-width="1">
-    <line x1="72" y1="378.00" x2="760" y2="378.00"/>
-    <line x1="72" y1="288.00" x2="760" y2="288.00"/>
-    <line x1="72" y1="198.00" x2="760" y2="198.00"/>
-    <line x1="72" y1="108.00" x2="760" y2="108.00"/>
+  <desc id="desc">Three rows, one generation each, on the same 0 to 8000 MB/s scale. Endpoint at PIPE, 4 lanes, eight TLPs per size, 4 ns user clock. Blue is a write and amber is a read. The dashed line is the wire rate. The figures in each row are MB/s at a 4096-byte TLP. Gen4 wire 7877. Gen4 MemWr64 888.889, 1777.778, 3555.556, 4923.077, 6095.238, 6918.919, 7420.290, 7699.248, 7846.743, 7922.631, 7961.127. Gen4 MemRd64 117.647, 231.884, 450.704, 876.712, 1542.169, 2612.245, 3580.420, 4970.874, 6150.150, 6965.986, 7447.273. Gen3 wire 3938. Gen3 MemWr64 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, 3953.668. Gen3 MemRd64 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, 3430.486. Gen2 wire 2000. Gen2 MemWr64 250.000, 500.000, 800.000, 1142.857, 1438.202, 1651.613, 1790.210, 1889.299, 1943.074, 1970.178, 1983.055. Gen2 read 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, 1737.065.</desc>
+  <rect width="1120" height="820" fill="#ffffff"/>
+  <text x="36" y="40" fill="#1c2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="600">Rivet x4 throughput vs payload</text>
+  <text x="36" y="64" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14">Each row is one generation, on the same 0–8000 MB/s scale. Figures are the 4096-byte point.</text>
+  <line x1="36" y1="86" x2="58" y2="86" stroke="#155a9c" stroke-width="3" stroke-linecap="round"/>
+  <text x="66" y="90" fill="#1c2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemWr</text>
+  <line x1="138" y1="86" x2="160" y2="86" stroke="#e06a12" stroke-width="3" stroke-linecap="round"/>
+  <text x="168" y="90" fill="#1c2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemRd</text>
+  <line x1="246" y1="86" x2="268" y2="86" stroke="#8b97a3" stroke-width="1.5" stroke-dasharray="3 2" stroke-linecap="round"/>
+  <text x="276" y="90" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">Wire rate</text>
+  <rect x="0" y="102" width="1120" height="208" fill="#f4f7fb"/>
+  <text x="132" y="122" fill="#1c2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Gen4</text>
+  <text x="184" y="122" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">16 GT/s · x4</text>
+  <text x="860" y="122" fill="#8b97a3" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" text-anchor="end">wire 7877</text>
+  <g fill="none" stroke="#e6ebf0" stroke-width="1">
+    <line x1="132" y1="220.00" x2="860" y2="220.00"/>
+    <line x1="132" y1="136.00" x2="860" y2="136.00"/>
   </g>
-  <line x1="72" y1="468" x2="760" y2="468" fill="none" stroke="#c5ced6" stroke-width="1.25"/>
-  <g fill="#5c6570" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">
-    <text x="64" y="472.00">0</text>
-    <text x="64" y="382.00">2000</text>
-    <text x="64" y="292.00">4000</text>
-    <text x="64" y="202.00">6000</text>
-    <text x="64" y="112.00">8000</text>
+  <line x1="132" y1="304" x2="860" y2="304" stroke="#c5ced6" stroke-width="1.25"/>
+  <g fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">
+    <text x="122" y="308.00">0</text>
+    <text x="122" y="224.00">4000</text>
+    <text x="122" y="140.00">8000</text>
   </g>
-  <text x="18" y="288" fill="#5c6570" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle" transform="rotate(-90 18 288)">MB/s</text>
-  <line data-series="gen2-wire" data-value="2000" x1="72" y1="378.00" x2="760" y2="378.00" fill="none" stroke="#7a8794" stroke-width="1.25" stroke-opacity="0.95" stroke-dasharray="2 4"/>
-  <line data-series="gen3-wire" data-value="3938" x1="72" y1="290.79" x2="760" y2="290.79" fill="none" stroke="#4e5f6c" stroke-width="1.25" stroke-opacity="0.55" stroke-dasharray="2 4"/>
-  <line data-series="gen4-wire" data-value="7877" x1="72" y1="113.53" x2="760" y2="113.53" fill="none" stroke="#bf4520" stroke-width="1.35" stroke-opacity="0.45" stroke-dasharray="2 4"/>
-  <polyline data-series="gen2_wr" data-values="250.000,500.000,800.000,1142.857,1438.202,1651.613,1790.210,1889.299,1943.074,1970.178,1983.055" fill="none" stroke="#7a8794" stroke-width="1.35" stroke-linejoin="round" stroke-linecap="round" points="116.00,456.75 178.00,445.50 240.00,432.00 302.00,416.57 364.00,403.28 426.00,393.68 488.00,387.44 550.00,382.98 612.00,380.56 674.00,379.34 736.00,378.76"/>
-  <polyline data-series="gen2_rd" data-values="79.208,146.789,285.714,450.704,723.164,1019.920,1292.929,1497.076,1625.397,1698.176,1737.065" fill="none" stroke="#7a8794" stroke-width="1.35" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 4" points="116.00,464.44 178.00,461.39 240.00,455.14 302.00,447.72 364.00,435.46 426.00,422.10 488.00,409.82 550.00,400.63 612.00,394.86 674.00,391.58 736.00,389.83"/>
-  <polyline data-series="gen3_wr" data-values="333.333,666.667,1333.333,2000.000,2666.667,3200.000,3506.849,3737.226,3820.896,3908.397,3953.668" fill="none" stroke="#4e5f6c" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" points="116.00,453.00 178.00,438.00 240.00,408.00 302.00,378.00 364.00,348.00 426.00,324.00 488.00,310.19 550.00,299.82 612.00,296.06 674.00,292.12 736.00,290.08"/>
-  <polyline data-series="gen3_rd" data-values="108.108,192.771,390.244,711.111,1185.185,1630.573,2226.087,2752.688,3103.030,3313.916,3430.486" fill="none" stroke="#4e5f6c" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 4" points="116.00,463.14 178.00,459.33 240.00,450.44 302.00,436.00 364.00,414.67 426.00,394.62 488.00,367.83 550.00,344.13 612.00,328.36 674.00,318.87 736.00,313.63"/>
-  <polyline data-series="gen4_wr" data-values="888.889,1777.778,3555.556,4923.077,6095.238,6918.919,7420.290,7699.248,7846.743,7922.631,7961.127" fill="none" stroke="#bf4520" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" points="116.00,428.00 178.00,388.00 240.00,308.00 302.00,246.46 364.00,193.71 426.00,156.65 488.00,134.09 550.00,121.53 612.00,114.90 674.00,111.48 736.00,109.75"/>
-  <polyline data-series="gen4_rd" data-values="117.647,231.884,450.704,876.712,1542.169,2612.245,3580.420,4970.874,6150.150,6965.986,7447.273" fill="none" stroke="#7a2e16" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" points="116.00,462.71 178.00,457.57 240.00,447.72 302.00,428.55 364.00,398.60 426.00,350.45 488.00,306.88 550.00,244.31 612.00,191.24 674.00,154.53 736.00,132.87"/>
-  <g fill="#bf4520" data-series="gen4_wr" data-marker="circle">
-    <circle cx="116.00" cy="428.00" r="3.4"/>
-    <circle cx="178.00" cy="388.00" r="3.4"/>
-    <circle cx="240.00" cy="308.00" r="3.4"/>
-    <circle cx="302.00" cy="246.46" r="3.4"/>
-    <circle cx="364.00" cy="193.71" r="3.4"/>
-    <circle cx="426.00" cy="156.65" r="3.4"/>
-    <circle cx="488.00" cy="134.09" r="3.4"/>
-    <circle cx="550.00" cy="121.53" r="3.4"/>
-    <circle cx="612.00" cy="114.90" r="3.4"/>
-    <circle cx="674.00" cy="111.48" r="3.4"/>
-    <circle cx="736.00" cy="109.75" r="3.4"/>
+  <line data-series="Gen4-wire" data-value="7877" x1="132" y1="138.58" x2="860" y2="138.58" fill="none" stroke="#8b97a3" stroke-width="1.25" stroke-dasharray="3 3"/>
+  <polyline data-series="gen4_wr" data-values="888.889,1777.778,3555.556,4923.077,6095.238,6918.919,7420.290,7699.248,7846.743,7922.631,7961.127" fill="none" stroke="#155a9c" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" points="160.00,285.33 227.20,266.67 294.40,229.33 361.60,200.62 428.80,176.00 496.00,158.70 563.20,148.17 630.40,142.32 697.60,139.22 764.80,137.62 832.00,136.82"/>
+  <polyline data-series="gen4_rd" data-values="117.647,231.884,450.704,876.712,1542.169,2612.245,3580.420,4970.874,6150.150,6965.986,7447.273" fill="none" stroke="#e06a12" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" points="160.00,301.53 227.20,299.13 294.40,294.54 361.60,285.59 428.80,271.61 496.00,249.14 563.20,228.81 630.40,199.61 697.60,174.85 764.80,157.71 832.00,147.61"/>
+  <g fill="#155a9c">
+    <circle cx="160.00" cy="285.33" r="3.2"/>
+    <circle cx="227.20" cy="266.67" r="3.2"/>
+    <circle cx="294.40" cy="229.33" r="3.2"/>
+    <circle cx="361.60" cy="200.62" r="3.2"/>
+    <circle cx="428.80" cy="176.00" r="3.2"/>
+    <circle cx="496.00" cy="158.70" r="3.2"/>
+    <circle cx="563.20" cy="148.17" r="3.2"/>
+    <circle cx="630.40" cy="142.32" r="3.2"/>
+    <circle cx="697.60" cy="139.22" r="3.2"/>
+    <circle cx="764.80" cy="137.62" r="3.2"/>
+    <circle cx="832.00" cy="136.82" r="3.2"/>
   </g>
-  <g fill="#7a2e16" data-series="gen4_rd" data-marker="diamond">
-    <polygon points="116.00,458.51 120.20,462.71 116.00,466.91 111.80,462.71"/>
-    <polygon points="178.00,453.37 182.20,457.57 178.00,461.77 173.80,457.57"/>
-    <polygon points="240.00,443.52 244.20,447.72 240.00,451.92 235.80,447.72"/>
-    <polygon points="302.00,424.35 306.20,428.55 302.00,432.75 297.80,428.55"/>
-    <polygon points="364.00,394.40 368.20,398.60 364.00,402.80 359.80,398.60"/>
-    <polygon points="426.00,346.25 430.20,350.45 426.00,354.65 421.80,350.45"/>
-    <polygon points="488.00,302.68 492.20,306.88 488.00,311.08 483.80,306.88"/>
-    <polygon points="550.00,240.11 554.20,244.31 550.00,248.51 545.80,244.31"/>
-    <polygon points="612.00,187.04 616.20,191.24 612.00,195.44 607.80,191.24"/>
-    <polygon points="674.00,150.33 678.20,154.53 674.00,158.73 669.80,154.53"/>
-    <polygon points="736.00,128.67 740.20,132.87 736.00,137.07 731.80,132.87"/>
+  <g fill="#e06a12">
+    <polygon points="160.00,297.93 163.60,301.53 160.00,305.13 156.40,301.53"/>
+    <polygon points="227.20,295.53 230.80,299.13 227.20,302.73 223.60,299.13"/>
+    <polygon points="294.40,290.94 298.00,294.54 294.40,298.14 290.80,294.54"/>
+    <polygon points="361.60,281.99 365.20,285.59 361.60,289.19 358.00,285.59"/>
+    <polygon points="428.80,268.01 432.40,271.61 428.80,275.21 425.20,271.61"/>
+    <polygon points="496.00,245.54 499.60,249.14 496.00,252.74 492.40,249.14"/>
+    <polygon points="563.20,225.21 566.80,228.81 563.20,232.41 559.60,228.81"/>
+    <polygon points="630.40,196.01 634.00,199.61 630.40,203.21 626.80,199.61"/>
+    <polygon points="697.60,171.25 701.20,174.85 697.60,178.45 694.00,174.85"/>
+    <polygon points="764.80,154.11 768.40,157.71 764.80,161.31 761.20,157.71"/>
+    <polygon points="832.00,144.01 835.60,147.61 832.00,151.21 828.40,147.61"/>
   </g>
-  <g fill="#5c6570" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle">
-    <text x="116" y="490">4</text>
-    <text x="178" y="490">8</text>
-    <text x="240" y="490">16</text>
-    <text x="302" y="490">32</text>
-    <text x="364" y="490">64</text>
-    <text x="426" y="490">128</text>
-    <text x="488" y="490">256</text>
-    <text x="550" y="490">512</text>
-    <text x="612" y="490">1024</text>
-    <text x="674" y="490">2048</text>
-    <text x="736" y="490">4096</text>
+  <text data-series="gen4_wr" data-end="4096" data-value="7961.127" x="1004" y="211.00" fill="#155a9c" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18" font-weight="600" text-anchor="end">7961.127</text>
+  <text data-series="gen4_wr" data-role="name" x="1020" y="211.00" fill="#1c2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemWr64</text>
+  <text data-series="gen4_rd" data-end="4096" data-value="7447.273" x="1004" y="237.00" fill="#e06a12" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18" font-weight="600" text-anchor="end">7447.273</text>
+  <text data-series="gen4_rd" data-role="name" x="1020" y="237.00" fill="#1c2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemRd64</text>
+  <text x="132" y="328" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Gen3</text>
+  <text x="184" y="328" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">8 GT/s · x4</text>
+  <text x="860" y="328" fill="#8b97a3" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" text-anchor="end">wire 3938</text>
+  <g fill="none" stroke="#e6ebf0" stroke-width="1">
+    <line x1="132" y1="426.00" x2="860" y2="426.00"/>
+    <line x1="132" y1="342.00" x2="860" y2="342.00"/>
   </g>
-  <text x="426" y="514" fill="#5c6570" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" text-anchor="middle">Payload bytes per TLP</text>
-  <rect data-group="GEN4" x="768" y="73.75" width="328" height="78.12" fill="#fbf6f4"/>
-  <rect data-group="GEN4" x="768" y="73.75" width="3" height="78.12" fill="#bf4520"/>
-  <text data-group="GEN4" x="784" y="89.75" fill="#bf4520" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="0.12em">GEN4</text>
-  <text data-group="GEN4" data-role="wire" data-value="7877" x="1082" y="89.75" fill="#7b8692" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">16 GT/s · wire 7877</text>
-  <text data-series="gen4_wr" data-end="4096" data-value="7961.127" x="900" y="114.75" fill="#bf4520" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" text-anchor="end">7961.127</text>
-  <line x1="918" y1="110.75" x2="936" y2="110.75" stroke="#bf4520" stroke-width="2.6" stroke-linecap="round"/>
-  <text data-series="gen4_wr" data-role="name" x="944" y="114.75" fill="#1f2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600">MemWr64</text>
-  <text data-series="gen4_rd" data-end="4096" data-value="7447.273" x="900" y="137.87" fill="#7a2e16" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" text-anchor="end">7447.273</text>
-  <line x1="918" y1="133.87" x2="936" y2="133.87" stroke="#7a2e16" stroke-width="2.6" stroke-linecap="round"/>
-  <text data-series="gen4_rd" data-role="name" x="944" y="137.87" fill="#1f2430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemRd64</text>
-  <rect data-group="GEN3" x="768" y="254.08" width="328" height="78.54" fill="#f3f5f7"/>
-  <rect data-group="GEN3" x="768" y="254.08" width="3" height="78.54" fill="#4e5f6c"/>
-  <text data-group="GEN3" x="784" y="270.08" fill="#4e5f6c" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="0.12em">GEN3</text>
-  <text data-group="GEN3" data-role="wire" data-value="3938" x="1082" y="270.08" fill="#7b8692" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">8 GT/s · wire 3938</text>
-  <text data-series="gen3_wr" data-end="4096" data-value="3953.668" x="900" y="295.08" fill="#4e5f6c" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="500" text-anchor="end">3953.668</text>
-  <line x1="918" y1="291.08" x2="936" y2="291.08" stroke="#4e5f6c" stroke-width="2.6" stroke-linecap="round"/>
-  <text data-series="gen3_wr" data-role="name" x="944" y="295.08" fill="#4e5f6c" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600">MemWr64</text>
-  <text data-series="gen3_rd" data-end="4096" data-value="3430.486" x="900" y="318.63" fill="#4e5f6c" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="500" text-anchor="end">3430.486</text>
-  <line x1="918" y1="314.63" x2="936" y2="314.63" stroke="#4e5f6c" stroke-width="2" stroke-dasharray="3 2" stroke-linecap="round"/>
-  <text data-series="gen3_rd" data-role="name" x="944" y="318.63" fill="#4e5f6c" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemRd64</text>
-  <rect data-group="GEN2" x="768" y="342.76" width="328" height="67.53" fill="#f7f8f9"/>
-  <rect data-group="GEN2" x="768" y="342.76" width="3" height="67.53" fill="#4d5964"/>
-  <text data-group="GEN2" x="784" y="358.76" fill="#4d5964" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="0.12em">GEN2</text>
-  <text data-group="GEN2" data-role="wire" data-value="2000" x="1082" y="358.76" fill="#7b8692" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">5 GT/s · wire 2000</text>
-  <text data-series="gen2_wr" data-end="4096" data-value="1983.055" x="900" y="380.30" fill="#4d5964" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="500" text-anchor="end">1983.055</text>
-  <line x1="918" y1="376.30" x2="936" y2="376.30" stroke="#4d5964" stroke-width="2.6" stroke-linecap="round"/>
-  <text data-series="gen2_wr" data-role="name" x="944" y="380.30" fill="#4d5964" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600">MemWr64</text>
-  <text data-series="gen2_rd" data-end="4096" data-value="1737.065" x="900" y="396.30" fill="#4d5964" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="500" text-anchor="end">1737.065</text>
-  <line x1="918" y1="392.30" x2="936" y2="392.30" stroke="#4d5964" stroke-width="2" stroke-dasharray="3 2" stroke-linecap="round"/>
-  <text data-series="gen2_rd" data-role="name" x="944" y="396.30" fill="#4d5964" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">Read</text>
-  <text x="72" y="556" fill="#7b8692" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Numbers are MB/s at 4096 bytes. Circles are Gen4 MemWr; diamonds are Gen4 MemRd. On Gen3 and Gen2, solid is a write and dashed is a read.</text>
-  <text x="72" y="576" fill="#7b8692" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Horizontal dashes are the wire rates. Eight TLPs per size, 4 ns user clock.</text>
+  <line x1="132" y1="510" x2="860" y2="510" stroke="#c5ced6" stroke-width="1.25"/>
+  <g fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">
+    <text x="122" y="514.00">0</text>
+    <text x="122" y="430.00">4000</text>
+    <text x="122" y="346.00">8000</text>
+  </g>
+  <line data-series="Gen3-wire" data-value="3938" x1="132" y1="427.30" x2="860" y2="427.30" fill="none" stroke="#8b97a3" stroke-width="1.25" stroke-dasharray="3 3"/>
+  <polyline data-series="gen3_wr" data-values="333.333,666.667,1333.333,2000.000,2666.667,3200.000,3506.849,3737.226,3820.896,3908.397,3953.668" fill="none" stroke="#7d98b4" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" points="160.00,503.00 227.20,496.00 294.40,482.00 361.60,468.00 428.80,454.00 496.00,442.80 563.20,436.36 630.40,431.52 697.60,429.76 764.80,427.92 832.00,426.97"/>
+  <polyline data-series="gen3_rd" data-values="108.108,192.771,390.244,711.111,1185.185,1630.573,2226.087,2752.688,3103.030,3313.916,3430.486" fill="none" stroke="#e2b08a" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 4" points="160.00,507.73 227.20,505.95 294.40,501.80 361.60,495.07 428.80,485.11 496.00,475.76 563.20,463.25 630.40,452.19 697.60,444.84 764.80,440.41 832.00,437.96"/>
+  <text data-series="gen3_wr" data-end="4096" data-value="3953.668" x="1004" y="419.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="500" text-anchor="end">3953.668</text>
+  <text data-series="gen3_wr" data-role="name" x="1020" y="419.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemWr64</text>
+  <text data-series="gen3_rd" data-end="4096" data-value="3430.486" x="1004" y="441.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="500" text-anchor="end">3430.486</text>
+  <text data-series="gen3_rd" data-role="name" x="1020" y="441.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemRd64</text>
+  <text x="132" y="534" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Gen2</text>
+  <text x="184" y="534" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">5 GT/s · x4</text>
+  <text x="860" y="534" fill="#8b97a3" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" text-anchor="end">wire 2000</text>
+  <g fill="none" stroke="#e6ebf0" stroke-width="1">
+    <line x1="132" y1="632.00" x2="860" y2="632.00"/>
+    <line x1="132" y1="548.00" x2="860" y2="548.00"/>
+  </g>
+  <line x1="132" y1="716" x2="860" y2="716" stroke="#c5ced6" stroke-width="1.25"/>
+  <g fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">
+    <text x="122" y="720.00">0</text>
+    <text x="122" y="636.00">4000</text>
+    <text x="122" y="552.00">8000</text>
+  </g>
+  <line data-series="Gen2-wire" data-value="2000" x1="132" y1="674.00" x2="860" y2="674.00" fill="none" stroke="#8b97a3" stroke-width="1.25" stroke-dasharray="3 3"/>
+  <polyline data-series="gen2_wr" data-values="250.000,500.000,800.000,1142.857,1438.202,1651.613,1790.210,1889.299,1943.074,1970.178,1983.055" fill="none" stroke="#8aa0b5" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" points="160.00,710.75 227.20,705.50 294.40,699.20 361.60,692.00 428.80,685.80 496.00,681.32 563.20,678.41 630.40,676.32 697.60,675.20 764.80,674.63 832.00,674.36"/>
+  <polyline data-series="gen2_rd" data-values="79.208,146.789,285.714,450.704,723.164,1019.920,1292.929,1497.076,1625.397,1698.176,1737.065" fill="none" stroke="#d7b08a" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 4" points="160.00,714.34 227.20,712.92 294.40,710.00 361.60,706.54 428.80,700.81 496.00,694.58 563.20,688.85 630.40,684.56 697.60,681.87 764.80,680.34 832.00,679.52"/>
+  <text data-series="gen2_wr" data-end="4096" data-value="1983.055" x="1004" y="625.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="500" text-anchor="end">1983.055</text>
+  <text data-series="gen2_wr" data-role="name" x="1020" y="625.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">MemWr64</text>
+  <text data-series="gen2_rd" data-end="4096" data-value="1737.065" x="1004" y="647.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="500" text-anchor="end">1737.065</text>
+  <text data-series="gen2_rd" data-role="name" x="1020" y="647.00" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">Read</text>
+  <g fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle">
+    <text x="160.00" y="738">4</text>
+    <text x="227.20" y="738">8</text>
+    <text x="294.40" y="738">16</text>
+    <text x="361.60" y="738">32</text>
+    <text x="428.80" y="738">64</text>
+    <text x="496.00" y="738">128</text>
+    <text x="563.20" y="738">256</text>
+    <text x="630.40" y="738">512</text>
+    <text x="697.60" y="738">1024</text>
+    <text x="764.80" y="738">2048</text>
+    <text x="832.00" y="738">4096</text>
+  </g>
+  <text x="496" y="760" fill="#5e6a76" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" text-anchor="middle">Payload bytes per TLP</text>
+  <text x="36" y="788" fill="#8b97a3" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Eight TLPs per size, 4 ns user clock. Gen2 read is the plotted read curve.</text>
 </svg>
