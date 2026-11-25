@@ -158,6 +158,19 @@ USP, DSP, and RC at `GEN=3`, x4, 32-bit pipe. Each row printed `UVM_ERROR : 0` a
 | RC L0 | `.\scripts\sim_questa.ps1 smoke_gen3_l0_rc_x4 4 1` | PASS |
 | RC RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen3_memwr_rc_x4 4 1` | PASS |
 
+## Phase 7 Gen4 port roles (closed 2026-11-25)
+
+USP, DSP, and RC at `GEN=4`, x4, 64-bit pipe. Each row printed `UVM_ERROR : 0` and `UVM_FATAL : 0`. USP uses the Endpoint peer. DSP and RC set `peer_upstream`. After Gen3 L0 the peer holds TS2 with rate byte `8'h9E` until the electrical-idle gap, then answers the 16 GT/s equalization as the upstream slave. The same-day regressions `smoke_gen4_l0_x4`, `smoke_gen4_memwr_x4`, `smoke_gen3_l0_dsp_x4`, and `smoke_gen2_x4` also printed `UVM_ERROR : 0` and `UVM_FATAL : 0`.
+
+| Gate | Command | Status |
+|------|---------|--------|
+| USP L0 | `.\scripts\sim_questa.ps1 smoke_gen4_l0_usp_x4 4 2` | PASS |
+| USP RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen4_memwr_usp_x4 4 2` | PASS |
+| DSP L0 | `.\scripts\sim_questa.ps1 smoke_gen4_l0_dsp_x4 4 3` | PASS |
+| DSP RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen4_memwr_dsp_x4 4 3` | PASS |
+| RC L0 | `.\scripts\sim_questa.ps1 smoke_gen4_l0_rc_x4 4 1` | PASS |
+| RC RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen4_memwr_rc_x4 4 1` | PASS |
+
 ## Phase 1 UVM build-out (historical)
 
 | Step | Status |

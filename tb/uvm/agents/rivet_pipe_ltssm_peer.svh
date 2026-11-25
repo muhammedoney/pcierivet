@@ -22,9 +22,10 @@ class rivet_pipe_ltssm_peer extends uvm_component;
   bit            peer_gen3 = 0;           // advertise 8 GT/s and send blocks after Recovery.Speed
   bit            peer_gen4 = 0;           // advertise 16 GT/s, then a second EQ at Gen4
   // Upstream slave. Link# 00 and Lane# 0..n-1 match the numbers a downstream
-  // DUT assigns, so the 8b/10b image is the echo. Gen3 blocks wait for the
-  // master's 8'h0A, answer with one 8'h02 block, hold 8'h0A until the master
-  // leaves EQ, then TS2 until the DUT is in Recovery.RcvrCfg, then logical idle.
+  // DUT assigns, so the 8b/10b image is the echo. At 8 GT/s and 16 GT/s the
+  // blocks wait for the master's 8'h0A, answer with one 8'h02 block, hold
+  // 8'h0A until the master leaves EQ, then TS2 until the DUT sends TS2.
+  // Leaving Gen3 L0 for Gen4 sends speed-change TS2 (phase 5) first.
   bit            peer_upstream = 0;
   logic [2:0]    rxstatus_err_code = 3'b100; // RxStatus injected by peer_rxstatus_err_go
   int unsigned   peer_lanes = 0;         // 0 = all DUT lanes; else narrower partner
@@ -668,6 +669,15 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             g3_speed = 1'b1;
             g3_sets  = 0;
             g3_off   = 0;
+            // Upstream slave was in logical idle at Gen3 L0. Recovery needs
+            // TS2 with the speed-change bit before the rate pin becomes Gen4.
+            if (peer_upstream) begin
+              g3_up_ph   = 5;
+              g3_up_blk  = 0;
+              g3_saw_0a  = 1'b0;
+              g3_left_eq = 1'b0;
+              g3_saw_ts2 = 1'b0;
+            end
           end
           if (hot_reset_go || disable_go)
             tc_inject_active = 1'b1;
@@ -1067,8 +1077,11 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         logic [7:0]  eqc, eqd, rate_b;
         int unsigned nsym;
         nsym     = (vif.rate == 3'd3) ? 8 : 4;
-        if (peer_upstream && (vif.rate == 3'd2)) begin
-          // Sample the DUT TS byte 6. A Gen3 block is 16 bytes, four per cycle.
+        if (peer_upstream &&
+            ((vif.rate == 3'd2) || (vif.rate == 3'd3))) begin
+          // Sample the DUT TS byte 6. A block is 16 bytes: four per cycle at
+          // Gen3, eight per cycle at Gen4. Byte 6 is still in the first beat
+          // when the pipe is 64 bits wide.
           if (vif.txstart_block[0]) begin
             g3_tx_off   = 0;
             g3_tx_is_ts = (vif.txsync_header[1:0] == 2'b10) &&
@@ -1096,7 +1109,7 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             g3_tx_is_ts = 1'b0;
           end
           data_blk = (g3_up_ph == 4);
-          ts2      = (g3_up_ph == 3);
+          ts2      = (g3_up_ph == 3) || (g3_up_ph == 5);
           if (g3_up_ph == 1) begin
             eqc = 8'h02;
             eqd = 8'h00;
@@ -1107,7 +1120,12 @@ class rivet_pipe_ltssm_peer extends uvm_component;
             eqc = 8'h00;
             eqd = 8'h00;
           end
-          rate_b = 8'h0E;
+          if (vif.rate == 3'd3)
+            rate_b = 8'h1E;
+          else if (g3_up_ph == 5)
+            rate_b = 8'h9E;
+          else
+            rate_b = 8'h0E;
         end else begin
           ts2      = (g3_sets >= 24) && (g3_sets < 40);
           data_blk = (g3_sets >= 40);
@@ -1151,7 +1169,8 @@ class rivet_pipe_ltssm_peer extends uvm_component;
         g3_off = g3_off + nsym;
         if (g3_off >= 16) begin
           g3_off = 0;
-          if (peer_upstream && (vif.rate == 3'd2)) begin
+          if (peer_upstream &&
+              ((vif.rate == 3'd2) || (vif.rate == 3'd3))) begin
             case (g3_up_ph)
               0: if (g3_saw_0a) begin
                    g3_up_ph  = 1;
@@ -1177,6 +1196,9 @@ class rivet_pipe_ltssm_peer extends uvm_component;
                      g3_up_ph = 4;
                      phase_q  = P_IDLE;
                    end
+                 end
+              5: begin
+                   // Hold speed-change TS2 until TxElecIdle resets this walk.
                  end
               default: phase_q = P_IDLE;
             endcase

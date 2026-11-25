@@ -36,7 +36,7 @@ Ordered ×4 gates ([verification.md](verification.md)):
 
 Gen2 leftovers (closed): Recovery.Speed Gen2→Gen1 downshift (`smoke_recovery_downshift_gen2_x4`), minimal ASPM L0s/L1, RxStatus-error Recovery (`smoke_rxstatus_err_gen2_x4`), ×2 TLP clones (`smoke_tlp_rq_memwr_gen2_x2`, `smoke_tlp_cq_cc_gen2_x2`).
 
-Phase 3 closed on 2026-11-23. Phase 4 closed on 2026-11-24. Phase 5 closed on 2026-11-25. Phase 6 closed on 2026-11-25. Next: Phase 7 Gen5 backlog, not started. Gen4 multi-mode is not started.
+Phase 3 closed on 2026-11-23. Phase 4 closed on 2026-11-24. Phase 5 closed on 2026-11-25. Phase 6 closed on 2026-11-25. Phase 7 closed on 2026-11-25. Next: Phase 8 Gen5 backlog, not started.
 
 ## Phase 3 — Gen2 port roles (closed 2026-11-23)
 
@@ -73,7 +73,7 @@ Every current Gen2 EP smoke stays green after each slice.
 
 Design: [2026-11-25-gen3-usp-dsp-rc](superpowers/plans/2026-11-25-gen3-usp-dsp-rc.md).
 
-USP is the same upstream equalization slave as EP. RC and DSP are the downstream master: EQ byte `8'h0A` and preset `8'h01`. The UVM peer's `peer_upstream` mode is the slave for RC and DSP. Each mode reaches L0 at 8 GT/s and posts one RQ MemWr32. Gen4 multi-mode, config TLPs at 8 GT/s, and switch forwarding are not in this phase.
+USP is the same upstream equalization slave as EP. RC and DSP are the downstream master: EQ byte `8'h0A` and preset `8'h01`. The UVM peer's `peer_upstream` mode is the slave for RC and DSP. Each mode reaches L0 at 8 GT/s and posts one RQ MemWr32. Config TLPs at 8 GT/s and switch forwarding are not in this phase. Gen4 port roles are Phase 7.
 
 | Slice | Content | Gate |
 |-------|---------|------|
@@ -81,9 +81,21 @@ USP is the same upstream equalization slave as EP. RC and DSP are the downstream
 | **6B DSP** | Downstream EQ master, `peer_upstream` | `smoke_gen3_l0_dsp_x4`, `smoke_gen3_memwr_dsp_x4` |
 | **6C RC** | Same master as DSP | `smoke_gen3_l0_rc_x4`, `smoke_gen3_memwr_rc_x4` |
 
-## Phase 7+ — Gen5
+## Phase 7 — Gen4 port roles (closed 2026-11-25)
 
-- Gen5 backlog. Gen4 for USP, DSP, and RC is not started.
+Design: [2026-11-25-gen4-usp-dsp-rc](superpowers/plans/2026-11-25-gen4-usp-dsp-rc.md).
+
+The Gen3 downstream master already transmits EQ byte `8'h0A` and preset `8'h01` at any PIPE rate, so this phase changes no LTSSM RTL. USP uses the existing Gen4 downstream peer. RC and DSP set `peer_upstream`. After Gen3 L0 that slave holds speed-change TS2 (rate byte `8'h9E`) until TxElecIdle, then repeats the equalization walk at 16 GT/s. Each mode reaches L0 at 16 GT/s and posts one RQ MemWr32. Config TLPs at 16 GT/s and switch forwarding are not in this phase.
+
+| Slice | Content | Gate |
+|-------|---------|------|
+| **7A USP** | `MODE=2`, existing downstream peer | `smoke_gen4_l0_usp_x4`, `smoke_gen4_memwr_usp_x4` |
+| **7B DSP** | `peer_upstream` through both equalizations | `smoke_gen4_l0_dsp_x4`, `smoke_gen4_memwr_dsp_x4` |
+| **7C RC** | Same slave as DSP | `smoke_gen4_l0_rc_x4`, `smoke_gen4_memwr_rc_x4` |
+
+## Phase 8+ — Gen5
+
+- Gen5 backlog.
 
 ## Backlog — FPGA lab (explicitly deferred)
 
