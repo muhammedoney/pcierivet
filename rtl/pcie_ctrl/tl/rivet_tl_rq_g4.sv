@@ -214,10 +214,26 @@ module rivet_tl_rq_g4 #(
       input logic [5:0]   off,
       input logic [5:0]   nb
   );
+    // Index through byte arrays. A variable part-select on `data`/`res`
+    // is wider than those vectors (off is 6 bits, rn is 7), and Vivado
+    // rejects that even when the caller stays in range.
+    logic [7:0] sb [32];
+    logic [7:0] db [64];
+    logic [4:0] si;
+    logic [5:0] di;
+    for (int unsigned i = 0; i < 32; i++)
+      sb[5'(i)] = data[8*5'(i) +: 8];
+    for (int unsigned i = 0; i < 64; i++)
+      db[6'(i)] = res[8*6'(i) +: 8];
     for (int unsigned i = 0; i < 32; i++) begin
-      if (6'(i) < nb)
-        res[8*(32'(rn) + i) +: 8] = data[8*(32'(off) + i) +: 8];
+      if (6'(i) < nb) begin
+        si = off[4:0] + 5'(i);
+        di = rn[5:0] + 6'(i);
+        db[di] = sb[si];
+      end
     end
+    for (int unsigned i = 0; i < 64; i++)
+      res[8*6'(i) +: 8] = db[6'(i)];
     rn = rn + 7'(nb);
   endtask
 

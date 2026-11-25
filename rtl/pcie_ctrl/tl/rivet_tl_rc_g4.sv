@@ -60,6 +60,39 @@ module rivet_tl_rc_g4 #(
   logic         pay_last;
   logic         pay_emit;
 
+  // Pack leftover bytes then an incoming beat. Counts are 6 bits, so a
+  // direct part-select can address past the 64-byte temporary. Byte
+  // arrays keep every index inside the vector.
+  function automatic logic [511:0] cat_res(
+      input logic [255:0] res,
+      input logic [5:0]   res_n,
+      input logic [255:0] more,
+      input logic [5:0]   nb,
+      input logic         use_more
+  );
+    logic [7:0]  wb [64];
+    logic [5:0]  di;
+    logic [511:0] out;
+    for (int unsigned i = 0; i < 64; i++)
+      wb[i] = '0;
+    for (int unsigned i = 0; i < 32; i++) begin
+      if (6'(i) < res_n)
+        wb[6'(i)] = res[8*5'(i) +: 8];
+    end
+    if (use_more) begin
+      for (int unsigned i = 0; i < 32; i++) begin
+        if (6'(i) < nb) begin
+          di = res_n + 6'(i);
+          wb[di] = more[8*5'(i) +: 8];
+        end
+      end
+    end
+    out = '0;
+    for (int unsigned i = 0; i < 64; i++)
+      out[8*6'(i) +: 8] = wb[6'(i)];
+    return out;
+  endfunction
+
   assign rx_tready_o = (st_q == ST_IDLE) || (st_q == ST_DROP) ||
                        ((st_q == ST_PAY) && has_more_q && m_axis_rc_tready);
 
@@ -103,17 +136,12 @@ module rivet_tl_rc_g4 #(
     wide     = '0;
     sum      = '0;
     if (st_q == ST_PAY) begin
-      for (int unsigned i = 0; i < 32; i++)
-        if (6'(i) < res_n_q)
-          wide[8*i +: 8] = res_q[8*i +: 8];
-      if (has_more_q && rx_tvalid_i) begin
-        for (int unsigned i = 0; i < 32; i++)
-          if (6'(i) < nb)
-            wide[8*(32'(res_n_q) + i) +: 8] = rx_tdata_i[8*i +: 8];
+      wide = cat_res(res_q, res_n_q, rx_tdata_i, nb,
+                     has_more_q && rx_tvalid_i);
+      if (has_more_q && rx_tvalid_i)
         sum = {1'b0, res_n_q} + {1'b0, nb};
-      end else begin
+      else
         sum = {1'b0, res_n_q};
-      end
       if (sum >= 7'd32) begin
         pay_d    = wide[255:0];
         pay_k    = 8'hFF;
@@ -197,9 +225,18 @@ module rivet_tl_rc_g4 #(
             nb = keep_nbytes(rx_tkeep_i);
             pn = (nb > 6'd12) ? (nb - 6'd12) : 6'd0;
             res_q <= '0;
-            for (int unsigned i = 0; i < 20; i++)
-              if (6'(i) < pn)
-                res_q[8*i +: 8] <= rx_tdata_i[8*(i + 12) +: 8];
+            begin
+              logic [4:0] si;
+              logic [7:0] xb [32];
+              for (int unsigned i = 0; i < 32; i++)
+                xb[5'(i)] = rx_tdata_i[8*5'(i) +: 8];
+              for (int unsigned i = 0; i < 20; i++) begin
+                if (6'(i) < pn) begin
+                  si = 5'(i) + 5'd12;
+                  res_q[8*5'(i) +: 8] <= xb[si];
+                end
+              end
+            end
             res_n_q <= pn;
             if ((rx_tdata_i[7:0] == RIVET_TLP_B0_CPL) ||
                 (rx_tdata_i[7:0] == RIVET_TLP_B0_CPLD)) begin
@@ -235,13 +272,7 @@ module rivet_tl_rc_g4 #(
             logic [6:0]   sum;
             logic [511:0] wide;
             nb   = keep_nbytes(rx_tkeep_i);
-            wide = '0;
-            for (int unsigned i = 0; i < 32; i++)
-              if (6'(i) < res_n_q)
-                wide[8*i +: 8] = res_q[8*i +: 8];
-            for (int unsigned i = 0; i < 32; i++)
-              if (6'(i) < nb)
-                wide[8*(32'(res_n_q) + i) +: 8] = rx_tdata_i[8*i +: 8];
+            wide = cat_res(res_q, res_n_q, rx_tdata_i, nb, 1'b1);
             sum = {1'b0, res_n_q} + {1'b0, nb};
             if (sum >= 7'd32) begin
               res_q   <= wide[511:256];
