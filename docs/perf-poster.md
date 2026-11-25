@@ -2,7 +2,7 @@
 
 Endpoint `rivet_pcie_ctrl` at PIPE, 4 lanes. The chart below is the plotted set: Gen2, Gen3, and Gen4. Each `mb_s` in that chart was printed by a sweep that finished with no UVM error. The tables under it are the same points, then the earlier Gen2 runs that are not those curves. `user_clk` on the payload sweeps is 4.0 ns. The read-latency, inbound, and credit-stall rows still print `user_clk_ns=8.0`.
 
-![Throughput versus payload size](perf-rq-sweep.svg)
+![Rivet x4 throughput versus payload. Gen4 is in front; Gen3 and Gen2 are lighter on the same scale.](perf-rq-sweep.svg)
 
 | Line | Rate |
 |---|---|
