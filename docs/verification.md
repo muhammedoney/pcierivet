@@ -4,7 +4,7 @@
 
 **Verification before features.** Primary DUT is **`rivet_pcie_ctrl`** at PIPE (Questa UVM). Verilator is lint/elaborate; Vivado BFM is complementary. Default elaboration is **Gen2**. Gen3 and Gen4 x4 are closed for EP, RC, USP, and DSP, including Phase 8 config, CplD, directed reset, the posted forwarder, and opt-in equalization. Next is the Gen5 backlog — [gen-evolution.md](gen-evolution.md).
 
-Primary verified width: **Gen2 EP ×4** (`LANES=4`). ×1/×2 remain fast regression.
+Primary verified width: **×4** through Gen4 for EP, RC, USP, and DSP. Default elaboration remains Gen2. ×1/×2 remain fast regression.
 
 ## Tracks
 
