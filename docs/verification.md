@@ -129,6 +129,18 @@ A Gen3 TLP is STP, a 2-byte little-endian DLL length, then the DLL bytes, with n
 | RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen3_memwr_x4 4 0` | PASS |
 | RQ MemRd + CplD | `.\scripts\sim_questa.ps1 smoke_gen3_cpld_x4 4 0` | PASS |
 
+## Phase 5 EP Gen4 (closed 2026-11-25)
+
+Endpoint x4, `GEN=4`, 64-bit pipe. Each row printed `UVM_ERROR : 0` on that date. `smoke_gen4_cpld_x4` also printed `UVM_FATAL : 0` and `rc_match=1`.
+
+A Gen4 block is eight symbols. Gen3 on that elaboration still uses the low four symbols and still drops `rxstart_block == 2'b10`. The frame is the same STP, 2-byte little-endian DLL length, and DLL bytes used at Gen3. The descrambler takes a new seed on the first block after the electrical-idle gap.
+
+| Gate | Command | Status |
+|------|---------|--------|
+| L0 at 16 GT/s | `.\scripts\sim_questa.ps1 smoke_gen4_l0_x4 4 0` | PASS |
+| RQ MemWr32 | `.\scripts\sim_questa.ps1 smoke_gen4_memwr_x4 4 0` | PASS |
+| RQ MemRd + CplD | `.\scripts\sim_questa.ps1 smoke_gen4_cpld_x4 4 0` | PASS |
+
 ## Phase 1 UVM build-out (historical)
 
 | Step | Status |

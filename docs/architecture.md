@@ -37,7 +37,7 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`
 | Switch Upstream Port (USP) | 2 | Alias of the Upstream port. Proved after RC |
 | Switch Downstream Port (DSP) | 3 | Alias of the Downstream port. No config master |
 
-Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
+Generation roadmap: **Gen2 (default)** → Gen3 → **Gen4 EP x4 in simulation** → Gen5 not started.
 
 ## Primary FPGA / board (locked)
 
@@ -46,14 +46,14 @@ Generation roadmap: **Gen2 (active)** → Gen3 → Gen4 → Gen5.
 | Board | **VCU118** (US+ primary), **VMK180** (Versal primary) |
 | FPGA | **XCVU9P** (PG239 GTY), **XCVM1802** (PG345 GTY) |
 
-Every current development step targets **Gen2**; Gen3/4 deltas per module: [gen-evolution.md](gen-evolution.md).
+Default elaboration stays **Gen2**. Gen4 EP x4 is in simulation; Gen5 is not started. Deltas: [gen-evolution.md](gen-evolution.md).
 
 ## Parameters
 
 | Parameter | Values | Notes |
 |-----------|--------|-------|
 | `MODE` | EP / RC / USP / DSP | EP+USP Upstream Type 0; RC+DSP Downstream Type 1; RC is the config requester |
-| `GEN` | **`2` now** | Stub/checks enforce Gen2 until Phase 4 Gen3 |
+| `GEN` | **`2` now** | Gen4 EP x4 is in simulation; Gen5 is not started. |
 | `LANES` | `1`, `2`, `4` | All first-class; smoke starts at 1 |
 | `FPGA_FAMILY` | 0=US+, 1=US, 2=Versal | On `rivet_pcie` / PHY only. US+ bring-up **VCU118 / XCVU9P**. Versal bring-up **VMK180 / XCVM1802**. |
 | `PIPE_DATA_WIDTH` | `16` now | 32 Gen3 / 64 Gen4 US+ later |

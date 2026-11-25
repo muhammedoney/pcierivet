@@ -1,6 +1,6 @@
-# Generation evolution (Gen3 EP x4 now, Gen4 next)
+# Generation evolution (Gen4 EP x4 now, Gen5 not started)
 
-**Active sim target: Gen3 EP x4** (`GEN=3`, `PIPE_DATA_WIDTH=32`, 8 GT/s). Default elaboration stays `GEN=2` and a 16-bit pipe so every Gen2 smoke still builds unchanged. Gen4 (16 GT/s, 64-bit pipe) is the next protocol.
+**Active sim target: Gen4 EP x4** (`GEN=4`, `PIPE_DATA_WIDTH=64`, 16 GT/s). Default elaboration stays `GEN=2` and a 16-bit pipe so every Gen2 smoke still builds unchanged. Gen5 is not started.
 
 Keep Gen2 behavior when `rate` is Gen1 or Gen2. A Gen3 change that breaks a Gen2 smoke is not done.
 
@@ -91,4 +91,4 @@ Suggested MAC modules under `mac/` (still Gen2-first): `rivet_ltssm`, `rivet_mac
 
 ## Phase priority reminder
 
-See [roadmap.md](roadmap.md). Phase 4 (Gen3 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-24. Next is Phase 5, Gen4 EP.
+See [roadmap.md](roadmap.md). Phase 4 (Gen3 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-24. Phase 5 (Gen4 EP x4 L0, one MemWr32, one CplD) closed on 2026-11-25. Next is the Gen5 backlog, not started.

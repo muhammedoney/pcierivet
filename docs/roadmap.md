@@ -36,7 +36,7 @@ Ordered ×4 gates ([verification.md](verification.md)):
 
 Gen2 leftovers (closed): Recovery.Speed Gen2→Gen1 downshift (`smoke_recovery_downshift_gen2_x4`), minimal ASPM L0s/L1, RxStatus-error Recovery (`smoke_rxstatus_err_gen2_x4`), ×2 TLP clones (`smoke_tlp_rq_memwr_gen2_x2`, `smoke_tlp_cq_cc_gen2_x2`).
 
-Phase 3 closed on 2026-11-23. Phase 4 closed on 2026-11-24. Next: Phase 5 EP Gen4.
+Phase 3 closed on 2026-11-23. Phase 4 closed on 2026-11-24. Phase 5 closed on 2026-11-25. Next: Phase 6 Gen5 backlog, not started.
 
 ## Phase 3 — Gen2 port roles (closed 2026-11-23)
 
@@ -61,11 +61,12 @@ Every current Gen2 EP smoke stays green after each slice.
 - Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md) Tasks 1–6. The older Gen3-only file is superseded.
 - Details: [gen-evolution.md](gen-evolution.md)
 
-## Phase 5 — EP Gen4 (next)
+## Phase 5 — EP Gen4 (closed 2026-11-25)
 
-- Same plan, Tasks 7–11.
-- 16 GT/s, 64-bit US+ datapath. No message-bus margining.
-- Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md)
+- Endpoint x4 reaches L0 at 16 GT/s through a second equalization, then one MemWr32 and one CplD.
+- Gates: `smoke_gen4_l0_x4`, `smoke_gen4_memwr_x4`, `smoke_gen4_cpld_x4` (see [verification.md](verification.md)).
+- Procedure: [2026-11-23-gen3-gen4-ep](superpowers/plans/2026-11-23-gen3-gen4-ep.md) Tasks 7–11.
+- 64-bit US+ datapath. No message-bus margining. Gen5 is not started.
 - Details: [gen-evolution.md](gen-evolution.md)
 
 ## Phase 6+ — Gen5
