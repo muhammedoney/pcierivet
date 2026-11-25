@@ -16,7 +16,8 @@ module rivet_pcie_phy_wrap
   parameter int unsigned BOARD           = RIVET_BOARD_VCU118,
   parameter int unsigned LANES           = 4,
   parameter int unsigned PIPE_DATA_WIDTH = 16,
-  parameter int unsigned PHY_DATA_WIDTH  = 64
+  parameter int unsigned PHY_DATA_WIDTH  = 64,
+  parameter int unsigned PHY_RATE_W      = 2
 ) (
   input  logic phy_refclk,
   input  logic phy_gtrefclk,
@@ -189,7 +190,7 @@ module rivet_pcie_phy_wrap
         .phy_txcompliance   (pipe_txcompliance),
         .phy_rxpolarity     (pipe_rxpolarity),
         .phy_powerdown      (pipe_powerdown),
-        .phy_rate           (pipe_rate[1:0]),
+        .phy_rate           (pipe_rate[PHY_RATE_W-1:0]),
         .phy_rxvalid        (pipe_rxvalid),
         .phy_phystatus      (pipe_phystatus),
         .phy_phystatus_rst  (phystatus_rst_raw),
