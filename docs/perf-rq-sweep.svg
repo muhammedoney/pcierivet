@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 840" role="img" aria-labelledby="title desc">
   <title id="title">Throughput versus payload size</title>
-  <desc id="desc">Gen2, Gen3, and Gen4 x4. The vertical grid is 1000 MB/s. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Gen4 theoretical bandwidth is 7877 MB/s. Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1142.857, 1438.202, 1651.613, 1790.210, 1889.299, 1943.074, 1970.178, and 1983.055 MB/s. Rivet Gen2 x4 read printed 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, and 1737.065 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, and 3430.486 MB/s. Rivet Gen4 x4 MemWr64 printed 888.889, 1777.778, 3555.556, 3764.706, 5120.000, 6243.902, 7013.699, 7474.453, 7728.302, 7861.804, and 7930.300 MB/s. Rivet Gen4 x4 MemRd64 printed 117.647, 231.884, 450.704, 876.712, 1542.169, 2612.245, 3580.420, 4970.874, 6150.150, 6965.986, and 7447.273 MB/s.</desc>
+  <desc id="desc">Gen2, Gen3, and Gen4 x4. The vertical grid is 1000 MB/s. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Gen4 theoretical bandwidth is 7877 MB/s. Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1142.857, 1438.202, 1651.613, 1790.210, 1889.299, 1943.074, 1970.178, and 1983.055 MB/s. Rivet Gen2 x4 read printed 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, and 1737.065 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, and 3430.486 MB/s. Rivet Gen4 x4 MemWr64 printed 888.889, 1777.778, 3555.556, 4923.077, 6095.238, 6918.919, 7420.290, 7699.248, 7846.743, 7922.631, and 7961.127 MB/s. Rivet Gen4 x4 MemRd64 printed 117.647, 231.884, 450.704, 876.712, 1542.169, 2612.245, 3580.420, 4970.874, 6150.150, 6965.986, and 7447.273 MB/s.</desc>
   <rect width="1120" height="840" fill="#ffffff"/>
   <text x="78" y="28" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Throughput vs payload</text>
   <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Same 1000 MB/s grid. The axis runs to 8000 MB/s so the Gen4 line fits.</text>
@@ -88,19 +88,19 @@
     <circle cx="906" cy="423.46" r="3.5"/>
     <circle cx="996" cy="414.71" r="3.5"/>
   </g>
-  <polyline fill="none" stroke="#0550ae" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,605.33 186,538.67 276,405.33 366,389.65 456,288.00 546,203.71 636,145.97 726,111.42 816,92.38 906,82.36 996,77.23"/>
+  <polyline fill="none" stroke="#0550ae" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,605.33 186,538.67 276,405.33 366,302.77 456,214.86 546,153.08 636,115.48 726,94.56 816,83.49 906,77.80 996,74.92"/>
   <g fill="#0550ae">
     <polygon points="96,600.33 101,605.33 96,610.33 91,605.33"/>
     <polygon points="186,533.67 191,538.67 186,543.67 181,538.67"/>
     <polygon points="276,400.33 281,405.33 276,410.33 271,405.33"/>
-    <polygon points="366,384.65 371,389.65 366,394.65 361,389.65"/>
-    <polygon points="456,283.00 461,288.00 456,293.00 451,288.00"/>
-    <polygon points="546,198.71 551,203.71 546,208.71 541,203.71"/>
-    <polygon points="636,140.97 641,145.97 636,150.97 631,145.97"/>
-    <polygon points="726,106.42 731,111.42 726,116.42 721,111.42"/>
-    <polygon points="816,87.38 821,92.38 816,97.38 811,92.38"/>
-    <polygon points="906,77.36 911,82.36 906,87.36 901,82.36"/>
-    <polygon points="996,72.23 1001,77.23 996,82.23 991,77.23"/>
+    <polygon points="366,297.77 371,302.77 366,307.77 361,302.77"/>
+    <polygon points="456,209.86 461,214.86 456,219.86 451,214.86"/>
+    <polygon points="546,148.08 551,153.08 546,158.08 541,153.08"/>
+    <polygon points="636,110.48 641,115.48 636,120.48 631,115.48"/>
+    <polygon points="726,89.56 731,94.56 726,99.56 721,94.56"/>
+    <polygon points="816,78.49 821,83.49 816,88.49 811,83.49"/>
+    <polygon points="906,72.80 911,77.80 906,82.80 901,77.80"/>
+    <polygon points="996,69.92 1001,74.92 996,79.92 991,74.92"/>
   </g>
   <polyline fill="none" stroke="#bc4c00" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,663.18 186,654.61 276,638.20 366,606.25 456,556.34 546,476.08 636,403.47 726,299.18 816,210.74 906,149.55 996,113.45"/>
   <g fill="#bc4c00">

@@ -6,6 +6,9 @@
 // are payload when tkeep says so. A 64-byte residue lets the last beat of
 // one TLP move to the DLL on the cycle it is accepted, and the next
 // descriptor can be accepted on that same handoff.
+//
+// tuser[RIVET_RQ_TUSER_NEXT_SOP] with tlast means this beat ends the open
+// TLP at byte 16 and bytes 16..31 are the next descriptor.
 
 module rivet_tl_rq_g4 #(
   parameter int unsigned MODE = 0
@@ -71,6 +74,7 @@ module rivet_tl_rq_g4 #(
 
   logic         slot_free;
   logic         accept;
+  logic         split_beat;
 
   assign tx_tvalid_o      = tx_v_q;
   assign tx_tdata_o       = tx_d_q;
@@ -86,12 +90,18 @@ module rivet_tl_rq_g4 #(
   assign rq_tag_av_o      = tag_av_q;
 
   assign slot_free = !tx_v_q || tx_tready_i;
+  // A split beat ends the open TLP at byte 16. That tail has to leave in
+  // this cycle, before the next descriptor joins the residue.
+  assign split_beat = s_axis_rq_tvalid && s_axis_rq_tlast &&
+                      s_axis_rq_tuser[RIVET_RQ_TUSER_NEXT_SOP];
   // PAY can take another 32 bytes after one drain. TAIL can take the next
   // descriptor only when the whole tail leaves in this cycle.
   assign s_axis_rq_tready = bus_master_en_i &&
                             ((st_q == ST_IDLE) ||
-                             ((st_q == ST_PAY) &&
+                             ((st_q == ST_PAY) && !split_beat &&
                               ((res_n_q <= 7'd32) || slot_free)) ||
+                             ((st_q == ST_PAY) && split_beat && slot_free &&
+                              (res_n_q <= 7'd16)) ||
                              ((st_q == ST_TAIL) && slot_free &&
                               (res_n_q <= 7'd32)));
   assign accept = s_axis_rq_tvalid && s_axis_rq_tready;
@@ -294,7 +304,58 @@ module rivet_tl_rq_g4 #(
       end
 
       if (accept && !rlast) begin
-        if (!pkt) begin
+        if (pkt && split_beat) begin
+          logic [63:0]  b0, b1;
+          logic [31:0]  addr, addr_hi;
+          logic [9:0]   len;
+          logic [7:0]   tag;
+          logic [3:0]   req, fbe, lbe;
+          logic         is64, is_wr;
+          logic [7:0]   b0t;
+          logic [127:0] hdr;
+          logic [5:0]   hlen;
+          // Bytes 0..15 finish the open TLP. Peel that tail before the
+          // descriptor in bytes 16..31 becomes the next packet.
+          push_bytes(res, rn, s_axis_rq_tdata, 6'd0, 6'd16);
+          rlast = 1'b1;
+          if (slot_free && !emitted && (rn >= 7'd32))
+            peel(res, rn, rlast, pkt, 1'b0, emitted, ed, ek, el);
+          if (slot_free && !emitted && rlast && (rn != 7'd0))
+            peel(res, rn, rlast, pkt, 1'b1, emitted, ed, ek, el);
+          if (emitted && el && !do_cap) begin
+            cap_hdr = hdr_hold;
+            cap_wr  = wr_hold;
+            cap_len = len_hold;
+            cap_tag = tag_hold;
+            do_cap  = 1'b1;
+          end
+          b0      = s_axis_rq_tdata[191:128];
+          b1      = s_axis_rq_tdata[255:192];
+          addr    = {b0[31:2], 2'b00};
+          addr_hi = b0[63:32];
+          len     = b1[9:0];
+          req     = b1[14:11];
+          tag     = b1[39:32];
+          fbe     = s_axis_rq_tuser[3:0];
+          lbe     = s_axis_rq_tuser[7:4];
+          is64    = (addr_hi != 32'h0);
+          is_wr   = (req == RIVET_CQ_REQ_MEMWR);
+          b0t     = is_wr ? (is64 ? RIVET_TLP_B0_MEMWR64 : RIVET_TLP_B0_MEMWR32)
+                          : (is64 ? RIVET_TLP_B0_MEMRD64 : RIVET_TLP_B0_MEMRD32);
+          hdr     = build_hdr(b0t, len, tag, fbe, lbe, addr, addr_hi, is64);
+          hlen    = is64 ? 6'd16 : 6'd12;
+          hdr_hold = b0t;
+          wr_hold  = is_wr;
+          len_hold = len;
+          tag_hold = tag;
+          is_wr_q <= is_wr;
+          len_q   <= len;
+          tag_q   <= tag;
+          hdr0_q  <= b0t;
+          push_bytes(res, rn, {128'h0, hdr}, 6'd0, hlen);
+          pkt   = 1'b1;
+          rlast = 1'b0;
+        end else if (!pkt) begin
           logic [63:0]  b0, b1;
           logic [31:0]  addr, addr_hi;
           logic [9:0]   len;

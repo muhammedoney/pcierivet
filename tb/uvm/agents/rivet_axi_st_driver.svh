@@ -55,7 +55,7 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
       vif.tdata  <= $bits(vif.tdata)'(req.burst_data[0]);
       vif.tkeep  <= $bits(vif.tkeep)'(req.burst_keep[0]);
       vif.tlast  <= req.burst_last[0];
-      vif.tuser  <= req.burst_user;
+      vif.tuser  <= (req.burst_user_q.size() > 0) ? req.burst_user_q[0] : req.burst_user;
       vif.tvalid <= 1'b1;
       for (i = 1; i < req.burst_data.size(); i++) begin
         int unsigned guard;
@@ -71,6 +71,7 @@ class rivet_axi_st_driver extends uvm_driver #(rivet_axi_st_item);
         vif.tdata <= $bits(vif.tdata)'(req.burst_data[i]);
         vif.tkeep <= $bits(vif.tkeep)'(req.burst_keep[i]);
         vif.tlast <= req.burst_last[i];
+        vif.tuser <= (req.burst_user_q.size() > i) ? req.burst_user_q[i] : req.burst_user;
       end
       do
         @(posedge vif.aclk);

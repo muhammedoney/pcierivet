@@ -39,6 +39,65 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
                           (payload_dw > 1) ? 4'hF : 4'h0);
     if (n_pkt < 1)
       n_pkt = 1;
+    // A MemWr64 whose payload is a multiple of 32 bytes ends 16 bytes into a
+    // beat. Pack the next descriptor into that half so the burst is one
+    // continuous 32-byte stream.
+    if ((n_pkt > 1) && (axi_w >= 256) && ((payload_dw % 8) == 0)) begin
+      logic [7:0] stream[$];
+      int unsigned tlp_bytes, off, bi, n;
+      tlp_bytes = 16 + payload_dw * 4;
+      for (int unsigned pkt = 0; pkt < n_pkt; pkt++) begin
+        bit [7:0] tg;
+        tg = tag + pkt[7:0];
+        rivet_axi_tlp_util::pack_mem_desc_2beat(
+          addr, payload_dw[10:0], rivet_pkg::RIVET_CQ_REQ_MEMWR, tg, requester_id,
+          b0, b1, addr_hi);
+        for (int unsigned k = 0; k < 8; k++)
+          stream.push_back(b0[8*k +: 8]);
+        for (int unsigned k = 0; k < 8; k++)
+          stream.push_back(b1[8*k +: 8]);
+        for (int unsigned d = 0; d < payload_dw; d++) begin
+          logic [31:0] dwv;
+          dwv = 32'hA500_0000 + d;
+          for (int unsigned k = 0; k < 4; k++)
+            stream.push_back(dwv[8*k +: 8]);
+        end
+      end
+      for (off = 0; off < stream.size(); off += 32) begin
+        logic [255:0] beat;
+        logic [7:0]   keep;
+        logic [87:0]  user;
+        bit           ends_mid, ends_beat;
+        beat = '0;
+        keep = '0;
+        n = stream.size() - off;
+        if (n > 32)
+          n = 32;
+        for (bi = 0; bi < n; bi++)
+          beat[8*bi +: 8] = stream[off + bi];
+        for (bi = 0; bi < n; bi += 4)
+          keep[bi/4] = 1'b1;
+        ends_mid  = 1'b0;
+        ends_beat = 1'b0;
+        for (int unsigned p = 1; p <= n_pkt; p++) begin
+          int unsigned endb;
+          endb = p * tlp_bytes;
+          if ((endb > off) && (endb <= off + n)) begin
+            if ((endb == off + 16) && (endb < stream.size()))
+              ends_mid = 1'b1;
+            else
+              ends_beat = 1'b1;
+          end
+        end
+        user = item.burst_user;
+        if (ends_mid)
+          user[rivet_pkg::RIVET_RQ_TUSER_NEXT_SOP] = 1'b1;
+        item.burst_data.push_back(beat);
+        item.burst_keep.push_back(keep);
+        item.burst_last.push_back(ends_mid || ends_beat);
+        item.burst_user_q.push_back(user);
+      end
+    end else begin
     for (int unsigned pkt = 0; pkt < n_pkt; pkt++) begin
       bit [7:0] tg;
       tg = tag + pkt[7:0];
@@ -122,6 +181,7 @@ class rivet_axi_rq_memwr_seq extends uvm_sequence #(rivet_axi_st_item);
         sent += two ? 2 : 1;
         item.burst_last.push_back(sent >= payload_dw);
       end
+    end
     end
     end
     finish_item(item);

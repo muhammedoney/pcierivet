@@ -17,6 +17,8 @@ class rivet_axi_st_item extends uvm_sequence_item;
   bit [7:0]       burst_keep[$];
   bit             burst_last[$];
   bit [87:0]      burst_user;
+  // Per-beat tuser. Empty means every beat uses burst_user.
+  bit [87:0]      burst_user_q[$];
 
   function new(string name = "rivet_axi_st_item");
     super.new(name);

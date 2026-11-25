@@ -430,6 +430,10 @@ package rivet_pkg;
   localparam int unsigned RIVET_AXI_CQ_USER_W = 88;
   localparam int unsigned RIVET_AXI_CC_USER_W = 33;
   localparam int unsigned RIVET_AXI_RQ_USER_W = 85;
+  // Rivet extension on RQ tuser. Set with tlast when bytes 16..31 of that
+  // beat are the next TLP descriptor and bytes 0..15 finish the current one.
+  // Bits [15:8] stay free for the PG213 address offset.
+  localparam int unsigned RIVET_RQ_TUSER_NEXT_SOP = 80;
   localparam int unsigned RIVET_AXI_RC_USER_W = 75;
 
   // CQ request type in descriptor DW2[14:11]

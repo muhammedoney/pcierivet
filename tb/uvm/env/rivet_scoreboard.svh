@@ -44,6 +44,11 @@ class rivet_scoreboard extends uvm_scoreboard;
   bit [7:0]       pkt_tag[string];
   bit [15:0]      pkt_req_id[string];
   bit [3:0]       pkt_req_type[string];
+  // Next RQ descriptor rode in bytes 16..31 of a split tlast.
+  bit             rq_split_pending;
+  bit [7:0]       rq_split_tag;
+  bit [15:0]      rq_split_rid;
+  bit [3:0]       rq_split_type;
 
   // Outstanding NP keys: {requester_id, tag}
   bit outstanding_cq[bit [23:0]];
@@ -141,7 +146,15 @@ class rivet_scoreboard extends uvm_scoreboard;
       pkt_beats[ch]  = 0;
       pkt_beat0[ch]  = t.tdata;
       pkt_wide[ch]   = (t.tkeep[3:2] != 2'b00);
-      if ((ch == "rq") && pkt_wide[ch]) begin
+      // A packed MemWr left this header on the previous tlast. The beat
+      // itself is payload, so do not decode it as a descriptor.
+      if ((ch == "rq") && rq_split_pending) begin
+        pkt_tag[ch]      = rq_split_tag;
+        pkt_req_id[ch]   = rq_split_rid;
+        pkt_req_type[ch] = rq_split_type;
+        pkt_wide[ch]     = 1'b1;
+        rq_split_pending = 1'b0;
+      end else if ((ch == "rq") && pkt_wide[ch]) begin
         rivet_axi_tlp_util::unpack_mem_desc_2beat(
           t.tdata[63:0], t.tdata[127:64], addr_u, dcount, rtype, tag, rid);
         pkt_tag[ch]      = tag;
@@ -231,6 +244,14 @@ class rivet_scoreboard extends uvm_scoreboard;
             $sformatf("RQ MemRd outstanding tag=0x%02h req=0x%04h", tag, rid),
             UVM_LOW)
         end
+      end
+      if (t.tuser[rivet_pkg::RIVET_RQ_TUSER_NEXT_SOP]) begin
+        rivet_axi_tlp_util::unpack_mem_desc_2beat(
+          t.tdata[191:128], t.tdata[255:192], addr_u, dcount, rtype, tag, rid);
+        rq_split_tag     = tag;
+        rq_split_rid     = rid;
+        rq_split_type    = rtype;
+        rq_split_pending = 1'b1;
       end
     end else if (ch == "rc") begin
       if (pkt_beats[ch] >= 2) begin
