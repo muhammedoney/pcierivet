@@ -688,7 +688,6 @@ module rivet_mac_os_rx #(
   logic                   dll_beat_valid_q, dll_beat_valid_d;
   rivet_dll_mac_rx_beat_t dll_beat_q, dll_beat_d;
 
-  (* ram_style = "block" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
   logic                    tlp_ram_we;
   logic [TLP_AW-1:0]       tlp_ram_waddr;
   logic [63:0]             tlp_ram_wdata;
@@ -704,6 +703,8 @@ module rivet_mac_os_rx #(
   logic                    tlp_ram_we4;
   logic [TLP_AW-1:0]       tlp_ram_waddr4;
   logic [63:0]             tlp_ram_wdata4;
+  logic [63:0]             tlp_raw [4];
+  logic                    tlp_use_hi_q, tlp_use_c_q, tlp_use_d_q;
   logic [63:0]             tlp_ram_rd_q;
   logic [63:0]             tlp_ram_rd_hi_q;
   logic [63:0]             tlp_ram_rd_c_q;
@@ -747,22 +748,26 @@ module rivet_mac_os_rx #(
   logic                    dllp_park_err_q, dllp_park_err_d;
   logic                    dllp_park_ld;
 
-`ifndef SYNTHESIS
-  initial begin
-    for (int unsigned ii = 0; ii < TLP_RAM_N; ii++) tlp_ram[ii] = '0;
-  end
-`endif
+  logic [TLP_AW-1:0] tlp_raddr1, tlp_raddr2, tlp_raddr3;
 
-  always_ff @(posedge pclk_i) begin
-    if (tlp_ram_we)
-      tlp_ram[tlp_ram_waddr] <= tlp_ram_wdata;
-    if (tlp_ram_we2)
-      tlp_ram[tlp_ram_waddr2] <= tlp_ram_wdata2;
-    if (tlp_ram_we3)
-      tlp_ram[tlp_ram_waddr3] <= tlp_ram_wdata3;
-    if (tlp_ram_we4)
-      tlp_ram[tlp_ram_waddr4] <= tlp_ram_wdata4;
-  end
+  assign tlp_raddr1 = rd_addr_q + TLP_AW'(1);
+  assign tlp_raddr2 = rd_addr_q + TLP_AW'(2);
+  assign tlp_raddr3 = rd_addr_q + TLP_AW'(3);
+  assign tlp_ram_rd_q    = tlp_raw[0];
+  assign tlp_ram_rd_hi_q = tlp_use_hi_q ? tlp_raw[1] : '0;
+  assign tlp_ram_rd_c_q  = tlp_use_c_q  ? tlp_raw[2] : '0;
+  assign tlp_ram_rd_d_q  = tlp_use_d_q  ? tlp_raw[3] : '0;
+
+  rivet_ram_lane4 #(.DEPTH(TLP_RAM_N)) u_tlp_ram (
+    .clk_i   (pclk_i),
+    .rst_ni  (rst_ni),
+    .we_i    ({tlp_ram_we4, tlp_ram_we3, tlp_ram_we2, tlp_ram_we}),
+    .waddr_i ('{tlp_ram_waddr, tlp_ram_waddr2, tlp_ram_waddr3, tlp_ram_waddr4}),
+    .wdata_i ('{tlp_ram_wdata, tlp_ram_wdata2, tlp_ram_wdata3, tlp_ram_wdata4}),
+    .re_i    (tlp_rd_issue),
+    .raddr_i ('{rd_addr_q, tlp_raddr1, tlp_raddr2, tlp_raddr3}),
+    .rdata_o (tlp_raw)
+  );
 
   // Pack payload bytes into RAM words. A tail flush already owns port 0,
   // so nport starts at 1 in that cycle. At most four words (32 bytes).
@@ -938,28 +943,21 @@ module rivet_mac_os_rx #(
     end
   endfunction
 
-  // Synchronous read-data reset so Versal does not see an async BRAM reset.
   always_ff @(posedge pclk_i) begin
     if (!rst_ni) begin
-      tlp_ram_rd_q    <= '0;
-      tlp_ram_rd_hi_q <= '0;
-      tlp_ram_rd_c_q  <= '0;
-      tlp_ram_rd_d_q  <= '0;
+      tlp_use_hi_q <= 1'b0;
+      tlp_use_c_q  <= 1'b0;
+      tlp_use_d_q  <= 1'b0;
     end else if (tlp_rd_issue && live_q) begin
       logic [TLP_AW-1:0] have;
       have = tlp_wr_slot_q - rd_addr_q;
-      tlp_ram_rd_q <= tlp_ram[rd_addr_q];
-      tlp_ram_rd_hi_q <= (have > TLP_AW'(1)) ? tlp_ram[rd_addr_q + TLP_AW'(1)] : '0;
-      tlp_ram_rd_c_q  <= (have > TLP_AW'(2)) ? tlp_ram[rd_addr_q + TLP_AW'(2)] : '0;
-      tlp_ram_rd_d_q  <= (have > TLP_AW'(3)) ? tlp_ram[rd_addr_q + TLP_AW'(3)] : '0;
+      tlp_use_hi_q <= (have > TLP_AW'(1));
+      tlp_use_c_q  <= (have > TLP_AW'(2));
+      tlp_use_d_q  <= (have > TLP_AW'(3));
     end else if (tlp_rd_issue) begin
-      tlp_ram_rd_q <= tlp_ram[rd_addr_q];
-      if (RX_PLAY_W >= 2)
-        tlp_ram_rd_hi_q <= tlp_ram[rd_addr_q + TLP_AW'(1)];
-      if (RX_PLAY_W >= 4) begin
-        tlp_ram_rd_c_q <= tlp_ram[rd_addr_q + TLP_AW'(2)];
-        tlp_ram_rd_d_q <= tlp_ram[rd_addr_q + TLP_AW'(3)];
-      end
+      tlp_use_hi_q <= (RX_PLAY_W >= 2);
+      tlp_use_c_q  <= (RX_PLAY_W >= 4);
+      tlp_use_d_q  <= (RX_PLAY_W >= 4);
     end
   end
 

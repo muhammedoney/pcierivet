@@ -54,8 +54,6 @@ module rivet_dll_replay #(
   logic        valid_q [TLP_SLOTS];
   logic [11:0] seq_q   [TLP_SLOTS];
   logic [15:0] len_q   [TLP_SLOTS];
-  (* ram_style = "block" *) logic [63:0] word_q [0:RAM_WORDS-1];
-  logic [63:0] replay_word_q;
   logic        filling_q;
 
   function automatic bit seq_acked(input logic [11:0] a, input logic [11:0] s);
@@ -70,6 +68,10 @@ module rivet_dll_replay #(
   logic              replay_valid_q;
   logic              ack_hold_q;
   logic [11:0]       ack_seq_q;
+  logic [63:0]       word_rdata [4];
+  localparam int unsigned RAM_AW = $clog2(RAM_WORDS);
+  logic [RAM_AW-1:0] word_waddr [4];
+  logic [RAM_AW-1:0] word_raddr [4];
 
   logic [11:0]      ack_seq_eff;
   logic             ack_live;
@@ -94,26 +96,28 @@ module rivet_dll_replay #(
   assign replay_valid_o  = replay_valid_q;
   assign replay_seq_o    = seq_q[replay_idx_q];
   assign replay_len_o    = len_q[replay_idx_q];
-  assign replay_word_o   = replay_word_q;
+  assign replay_word_o   = word_rdata[0];
 
-  always_ff @(posedge clk_i) begin
-    if (cap_fire) begin
-      word_q[{wr_q, wr_word_q}] <= cap_data_i;
-      if (cap_hi_valid_i)
-        word_q[{wr_q, WORD_W'(wr_word_q + 1'b1)}] <= cap_hi_data_i;
-      if (cap_ex_valid_i) begin
-        word_q[{wr_q, WORD_W'(wr_word_q + 2'd2)}] <= cap_ex0_i;
-        word_q[{wr_q, WORD_W'(wr_word_q + 2'd3)}] <= cap_ex1_i;
-      end
-    end
-  end
+  assign word_waddr[0] = {wr_q, wr_word_q};
+  assign word_waddr[1] = {wr_q, WORD_W'(wr_word_q + 1'b1)};
+  assign word_waddr[2] = {wr_q, WORD_W'(wr_word_q + 2'd2)};
+  assign word_waddr[3] = {wr_q, WORD_W'(wr_word_q + 2'd3)};
+  assign word_raddr[0] = {replay_idx_q, replay_word_idx_i[WORD_W-1:0]};
+  assign word_raddr[1] = word_raddr[0];
+  assign word_raddr[2] = word_raddr[0];
+  assign word_raddr[3] = word_raddr[0];
 
-  always_ff @(posedge clk_i) begin
-    if (!rst_ni)
-      replay_word_q <= '0;
-    else
-      replay_word_q <= word_q[{replay_idx_q, replay_word_idx_i[WORD_W-1:0]}];
-  end
+  rivet_ram_lane4 #(.DEPTH(RAM_WORDS)) u_word (
+    .clk_i   (clk_i),
+    .rst_ni  (rst_ni),
+    .we_i    ({cap_fire && cap_ex_valid_i, cap_fire && cap_ex_valid_i,
+               cap_fire && cap_hi_valid_i, cap_fire}),
+    .waddr_i (word_waddr),
+    .wdata_i ('{cap_data_i, cap_hi_data_i, cap_ex0_i, cap_ex1_i}),
+    .re_i    (1'b1),
+    .raddr_i (word_raddr),
+    .rdata_o (word_rdata)
+  );
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin

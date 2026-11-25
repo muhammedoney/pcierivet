@@ -79,20 +79,11 @@ module rivet_dll_tlp_rx16 #(
   logic              lcrc_err_q;
   logic [12:0]       play_len_q;
 
-  (* ram_style = "block" *) logic [63:0] word_ram [0:RAM_N-1];
-  logic              ram_we;
-  logic              ram_we2;
-  logic              ram_we3;
-  logic              ram_we4;
-  logic [IDX_W:0]    ram_waddr;
-  logic [IDX_W:0]    ram_waddr2;
-  logic [IDX_W:0]    ram_waddr3;
-  logic [IDX_W:0]    ram_waddr4;
-  logic [IDX_W:0]    ram_raddr;
-  logic [63:0]       ram_wdata;
-  logic [63:0]       ram_wdata2;
-  logic [63:0]       ram_wdata3;
-  logic [63:0]       ram_wdata4;
+  logic              ram_we, ram_we2, ram_we3, ram_we4;
+  logic [IDX_W:0]    ram_waddr, ram_waddr2, ram_waddr3, ram_waddr4;
+  logic [IDX_W:0]    ram_raddr, ram_raddr1, ram_raddr2, ram_raddr3;
+  logic [63:0]       ram_wdata, ram_wdata2, ram_wdata3, ram_wdata4;
+  logic [63:0]       ram_rdata [4];
   logic [63:0]       rd_lo_q;
   logic [63:0]       rd_hi_q;
   logic [63:0]       rd_c_q;
@@ -212,41 +203,31 @@ module rivet_dll_tlp_rx16 #(
   assign ram_wdata2 = beat_i.data[127:64];
   assign ram_wdata3 = beat_i.data[191:128];
   assign ram_wdata4 = beat_i.data[255:192];
+  assign ram_raddr1 = ram_raddr + {{IDX_W{1'b0}}, 1'b1};
+  assign ram_raddr2 = ram_raddr + {{IDX_W{1'b0}}, 2'd2};
+  assign ram_raddr3 = ram_raddr + {{IDX_W{1'b0}}, 2'd3};
 
 `ifndef SYNTHESIS
   initial begin
     if ((SLOT_BYTES % 8) != 0)
       $error("rivet_dll_tlp_rx16 SLOT_BYTES (%0d) must be a multiple of 8", SLOT_BYTES);
-    for (int unsigned ii = 0; ii < RAM_N; ii++) word_ram[ii] = '0;
   end
 `endif
 
-  always_ff @(posedge clk_i) begin
-    if (ram_we)
-      word_ram[ram_waddr] <= ram_wdata;
-    if (ram_we2)
-      word_ram[ram_waddr2] <= ram_wdata2;
-    if (ram_we3)
-      word_ram[ram_waddr3] <= ram_wdata3;
-    if (ram_we4)
-      word_ram[ram_waddr4] <= ram_wdata4;
-  end
-
-  // Synchronous read-data reset. An async BRAM reset fails Versal REQP-2042.
-  // The pair is the word at rd_addr and the next one.
-  always_ff @(posedge clk_i) begin
-    if (!rst_ni) begin
-      rd_lo_q <= '0;
-      rd_hi_q <= '0;
-      rd_c_q  <= '0;
-      rd_d_q  <= '0;
-    end else if (rd_issue) begin
-      rd_lo_q <= word_ram[ram_raddr];
-      rd_hi_q <= word_ram[ram_raddr + {{IDX_W{1'b0}}, 1'b1}];
-      rd_c_q  <= word_ram[ram_raddr + {{IDX_W{1'b0}}, 2'd2}];
-      rd_d_q  <= word_ram[ram_raddr + {{IDX_W{1'b0}}, 2'd3}];
-    end
-  end
+  rivet_ram_lane4 #(.DEPTH(RAM_N)) u_word_ram (
+    .clk_i   (clk_i),
+    .rst_ni  (rst_ni),
+    .we_i    ({ram_we4, ram_we3, ram_we2, ram_we}),
+    .waddr_i ('{ram_waddr, ram_waddr2, ram_waddr3, ram_waddr4}),
+    .wdata_i ('{ram_wdata, ram_wdata2, ram_wdata3, ram_wdata4}),
+    .re_i    (rd_issue),
+    .raddr_i ('{ram_raddr, ram_raddr1, ram_raddr2, ram_raddr3}),
+    .rdata_o (ram_rdata)
+  );
+  assign rd_lo_q = ram_rdata[0];
+  assign rd_hi_q = ram_rdata[1];
+  assign rd_c_q  = ram_rdata[2];
+  assign rd_d_q  = ram_rdata[3];
 
   // Play geometry. Word 0 drops the 2-byte sequence number. A Gen3 beat
   // is two words (16 frame bytes). A Gen4 beat is four (32). The accumulator
@@ -652,3 +633,121 @@ module rivet_dll_tlp_rx16 #(
   end
 
 endmodule : rivet_dll_tlp_rx16
+
+// Four consecutive 64-bit words do not fit one block RAM. Each address
+// lands in a different bank, and each bank has one write and one read.
+module rivet_ram_lane4 #(
+  parameter int unsigned DEPTH = 2048
+) (
+  input  logic                     clk_i,
+  input  logic                     rst_ni,
+  input  logic [3:0]               we_i,
+  input  logic [$clog2(DEPTH)-1:0] waddr_i [4],
+  input  logic [63:0]              wdata_i [4],
+  input  logic                     re_i,
+  input  logic [$clog2(DEPTH)-1:0] raddr_i [4],
+  output logic [63:0]              rdata_o [4]
+);
+  localparam int unsigned AW      = $clog2(DEPTH);
+  localparam int unsigned BANK_N  = DEPTH / 4;
+
+  logic [63:0] dout_b [4];
+  logic [1:0]  rbank_q [4];
+
+  generate
+    for (genvar b = 0; b < 4; b++) begin : g_bank
+      (* ram_style = "block" *) logic [63:0] mem [0:BANK_N-1];
+      logic              we, re;
+      logic [AW-3:0]     widx, ridx;
+      logic [63:0]       wdat;
+      logic [63:0]       dout;
+
+      always_comb begin
+        we   = 1'b0;
+        re   = 1'b0;
+        widx = '0;
+        ridx = '0;
+        wdat = '0;
+        if (we_i[0] && (waddr_i[0][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[0][AW-1:2];
+          wdat = wdata_i[0];
+        end
+        if (we_i[1] && (waddr_i[1][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[1][AW-1:2];
+          wdat = wdata_i[1];
+        end
+        if (we_i[2] && (waddr_i[2][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[2][AW-1:2];
+          wdat = wdata_i[2];
+        end
+        if (we_i[3] && (waddr_i[3][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[3][AW-1:2];
+          wdat = wdata_i[3];
+        end
+        if (re_i && (raddr_i[0][1:0] == b[1:0])) begin
+          re   = 1'b1;
+          ridx = raddr_i[0][AW-1:2];
+        end
+        if (re_i && (raddr_i[1][1:0] == b[1:0])) begin
+          re   = 1'b1;
+          ridx = raddr_i[1][AW-1:2];
+        end
+        if (re_i && (raddr_i[2][1:0] == b[1:0])) begin
+          re   = 1'b1;
+          ridx = raddr_i[2][AW-1:2];
+        end
+        if (re_i && (raddr_i[3][1:0] == b[1:0])) begin
+          re   = 1'b1;
+          ridx = raddr_i[3][AW-1:2];
+        end
+      end
+
+`ifndef SYNTHESIS
+      initial begin
+        for (int unsigned ii = 0; ii < BANK_N; ii++)
+          mem[ii] = '0;
+      end
+`endif
+
+      always_ff @(posedge clk_i) begin
+        if (we)
+          mem[widx] <= wdat;
+      end
+
+      always_ff @(posedge clk_i) begin
+        if (!rst_ni)
+          dout <= '0;
+        else if (re)
+          dout <= mem[ridx];
+      end
+
+      assign dout_b[b] = dout;
+    end
+  endgenerate
+
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      rbank_q[0] <= '0;
+      rbank_q[1] <= '0;
+      rbank_q[2] <= '0;
+      rbank_q[3] <= '0;
+    end else if (re_i) begin
+      rbank_q[0] <= raddr_i[0][1:0];
+      rbank_q[1] <= raddr_i[1][1:0];
+      rbank_q[2] <= raddr_i[2][1:0];
+      rbank_q[3] <= raddr_i[3][1:0];
+    end
+  end
+
+  always_comb begin
+    rdata_o[0] = dout_b[rbank_q[0]];
+    rdata_o[1] = dout_b[rbank_q[1]];
+    rdata_o[2] = dout_b[rbank_q[2]];
+    rdata_o[3] = dout_b[rbank_q[3]];
+  end
+endmodule
+
