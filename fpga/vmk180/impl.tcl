@@ -20,7 +20,8 @@ set build_dir [file join $script_dir build [expr {$gen4 ? "gen4_ep" : ""}]]
 set xpr [file join $build_dir rivet_vmk180.xpr]
 
 if {![file exists $xpr]} {
-  error "Missing $xpr. Run create_project.cmd first."
+  puts "ERROR: Missing $xpr. Run create_project.cmd first."
+  exit 1
 }
 
 open_project $xpr
@@ -58,14 +59,18 @@ set tns [get_property STATS.TNS $impl]
 set whs [get_property STATS.WHS $impl]
 puts "WNS=$wns ns  TNS=$tns ns  WHS=$whs ns"
 if {$wns < 0.0} {
-  error "timing not met: WNS=$wns TNS=$tns"
+  puts "ERROR: timing not met: WNS=$wns TNS=$tns"
+  catch {close_project}
+  exit 1
 }
 
 puts "PASS: bitstream timing closed"
 if {$gen4} {
   set bits [glob -nocomplain -directory [file join $build_dir rivet_vmk180.runs impl_1] *.bit]
   if {[llength $bits] == 0} {
-    error "no bitstream under impl_1"
+    puts "ERROR: no bitstream under impl_1"
+    catch {close_project}
+    exit 1
   }
   set dst [file join $build_dir rivet_vmk180_gen4_ep.bit]
   file copy -force [lindex $bits 0] $dst
@@ -73,3 +78,4 @@ if {$gen4} {
 }
 puts "Project: $xpr"
 close_project
+exit 0
