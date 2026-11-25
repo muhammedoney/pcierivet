@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 810" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 840" role="img" aria-labelledby="title desc">
   <title id="title">Throughput versus payload size</title>
-  <desc id="desc">Gen2 and Gen3 x4. The vertical grid is 500 MB/s. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1142.857, 1438.202, 1651.613, 1790.210, 1889.299, 1943.074, 1970.178, and 1983.055 MB/s. Rivet Gen2 x4 read printed 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, and 1737.065 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, and 3430.486 MB/s.</desc>
-  <rect width="1120" height="810" fill="#ffffff"/>
+  <desc id="desc">Gen2, Gen3, and Gen4 x4. The vertical grid is 1000 MB/s. Gen2 theoretical bandwidth is 2000 MB/s. Gen3 theoretical bandwidth is 3938 MB/s. Gen4 theoretical bandwidth is 7877 MB/s. Rivet Gen2 x4 MemWr64 printed 250.000, 500.000, 800.000, 1142.857, 1438.202, 1651.613, 1790.210, 1889.299, 1943.074, 1970.178, and 1983.055 MB/s. Rivet Gen2 x4 read printed 79.208, 146.789, 285.714, 450.704, 723.164, 1019.920, 1292.929, 1497.076, 1625.397, 1698.176, and 1737.065 MB/s. Rivet Gen3 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, 3506.849, 3737.226, 3820.896, 3908.397, and 3953.668 MB/s. Rivet Gen3 x4 MemRd64 printed 108.108, 192.771, 390.244, 711.111, 1185.185, 1630.573, 2226.087, 2752.688, 3103.030, 3313.916, and 3430.486 MB/s. Rivet Gen4 x4 MemWr64 printed 333.333, 666.667, 1333.333, 2000.000, 2666.667, 3200.000, and 3555.556 MB/s for payloads of 4 through 256 bytes.</desc>
+  <rect width="1120" height="840" fill="#ffffff"/>
   <text x="78" y="28" fill="#1f2328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="600">Throughput vs payload</text>
-  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Same 500 MB/s grid. The axis runs to 4000 MB/s so the Gen3 line fits.</text>
+  <text x="78" y="48" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">Same 1000 MB/s grid. The axis runs to 8000 MB/s so the Gen4 line fits.</text>
   <g fill="none" stroke="#d0d7de" stroke-width="1">
     <line x1="78" y1="72" x2="1040" y2="72"/>
     <line x1="78" y1="147" x2="1040" y2="147"/>
@@ -16,75 +16,87 @@
     <line x1="78" y1="672" x2="1040" y2="672"/>
   </g>
   <g fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="end">
-    <text x="70" y="76">4000</text>
-    <text x="70" y="151">3500</text>
-    <text x="70" y="226">3000</text>
-    <text x="70" y="301">2500</text>
-    <text x="70" y="376">2000</text>
-    <text x="70" y="451">1500</text>
-    <text x="70" y="526">1000</text>
-    <text x="70" y="601">500</text>
+    <text x="70" y="76">8000</text>
+    <text x="70" y="151">7000</text>
+    <text x="70" y="226">6000</text>
+    <text x="70" y="301">5000</text>
+    <text x="70" y="376">4000</text>
+    <text x="70" y="451">3000</text>
+    <text x="70" y="526">2000</text>
+    <text x="70" y="601">1000</text>
     <text x="70" y="676">0</text>
   </g>
   <text x="18" y="372" fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle" transform="rotate(-90 18 372)">MB/s</text>
-  <line x1="96" y1="372" x2="996" y2="372" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="5 4"/>
-  <line x1="96" y1="81.23" x2="988" y2="81.23" fill="none" stroke="#9a6700" stroke-width="2" stroke-dasharray="2 3"/>
-  <text x="1004" y="74" fill="#9a6700" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">3938</text>
-  <polyline fill="none" stroke="#1a7f37" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,634.50 186,597.00 276,552.00 366,500.57 456,456.27 546,424.26 636,403.47 726,388.61 816,380.54 906,376.47 996,374.54"/>
+  <line x1="96" y1="522" x2="996" y2="522" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="5 4"/>
+  <line x1="96" y1="376.62" x2="988" y2="376.62" fill="none" stroke="#9a6700" stroke-width="2" stroke-dasharray="2 3"/>
+  <text x="1004" y="380" fill="#9a6700" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">3938</text>
+  <line x1="96" y1="81.23" x2="988" y2="81.23" fill="none" stroke="#0550ae" stroke-width="2" stroke-dasharray="2 3"/>
+  <text x="1004" y="85" fill="#0550ae" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11">7877</text>
+  <polyline fill="none" stroke="#1a7f37" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,653.25 186,634.50 276,612.00 366,586.29 456,564.13 546,548.13 636,537.73 726,530.30 816,526.27 906,524.24 996,523.27"/>
   <g fill="#1a7f37">
-    <circle cx="96" cy="634.50" r="3.5"/>
-    <circle cx="186" cy="597.00" r="3.5"/>
-    <circle cx="276" cy="552.00" r="3.5"/>
-    <circle cx="366" cy="500.57" r="3.5"/>
-    <circle cx="456" cy="456.27" r="3.5"/>
-    <circle cx="546" cy="424.26" r="3.5"/>
-    <circle cx="636" cy="403.47" r="3.5"/>
-    <circle cx="726" cy="388.61" r="3.5"/>
-    <circle cx="816" cy="380.54" r="3.5"/>
-    <circle cx="906" cy="376.47" r="3.5"/>
-    <circle cx="996" cy="374.54" r="3.5"/>
+    <circle cx="96" cy="653.25" r="3.5"/>
+    <circle cx="186" cy="634.50" r="3.5"/>
+    <circle cx="276" cy="612.00" r="3.5"/>
+    <circle cx="366" cy="586.29" r="3.5"/>
+    <circle cx="456" cy="564.13" r="3.5"/>
+    <circle cx="546" cy="548.13" r="3.5"/>
+    <circle cx="636" cy="537.73" r="3.5"/>
+    <circle cx="726" cy="530.30" r="3.5"/>
+    <circle cx="816" cy="526.27" r="3.5"/>
+    <circle cx="906" cy="524.24" r="3.5"/>
+    <circle cx="996" cy="523.27" r="3.5"/>
   </g>
-  <polyline fill="none" stroke="#cf222e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,660.12 186,649.98 276,629.14 366,604.39 456,563.53 546,519.01 636,478.06 726,447.44 816,428.19 906,417.27 996,411.44"/>
+  <polyline fill="none" stroke="#cf222e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,666.06 186,660.99 276,650.57 366,638.20 456,617.76 546,595.51 636,575.03 726,559.72 816,550.10 906,544.64 996,541.72"/>
   <g fill="#cf222e">
-    <circle cx="96" cy="660.12" r="3.5"/>
-    <circle cx="186" cy="649.98" r="3.5"/>
-    <circle cx="276" cy="629.14" r="3.5"/>
-    <circle cx="366" cy="604.39" r="3.5"/>
-    <circle cx="456" cy="563.53" r="3.5"/>
-    <circle cx="546" cy="519.01" r="3.5"/>
-    <circle cx="636" cy="478.06" r="3.5"/>
-    <circle cx="726" cy="447.44" r="3.5"/>
-    <circle cx="816" cy="428.19" r="3.5"/>
-    <circle cx="906" cy="417.27" r="3.5"/>
-    <circle cx="996" cy="411.44" r="3.5"/>
+    <circle cx="96" cy="666.06" r="3.5"/>
+    <circle cx="186" cy="660.99" r="3.5"/>
+    <circle cx="276" cy="650.57" r="3.5"/>
+    <circle cx="366" cy="638.20" r="3.5"/>
+    <circle cx="456" cy="617.76" r="3.5"/>
+    <circle cx="546" cy="595.51" r="3.5"/>
+    <circle cx="636" cy="575.03" r="3.5"/>
+    <circle cx="726" cy="559.72" r="3.5"/>
+    <circle cx="816" cy="550.10" r="3.5"/>
+    <circle cx="906" cy="544.64" r="3.5"/>
+    <circle cx="996" cy="541.72" r="3.5"/>
   </g>
-  <polyline fill="none" stroke="#0e7c86" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,622.00 186,572.00 276,472.00 366,372.00 456,272.00 546,192.00 636,145.97 726,111.42 816,98.87 906,85.74 996,78.95"/>
+  <polyline fill="none" stroke="#0e7c86" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,647.00 186,622.00 276,572.00 366,522.00 456,472.00 546,432.00 636,408.99 726,391.71 816,385.43 906,378.87 996,375.47"/>
   <g fill="#0e7c86">
-    <rect x="92.5" y="618.50" width="7" height="7"/>
-    <rect x="182.5" y="568.50" width="7" height="7"/>
-    <rect x="272.5" y="468.50" width="7" height="7"/>
-    <rect x="362.5" y="368.50" width="7" height="7"/>
-    <rect x="452.5" y="268.50" width="7" height="7"/>
-    <rect x="542.5" y="188.50" width="7" height="7"/>
-    <rect x="632.5" y="142.47" width="7" height="7"/>
-    <rect x="722.5" y="107.92" width="7" height="7"/>
-    <rect x="812.5" y="95.37" width="7" height="7"/>
-    <rect x="902.5" y="82.24" width="7" height="7"/>
-    <rect x="992.5" y="75.45" width="7" height="7"/>
+    <rect x="92.5" y="643.50" width="7" height="7"/>
+    <rect x="182.5" y="618.50" width="7" height="7"/>
+    <rect x="272.5" y="568.50" width="7" height="7"/>
+    <rect x="362.5" y="518.50" width="7" height="7"/>
+    <rect x="452.5" y="468.50" width="7" height="7"/>
+    <rect x="542.5" y="428.50" width="7" height="7"/>
+    <rect x="632.5" y="405.49" width="7" height="7"/>
+    <rect x="722.5" y="388.21" width="7" height="7"/>
+    <rect x="812.5" y="381.93" width="7" height="7"/>
+    <rect x="902.5" y="375.37" width="7" height="7"/>
+    <rect x="992.5" y="371.97" width="7" height="7"/>
   </g>
-  <polyline fill="none" stroke="#8250df" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,655.78 186,643.08 276,613.46 366,565.33 456,494.22 546,427.41 636,338.09 726,259.10 816,206.55 906,174.91 996,157.43"/>
+  <polyline fill="none" stroke="#8250df" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,663.89 186,657.54 276,642.73 366,618.67 456,583.11 546,549.71 636,505.04 726,465.55 816,439.27 906,423.46 996,414.71"/>
   <g fill="#8250df">
-    <circle cx="96" cy="655.78" r="3.5"/>
-    <circle cx="186" cy="643.08" r="3.5"/>
-    <circle cx="276" cy="613.46" r="3.5"/>
-    <circle cx="366" cy="565.33" r="3.5"/>
-    <circle cx="456" cy="494.22" r="3.5"/>
-    <circle cx="546" cy="427.41" r="3.5"/>
-    <circle cx="636" cy="338.09" r="3.5"/>
-    <circle cx="726" cy="259.10" r="3.5"/>
-    <circle cx="816" cy="206.55" r="3.5"/>
-    <circle cx="906" cy="174.91" r="3.5"/>
-    <circle cx="996" cy="157.43" r="3.5"/>
+    <circle cx="96" cy="663.89" r="3.5"/>
+    <circle cx="186" cy="657.54" r="3.5"/>
+    <circle cx="276" cy="642.73" r="3.5"/>
+    <circle cx="366" cy="618.67" r="3.5"/>
+    <circle cx="456" cy="583.11" r="3.5"/>
+    <circle cx="546" cy="549.71" r="3.5"/>
+    <circle cx="636" cy="505.04" r="3.5"/>
+    <circle cx="726" cy="465.55" r="3.5"/>
+    <circle cx="816" cy="439.27" r="3.5"/>
+    <circle cx="906" cy="423.46" r="3.5"/>
+    <circle cx="996" cy="414.71" r="3.5"/>
+  </g>
+  <polyline fill="none" stroke="#0550ae" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="96,647.00 186,622.00 276,572.00 366,522.00 456,472.00 546,432.00 636,405.33"/>
+  <g fill="#0550ae">
+    <polygon points="96,642.00 101,647.00 96,652.00 91,647.00"/>
+    <polygon points="186,617.00 191,622.00 186,627.00 181,622.00"/>
+    <polygon points="276,567.00 281,572.00 276,577.00 271,572.00"/>
+    <polygon points="366,517.00 371,522.00 366,527.00 361,522.00"/>
+    <polygon points="456,467.00 461,472.00 456,477.00 451,472.00"/>
+    <polygon points="546,427.00 551,432.00 546,437.00 541,432.00"/>
+    <polygon points="636,400.33 641,405.33 636,410.33 631,405.33"/>
   </g>
   <g fill="#57606a" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" text-anchor="middle">
     <text x="96" y="692">4</text>
@@ -113,5 +125,9 @@
     <text x="292" y="776">Gen3 x4 MemWr64</text>
     <circle cx="500" cy="772" r="4" fill="#8250df"/>
     <text x="512" y="776">Gen3 x4 MemRd64</text>
+    <line x1="78" y1="800" x2="108" y2="800" stroke="#0550ae" stroke-width="2" stroke-dasharray="2 3"/>
+    <text x="114" y="804">Gen4 theoretical</text>
+    <polygon points="280,795 285,800 280,805 275,800" fill="#0550ae"/>
+    <text x="292" y="804">Gen4 x4 MemWr64</text>
   </g>
 </svg>
