@@ -815,16 +815,18 @@ module rivet_mac_os_rx #(
       bb[i] = '0;
     for (int unsigned i = 0; i < 40; i++)
       bb[i] = raw_b_bytes[8*i +: 8];
-    while ((nleft >= 8) && (nport < 4)) begin
-      word = '0;
-      for (int unsigned k = 0; k < 8; k++) begin
-        ix = 6'(bi + k);
-        word[8*k +: 8] = bb[ix];
+    for (int unsigned step = 0; step < 4; step++) begin
+      if ((nleft >= 8) && (nport < 4)) begin
+        word = '0;
+        for (int unsigned k = 0; k < 8; k++) begin
+          ix = 6'(bi + k);
+          word[8*k +: 8] = bb[ix];
+        end
+        rx_push_word(nport, word, slot);
+        slot  = slot + TLP_AW'(1);
+        bi    = bi + 8;
+        nleft = nleft - 8;
       end
-      rx_push_word(nport, word, slot);
-      slot  = slot + TLP_AW'(1);
-      bi    = bi + 8;
-      nleft = nleft - 8;
     end
     if (nleft >= 8) begin
       overflow = 1'b1;
