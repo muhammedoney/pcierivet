@@ -99,6 +99,7 @@ module rivet_mac_pipe_adapter #(
   logic [LANES-1:0]                 rxpolarity_q;
   logic [1:0]                       powerdown_q;
   logic [2:0]                       rate_q;
+  (* equivalent_register_removal = "no" *) logic [2:0] rate_phy_q;
   logic                             as_mac_in_detect_q;
   logic                             as_cdr_hold_req_q;
   logic                             as_mac_in_L0_q;
@@ -195,6 +196,7 @@ module rivet_mac_pipe_adapter #(
       rxpolarity_q       <= '0;
       powerdown_q        <= RIVET_PIPE_P1;
       rate_q             <= RIVET_PIPE_RATE_GEN1;
+      rate_phy_q         <= RIVET_PIPE_RATE_GEN1;
       as_mac_in_detect_q <= 1'b1;
       as_cdr_hold_req_q  <= 1'b0;
       as_mac_in_L0_q     <= 1'b0;
@@ -228,6 +230,7 @@ module rivet_mac_pipe_adapter #(
       rxpolarity_q       <= rxpolarity_i;
       powerdown_q        <= powerdown_i;
       rate_q             <= rate_i;
+      rate_phy_q         <= rate_i;
       as_mac_in_detect_q <= as_mac_in_detect_i;
       as_cdr_hold_req_q  <= as_cdr_hold_req_i;
       as_mac_in_L0_q     <= as_mac_in_L0_i;
@@ -357,7 +360,7 @@ module rivet_mac_pipe_adapter #(
     end
   end
 
-  assign pipe_rate_o             = rate_q;
+  assign pipe_rate_o             = rate_phy_q;
   assign pipe_txmargin_o         = (pipe_margin_msg_i[7:4] == 4'h1) ?
                                    pipe_margin_msg_i[2:0] : 3'b000;
   assign pipe_txswing_o          = 1'b0;

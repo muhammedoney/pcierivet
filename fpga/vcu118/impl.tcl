@@ -29,11 +29,9 @@ open_project $xpr
 set syn  [get_runs synth_1]
 set impl [get_runs impl_1]
 
-# Gen4 perf explore stayed in cross-boundary optimization with no progress.
-# Runtime synthesis and the default implementation finish the batch.
 if {$gen4} {
-  set syn_strat Flow_RuntimeOptimized
-  set impl_strat "Vivado Implementation Defaults"
+  set syn_strat "Vivado Synthesis Defaults"
+  set impl_strat Performance_ExplorePostRoutePhysOpt
 } else {
   set syn_strat Flow_PerfOptimized_high
   set impl_strat Performance_ExplorePostRoutePhysOpt

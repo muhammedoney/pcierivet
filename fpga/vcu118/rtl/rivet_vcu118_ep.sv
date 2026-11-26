@@ -171,11 +171,25 @@ module rivet_vcu118_ep #(
     .pcie_link_reach_target (link_up)
   );
 
+  // Synchronize active-low reset release into user_clk for the PIO app so a
+  // combinational LUT on pipe_clk phy_ready never drives async reset pins.
+  (* ASYNC_REG = "TRUE" *) logic [3:0] pio_rst_sync_q;
+  logic pio_rst_n;
+  always_ff @(posedge user_clk or negedge sys_rst_n) begin
+    if (!sys_rst_n)
+      pio_rst_sync_q <= 4'b0000;
+    else if (!phy_ready)
+      pio_rst_sync_q <= 4'b0000;
+    else
+      pio_rst_sync_q <= {pio_rst_sync_q[2:0], 1'b1};
+  end
+  assign pio_rst_n = pio_rst_sync_q[3];
+
   generate
     if (GEN == 4) begin : g_pio256
       rivet_fpga_pio256 u_pio (
         .clk_i            (user_clk),
-        .rst_ni           (sys_rst_n & phy_ready),
+        .rst_ni           (pio_rst_n),
         .m_axis_cq_tdata  (cq_tdata),
         .m_axis_cq_tkeep  (cq_tkeep),
         .m_axis_cq_tlast  (cq_tlast),
@@ -192,7 +206,7 @@ module rivet_vcu118_ep #(
     end else begin : g_pio64
       rivet_tl_pio_app u_pio (
         .clk_i            (user_clk),
-        .rst_ni           (sys_rst_n & phy_ready),
+        .rst_ni           (pio_rst_n),
         .m_axis_cq_tdata  (cq_tdata),
         .m_axis_cq_tkeep  (cq_tkeep),
         .m_axis_cq_tlast  (cq_tlast),
@@ -220,9 +234,9 @@ module rivet_vcu118_ep #(
     .N_TS1_POLLING     (1024)
   ) u_ctrl (
     .user_clk    (user_clk),
-    .user_resetn (sys_rst_n & phy_ready),
+    .user_resetn (sys_rst_n),
     .pclk        (pipe_clk),
-    .preset_n    (sys_rst_n & phy_ready),
+    .preset_n    (phy_ready),
 
     .m_axis_cq_tdata  (cq_tdata),
     .m_axis_cq_tkeep  (cq_tkeep),

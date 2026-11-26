@@ -363,7 +363,7 @@ module rivet_pcie_ctrl #(
 
   rivet_tl_rx_route #(.DATA_W(TL_W)) u_rx_route (
     .clk_i       (pclk),
-    .rst_ni      (preset_n),
+    .rst_ni      (pclk_rst_sync_n),
     .s_tdata_i   (tl_rx_tdata),
     .s_tkeep_i   (tl_rx_tkeep),
     .s_tlast_i   (tl_rx_tlast),
@@ -389,7 +389,7 @@ module rivet_pcie_ctrl #(
 
   rivet_tl_cfg #(.MODE(MODE)) u_tl_cfg (
     .clk_i        (pclk),
-    .rst_ni       (preset_n),
+    .rst_ni       (pclk_rst_sync_n),
     .primary_bus_i(primary_bus),
     .rx_tdata_i   (cfg_rx_d),
     .rx_tkeep_i   (cfg_rx_k),
@@ -993,7 +993,7 @@ module rivet_pcie_ctrl #(
 
   rivet_tl_tx_mux #(.DATA_W(TL_W)) u_tx_mux (
     .clk_i        (pclk),
-    .rst_ni       (preset_n),
+    .rst_ni       (pclk_rst_sync_n),
     .cfg_tdata_i  (TL_W'(cfg_tx_d)),
     .cfg_tkeep_i  (TL_K'(cfg_tx_k)),
     .cfg_tlast_i  (cfg_tx_l),
@@ -1023,7 +1023,7 @@ module rivet_pcie_ctrl #(
 
   rivet_tl_credit u_tl_credit (
     .clk_i               (pclk),
-    .rst_ni              (preset_n),
+    .rst_ni              (pclk_rst_sync_n),
     .rx_accept_i         (cr_rx_acc),
     .rx_hdr0_i           (cr_rx_h0),
     .rx_len_dw_i         (cr_rx_len),
@@ -1058,7 +1058,7 @@ module rivet_pcie_ctrl #(
 
   rivet_tl_fc_stub u_tl_fc (
     .clk_i              (pclk),
-    .rst_ni             (preset_n),
+    .rst_ni             (pclk_rst_sync_n),
     .free_ph_i          (cr_free_ph),
     .free_pd_i          (cr_free_pd),
     .free_nph_i         (cr_free_nph),
@@ -1094,7 +1094,7 @@ module rivet_pcie_ctrl #(
     .TX_DATA_W       (TL_W)
   ) u_dll (
     .pclk_i         (pclk),
-    .rst_ni         (preset_n),
+    .rst_ni         (pclk_rst_sync_n),
     .dll_tx_beat_o  (dll_tx_beat),
     .dll_tx_valid_o (dll_tx_valid),
     .dll_tx_ready_i (dll_tx_ready),
@@ -1215,7 +1215,7 @@ module rivet_pcie_ctrl #(
     .N_TS1_POLLING     (N_TS1_POLLING)
   ) u_mac (
     .pclk_i                  (pclk),
-    .rst_ni                  (preset_n),
+    .rst_ni                  (pclk_rst_sync_n),
     .dll_tx_beat_i           (dll_tx_beat),
     .dll_tx_valid_i          (dll_tx_valid),
     .dll_tx_ready_o          (dll_tx_ready),
