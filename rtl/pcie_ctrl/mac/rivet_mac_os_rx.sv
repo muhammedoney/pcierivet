@@ -581,16 +581,23 @@ module rivet_mac_os_rx #(
   logic [8*NSYM-1:0] gf_data_pack;
 
   // Stage IN registers (dense raw stream + pre-decoded high-byte-zero hints).
+  // Local copies of rate/lane_en break the cross-chip u_ltssm -> Stage IN path.
+  (* equivalent_register_removal = "no" *) logic             gf_gen3_rx_q;
+  (* equivalent_register_removal = "no" *) logic [LANES-1:0] lane_en_rx_q;
   logic              in_gen3_q;
   logic              in_ok_q;
   logic [5:0]        in_cnt_q;
   logic [NSYM-1:0]   in_sdp_q, in_stp_q, in_end_q, in_edb_q, in_k_q;
   logic [8*NSYM-1:0] in_data_q;
+  logic [31:0]       in_tok_q;
   logic [31:0]       in_l_hi_z_q;
+  logic [31:0]       in_l_hi6_z_q;
+  logic [31:0]       in_l_hi6_1_q;
 
   // Stage G0 combinational outputs from rivet_mac_gf_scan_meta.
   logic [2:0]        gf_st_f;
   logic [15:0]       gf_left_f;
+  logic              gf_left_hi_z_f;
   logic              g0_open_fin_c;
   logic [5:0]        g0_h0_c;
   logic              g0_end_pos0_v_c, g0_dllp_end0_v_c;
@@ -658,14 +665,13 @@ module rivet_mac_os_rx #(
     logic [NSYM-1:0]  raw_sdp, raw_stp, raw_end, raw_edb, raw_k;
     logic [7:0]       raw_data [0:NSYM-1];
 
-    gf_gen3_c = ((PIPE_DATA_WIDTH == 32) && (rate_i == RIVET_PIPE_RATE_GEN3)) ||
-                ((PIPE_DATA_WIDTH == 64) && (rate_i == RIVET_PIPE_RATE_GEN4));
-    gf_ok_c   = (PKT_RX_OK || gf_gen3_c) && sym_valid_i[0] && lane_en_i[0];
+    gf_gen3_c = gf_gen3_rx_q;
+    gf_ok_c   = (PKT_RX_OK || gf_gen3_c) && sym_valid_i[0] && lane_en_rx_q[0];
 
     lane_k = 3'd0;
     for (int unsigned i = 0; i < 4; i++) act_l[i] = 2'd0;
     for (int unsigned l = 0; l < LANES; l++) begin
-      lane_e[l] = gf_ok_c && lane_en_i[l] && !(gf_gen3_c && os_block_i[l]);
+      lane_e[l] = gf_ok_c && lane_en_rx_q[l] && !(gf_gen3_c && os_block_i[l]);
       if (lane_e[l]) begin
         act_l[lane_k[1:0]] = 2'(l);
         lane_k             = lane_k + 3'd1;
@@ -732,12 +738,15 @@ module rivet_mac_os_rx #(
         .left_i       (gf_left_q),
         .left_hi_z_i  (gf_left_hi_z_q),
         .cnt_i        (in_cnt_q),
-        .sdp_i        (in_sdp_q),
         .stp_i        (in_stp_q),
+        .tok_i        (in_tok_q),
         .data_i       (in_data_q),
         .l_hi_z_i     (in_l_hi_z_q),
+        .l_hi6_z_i    (in_l_hi6_z_q),
+        .l_hi6_1_i    (in_l_hi6_1_q),
         .st_o         (gf_st_f),
         .left_o       (gf_left_f),
+        .left_hi_z_o  (gf_left_hi_z_f),
         .open_fin_o   (g0_open_fin_c),
         .h0_o         (g0_h0_c),
         .end_pos0_v_o (g0_end_pos0_v_c),
@@ -789,6 +798,7 @@ module rivet_mac_os_rx #(
     end else begin : g_gf_passthru
       assign gf_st_f          = '0;
       assign gf_left_f        = '0;
+      assign gf_left_hi_z_f   = 1'b1;
       assign g0_open_fin_c    = 1'b0;
       assign g0_h0_c          = '0;
       assign g0_end_pos0_v_c  = 1'b0;
@@ -815,6 +825,8 @@ module rivet_mac_os_rx #(
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
+      gf_gen3_rx_q     <= 1'b0;
+      lane_en_rx_q     <= '0;
       in_gen3_q        <= 1'b0;
       in_ok_q          <= 1'b0;
       in_cnt_q         <= '0;
@@ -824,7 +836,10 @@ module rivet_mac_os_rx #(
       in_edb_q         <= '0;
       in_k_q           <= '0;
       in_data_q        <= '0;
+      in_tok_q         <= '0;
       in_l_hi_z_q      <= '0;
+      in_l_hi6_z_q     <= '0;
+      in_l_hi6_1_q     <= '0;
       gf_st_q          <= '0;
       gf_left_q        <= '0;
       gf_left_hi_z_q   <= 1'b1;
@@ -861,6 +876,11 @@ module rivet_mac_os_rx #(
       p0_nz_q          <= '0;
       for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= '0;
     end else begin
+      // Local copies of LTSSM control for packet-RX Stage IN.
+      gf_gen3_rx_q <= ((PIPE_DATA_WIDTH == 32) && (rate_i == RIVET_PIPE_RATE_GEN3)) ||
+                      ((PIPE_DATA_WIDTH == 64) && (rate_i == RIVET_PIPE_RATE_GEN4));
+      lane_en_rx_q <= lane_en_i;
+
       // Stage IN: register dense raw symbols + pre-decoded TLP length hints.
       in_gen3_q <= gf_gen3_c;
       in_ok_q   <= gf_ok_c;
@@ -874,7 +894,11 @@ module rivet_mac_os_rx #(
       for (int unsigned d = 0; d < 32; d++) begin
         automatic logic [7:0] b0 = ((d + 1) < NSYM) ? gf_data_pack[8*(d + 1) +: 8] : 8'h00;
         automatic logic [7:0] b1 = ((d + 2) < NSYM) ? gf_data_pack[8*(d + 2) +: 8] : 8'h00;
-        in_l_hi_z_q[d] <= (b1 == 8'h00) && (b0[7:5] == 3'b000);
+        in_tok_q[d]     <= (d < NSYM) && (6'(d) < gf_raw_cnt_c) &&
+                           (gf_stp_c[d] || gf_sdp_c[d]);
+        in_l_hi_z_q[d]  <= (b1 == 8'h00) && (b0[7:5] == 3'b000);
+        in_l_hi6_z_q[d] <= (b1 == 8'h00) && (b0[7:6] == 2'b00);
+        in_l_hi6_1_q[d] <= (b1 == 8'h00) && (b0[7:6] == 2'b01);
       end
 
       // Stage G0: advance framing state and latch compact metadata.
@@ -890,7 +914,7 @@ module rivet_mac_os_rx #(
       if (in_gen3_q) begin
         gf_st_q          <= gf_st_f;
         gf_left_q        <= gf_left_f;
-        gf_left_hi_z_q   <= (gf_left_f[15:6] == 10'd0);
+        gf_left_hi_z_q   <= gf_left_hi_z_f;
         g0_open_fin_q    <= g0_open_fin_c;
         g0_h0_q          <= g0_h0_c;
         g0_end_pos0_v_q  <= g0_end_pos0_v_c;
@@ -1980,12 +2004,15 @@ module rivet_mac_gf_scan_meta #(
   input  logic [15:0]         left_i,
   input  logic                left_hi_z_i,
   input  logic [5:0]          cnt_i,
-  input  logic [NSYM-1:0]     sdp_i,
   input  logic [NSYM-1:0]     stp_i,
+  input  logic [31:0]         tok_i,
   input  logic [8*NSYM-1:0]   data_i,
   input  logic [31:0]         l_hi_z_i,
+  input  logic [31:0]         l_hi6_z_i,
+  input  logic [31:0]         l_hi6_1_i,
   output logic [2:0]          st_o,
   output logic [15:0]         left_o,
+  output logic                left_hi_z_o,
   output logic                open_fin_o,
   output logic [5:0]          h0_o,
   output logic                end_pos0_v_o,
@@ -2029,11 +2056,12 @@ module rivet_mac_gf_scan_meta #(
   endfunction
 
   always_comb begin
-    logic [31:0] sdp_w, stp_w;
+    logic [31:0] stp_w;
     logic [7:0]  data_b [0:63];
 
     // Precomputed per-position Step-2 decisions (zero dependence on st_i/left_i).
     logic [31:0] stp_fin_at;
+    logic [31:0] stp_hi_z_at;
     logic [31:0] dllp_fin_at;
     logic [5:0]  end1_at [0:31];
 
@@ -2060,9 +2088,7 @@ module rivet_mac_gf_scan_meta #(
     logic [5:0]  end_pos1, dllp_end1;
     logic [1:0]  s2_drops;
 
-    sdp_w = '0;
     stp_w = '0;
-    sdp_w[NSYM-1:0] = sdp_i;
     stp_w[NSYM-1:0] = stp_i;
     for (int unsigned i = 0; i < 64; i++)
       data_b[i] = (i < NSYM) ? data_i[8*i +: 8] : 8'h00;
@@ -2070,8 +2096,10 @@ module rivet_mac_gf_scan_meta #(
     for (int unsigned d = 0; d < 32; d++) begin
       automatic logic [5:0] rem_d = (cnt_i > (6'(d) + 6'd1)) ? (cnt_i - 6'd1 - 6'(d)) : 6'd0;
       automatic logic [5:0] rp_d  = (rem_d >= 6'd2) ? (rem_d - 6'd2) : 6'd0;
+      automatic logic       bor_d = (data_b[d + 1][5:0] < rp_d);
       stp_fin_at[d]  = (rem_d >= 6'd2) && l_hi_z_i[d] &&
                        ({1'b0, data_b[d + 1][4:0]} < rp_d);
+      stp_hi_z_at[d] = (l_hi6_z_i[d] && !bor_d) || (l_hi6_1_i[d] && bor_d);
       end1_at[d]     = 6'(d) + 6'd3 + {1'b0, data_b[d + 1][4:0]};
       dllp_fin_at[d] = (rem_d > 6'(DLLP_BYTES));
     end
@@ -2190,7 +2218,7 @@ module rivet_mac_gf_scan_meta #(
 
     cand = '0;
     for (int unsigned d = 0; d < 32; d++)
-      cand[d] = open_fin && (6'(d) >= h0) && (6'(d) < cnt_i) && (stp_w[d] || sdp_w[d]);
+      cand[d] = open_fin && (6'(d) >= h0) && tok_i[d];
     sp    = prio32(cand);
     found = sp[5];
     s_idx = sp[4:0];
@@ -2208,31 +2236,37 @@ module rivet_mac_gf_scan_meta #(
     s2_drops    = 2'd0;
     st_o        = mid_st;
     left_o      = mid_left;
+    left_hi_z_o = (mid_left[15:6] == 10'd0);
 
     if (open_fin && found) begin
       if (is_stp) begin
         if (rem == 6'd0) begin
-          s2_drops = 2'd0;
-          st_o     = 3'd1;
-          left_o   = 16'd0;
+          s2_drops    = 2'd0;
+          st_o        = 3'd1;
+          left_o      = 16'd0;
+          left_hi_z_o = 1'b1;
         end else if (rem == 6'd1) begin
-          s2_drops = 2'd1;
-          st_o     = 3'd2;
-          left_o   = {8'd0, b0};
+          s2_drops    = 2'd1;
+          st_o        = 3'd2;
+          left_o      = {8'd0, b0};
+          left_hi_z_o = (b0[7:6] == 2'b00);
         end else begin
           s2_drops = 2'd2;
           if (stp_fin_at[s_idx]) begin
-            end_pos1_v = 1'b1;
-            end_pos1   = end1_at[s_idx];
-            st_o       = 3'd0;
-            left_o     = 16'd0;
+            end_pos1_v  = 1'b1;
+            end_pos1    = end1_at[s_idx];
+            st_o        = 3'd0;
+            left_o      = 16'd0;
+            left_hi_z_o = 1'b1;
           end else begin
-            st_o   = 3'd3;
-            left_o = l_new - 16'(rem_pay);
+            st_o        = 3'd3;
+            left_o      = l_new - 16'(rem_pay);
+            left_hi_z_o = stp_hi_z_at[s_idx];
           end
         end
       end else begin
-        s2_drops = 2'd0;
+        s2_drops    = 2'd0;
+        left_hi_z_o = 1'b1;
         if (dllp_fin_at[s_idx]) begin
           dllp_end1_v = 1'b1;
           dllp_end1   = {1'b0, s_idx} + 6'd1 + 6'(DLLP_BYTES);
@@ -2444,7 +2478,11 @@ module rivet_mac_gf_scan #(
   output logic [8*NSYM-1:0]   data_o
 );
 
+  logic [31:0] tok_w;
   logic [31:0] l_hi_z_w;
+  logic [31:0] l_hi6_z_w;
+  logic [31:0] l_hi6_1_w;
+  logic        left_hi_z_unused_w;
   logic        open_fin_w;
   logic [5:0]  h0_w;
   logic        end_pos0_v_w, dllp_end0_v_w;
@@ -2460,7 +2498,10 @@ module rivet_mac_gf_scan #(
     for (int unsigned d = 0; d < 32; d++) begin
       automatic logic [7:0] b0 = ((d + 1) < NSYM) ? data_i[8*(d + 1) +: 8] : 8'h00;
       automatic logic [7:0] b1 = ((d + 2) < NSYM) ? data_i[8*(d + 2) +: 8] : 8'h00;
-      l_hi_z_w[d] = (b1 == 8'h00) && (b0[7:5] == 3'b000);
+      tok_w[d]     = (d < NSYM) && (6'(d) < cnt_i) && (stp_i[d] || sdp_i[d]);
+      l_hi_z_w[d]  = (b1 == 8'h00) && (b0[7:5] == 3'b000);
+      l_hi6_z_w[d] = (b1 == 8'h00) && (b0[7:6] == 2'b00);
+      l_hi6_1_w[d] = (b1 == 8'h00) && (b0[7:6] == 2'b01);
     end
   end
 
@@ -2472,12 +2513,15 @@ module rivet_mac_gf_scan #(
     .left_i       (left_i),
     .left_hi_z_i  (left_i[15:6] == 10'd0),
     .cnt_i        (cnt_i),
-    .sdp_i        (sdp_i),
     .stp_i        (stp_i),
+    .tok_i        (tok_w),
     .data_i       (data_i),
     .l_hi_z_i     (l_hi_z_w),
+    .l_hi6_z_i    (l_hi6_z_w),
+    .l_hi6_1_i    (l_hi6_1_w),
     .st_o         (st_o),
     .left_o       (left_o),
+    .left_hi_z_o  (left_hi_z_unused_w),
     .open_fin_o   (open_fin_w),
     .h0_o         (h0_w),
     .end_pos0_v_o (end_pos0_v_w),

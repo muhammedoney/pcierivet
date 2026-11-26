@@ -90,10 +90,11 @@ module rivet_mac_os_tx #(
 
   function automatic logic [8:0] os_symbol(input rivet_mac_os_type_e os_type,
                                            input logic [3:0]         idx,
-                                           input logic [7:0]         lane_num);
+                                           input logic [7:0]         lane_num,
+                                           input logic               is_block_rate);
     logic [8:0] sym;
     sym = {1'b0, 8'h00};
-    if (rivet_pkg::rivet_pipe_block_rate(rate_i)) begin
+    if (is_block_rate) begin
       case (os_type)
         RIVET_MAC_OS_TS1, RIVET_MAC_OS_TS2: begin
           case (idx)
@@ -137,8 +138,9 @@ module rivet_mac_os_tx #(
     return sym;
   endfunction
 
-  function automatic logic [4:0] os_length(input rivet_mac_os_type_e os_type);
-    if (rivet_pkg::rivet_pipe_block_rate(rate_i) &&
+  function automatic logic [4:0] os_length(input rivet_mac_os_type_e os_type,
+                                           input logic               is_block_rate);
+    if (is_block_rate &&
         ((os_type == RIVET_MAC_OS_TS1) || (os_type == RIVET_MAC_OS_TS2) ||
          (os_type == RIVET_MAC_OS_SKP) || (os_type == RIVET_MAC_OS_EIOS) ||
          (os_type == RIVET_MAC_OS_FTS)))
@@ -154,11 +156,16 @@ module rivet_mac_os_tx #(
   endfunction
 
   function automatic logic [7:0] keep_nbytes(input logic [31:0] k);
-    logic [7:0] n;
-    n = '0;
-    for (int unsigned i = 0; i < 32; i++)
-      n += 8'(k[i]);
-    return n;
+    logic [2:0] s4 [8];
+    logic [3:0] s8 [4];
+    logic [4:0] s16 [2];
+    for (int unsigned i = 0; i < 8; i++)
+      s4[i] = {2'b0, k[4*i]} + {2'b0, k[4*i+1]} + {2'b0, k[4*i+2]} + {2'b0, k[4*i+3]};
+    for (int unsigned i = 0; i < 4; i++)
+      s8[i] = {1'b0, s4[2*i]} + {1'b0, s4[2*i+1]};
+    s16[0] = {1'b0, s8[0]} + {1'b0, s8[1]};
+    s16[1] = {1'b0, s8[2]} + {1'b0, s8[3]};
+    return {2'b0, ({1'b0, s16[0]} + {1'b0, s16[1]})};
   endfunction
 
   // Framed DLLP stream: [0]=SDP, [1..6]=bytes, [7]=END; else Logical Idle.
@@ -174,21 +181,6 @@ module rivet_mac_os_tx #(
     else
       sym = {1'b0, 8'h00};
     return sym;
-  endfunction
-
-  // Low 8 payload bytes only from the 16-byte head buffer.
-  function automatic logic [7:0] head_byte(input logic [63:0] head,
-                                           input logic [2:0]  sel);
-    case (sel)
-      3'd0: return head[ 7: 0];
-      3'd1: return head[15: 8];
-      3'd2: return head[23:16];
-      3'd3: return head[31:24];
-      3'd4: return head[39:32];
-      3'd5: return head[47:40];
-      3'd6: return head[55:48];
-      default: return head[63:56];
-    endcase
   endfunction
 
   typedef enum logic [1:0] {
@@ -256,8 +248,9 @@ module rivet_mac_os_tx #(
 
   // 64-byte window. Gen3 reads two RAM words. Gen4 reads four so a
   // 32-byte stride can refill in the same cycle it is consumed.
+  // 7-bit count covers 0..64 without wrapping at 64.
   logic [511:0]           emit_buf_q, emit_buf_d;
-  logic [5:0]             emit_cnt_q, emit_cnt_d;
+  logic [6:0]             emit_cnt_q, emit_cnt_d;
   logic [TLP_AW-1:0]      tlp_wr_slot_q, tlp_wr_slot_d;
   logic [TLP_AW-1:0]      tlp_rd_slot_q, tlp_rd_slot_d;
   logic [15:0]            tlp_len_q, tlp_len_d;
@@ -271,11 +264,22 @@ module rivet_mac_os_tx #(
   // Gen2 END is at tlp_len+1. Gen3 has no END; the frame is STP + length + tlp_len.
   logic                   tlp_closed_q, tlp_closed_d;
   logic                   emit_fire;
-  logic [5:0]             take_b_c;
+  logic                   last_beat_g3;
+  logic                   have_bytes_g3;
+  logic [3:0]             take_b_g2;
   logic                   gen3_pkt;
   logic [5:0]             slot_b;
-  logic [15:0]            pay_sent;
-  logic [15:0]            pay_left;
+  // Local registered copies of slowly-changing LTSSM rate/lane controls break
+  // the cross-chip fanout from u_ltssm into u_os_tx's 512-bit window & muxes.
+  (* equivalent_register_removal = "no" *) logic [2:0]       rate_loc_q;
+  (* equivalent_register_removal = "no" *) logic [LANES-1:0] lane_en_loc_q;
+  (* equivalent_register_removal = "no" *) logic             gen3_pkt_q;
+  (* equivalent_register_removal = "no" *) logic [2:0]       n_en_q;
+  (* equivalent_register_removal = "no" *) logic [4:0]       os_step_q;
+  (* equivalent_register_removal = "no" *) logic [5:0]       sym_step_q;
+  (* equivalent_register_removal = "no" *) logic             sym_step_gt16_q;
+  logic [2:0]             n_en_next;
+  logic [5:0]             sym_step_next;
 
   logic [PIPE_DATA_WIDTH*LANES-1:0] sym_data_d, sym_data_q;
   logic [2*LANES-1:0]               sym_datak_d, sym_datak_q;
@@ -318,8 +322,8 @@ module rivet_mac_os_tx #(
       : cur_q;
   // Gen1/Gen2 use the low 16 bits. Gen3 uses four symbols. Gen4 uses eight.
   wire [4:0] os_step;
-  assign os_step = 5'(rivet_pkg::rivet_pipe_nsym(rate_i));
-  assign len          = os_length(cur);
+  assign os_step      = os_step_q;
+  assign len          = os_length(cur, gen3_pkt);
   assign set_done     = (ptr_q + os_step) >= len;
   assign ptr_next     = set_done ? 5'd0 : (ptr_q + os_step);
 
@@ -331,7 +335,7 @@ module rivet_mac_os_tx #(
                    (dll_tx_beat_i.keep[31:8] == 24'h0);
   assign tlp_ok = dll_tx_valid_i &&
                   (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_TLP) &&
-                  (dll_tx_beat_i.keep != 8'h00);
+                  (dll_tx_beat_i.keep != 32'h0);
 
   // Insert DLLP only between Idle OS boundaries while packet-enabled (SKP first).
   // Gen3 uses the same beat stream inside a 128b/130b data block. The token
@@ -352,38 +356,42 @@ module rivet_mac_os_tx #(
 
   always_comb begin
     int unsigned step_i;
-    n_en = '0;
+    n_en_next = '0;
     for (int unsigned li = 0; li < LANES; li++)
-      if (lane_en_i[li]) n_en = n_en + 3'd1;
-    if (n_en == 3'd0) n_en = 3'(LANES);
+      if (lane_en_i[li]) n_en_next = n_en_next + 3'd1;
+    if (n_en_next == 3'd0) n_en_next = 3'(LANES);
     // Gen3 on a 64-bit pipe is four symbols, so a x4 step stays 16.
     // Gen4 x4 is 32 symbols. The stride is six bits so that step stays 32.
-    step_i   = int'(n_en) * rivet_pkg::rivet_pipe_nsym(rate_i);
-    sym_step = (step_i > 63) ? 6'd63 : 6'(step_i);
+    step_i        = int'(n_en_next) * rivet_pkg::rivet_pipe_nsym(rate_i);
+    sym_step_next = (step_i > 63) ? 6'd63 : 6'(step_i);
   end
 
+  assign n_en        = n_en_q;
+  assign sym_step    = sym_step_q;
   assign pkt_done    = (pkt_ptr_q + PTR_W'(sym_step)) >= PTR_W'(RIVET_DLLP_FRAMED_LEN);
   // Gen3 and Gen4 share STP + 2 length bytes + DLL bytes. Gen2 is STP + END.
-  assign gen3_pkt = rivet_pkg::rivet_pipe_block_rate(rate_i);
+  assign gen3_pkt = gen3_pkt_q;
   assign slot_b   = (tlp_pos_q == 16'd0)
                   ? ((sym_step > 6'd3) ? (sym_step - 6'd3) : 6'd0)
                   : sym_step;
-  assign pay_sent = (tlp_pos_q == 16'd0) ? 16'd0 : (tlp_pos_q - 16'd3);
-  assign pay_left = (tlp_len_q > pay_sent) ? (tlp_len_q - pay_sent) : 16'd0;
-  assign take_b_c = gen3_pkt
-      ? ((tlp_closed_q && ({11'd0, slot_b} > pay_left)) ? pay_left[4:0] : slot_b)
-      : ((tlp_pos_q == 16'd0) ? {1'b0, (sym_step[3:0] - 4'd1)}
-                              : {1'b0, sym_step[3:0]});
+  assign last_beat_g3  = tlp_closed_q &&
+                         ((tlp_pos_q + 16'(sym_step)) >= (tlp_len_q + 16'd3));
+  assign have_bytes_g3 = last_beat_g3
+                       ? (tlp_rd_slot_q == tlp_wr_slot_q)
+                       : (emit_cnt_q >= {1'b0, slot_b});
+  assign take_b_g2     = (tlp_pos_q == 16'd0) ? (sym_step[3:0] - 4'd1)
+                                              : sym_step[3:0];
   // END exists only after EOP. Until then the length is still growing.
   // Gen4's stride is 32 symbols. Treating "pos + stride" as already done
   // suppresses the last partial block, so the tail never reaches the wire.
   assign tlp_em_done = tlp_closed_q &&
-                       ((sym_step > 6'd16)
+                       (sym_step_gt16_q
                          ? (tlp_pos_q >= (tlp_len_q + 16'd3))
                          : ((tlp_pos_q + 16'(sym_step)) >=
                             (tlp_len_q + (gen3_pkt ? 16'd3 : 16'd2))));
   assign emit_fire   = (tlp_flow_q || (mode_q == ST_TLP_EM)) && !tlp_em_done &&
-                       ({1'b0, take_b_c} <= emit_cnt_q);
+                       (gen3_pkt ? have_bytes_g3
+                                 : ({3'd0, take_b_g2} <= emit_cnt_q));
   assign in_pkt_emit = take_dllp || (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) ||
                        tlp_flow_q;
   assign skp_finishing =
@@ -393,17 +401,17 @@ module rivet_mac_os_tx #(
     logic [255:0] masked_beat;
     logic [63:0]  masked_lo;
     logic [7:0]   beat_n;
-    logic [5:0]   take_b;
     logic [127:0] shifted;
-    logic [511:0] wide;
-    logic [5:0]   rem_cnt;
+    logic [511:0] base_buf;
+    logic [6:0]   base_cnt;
+    logic         add_en;
+    logic [5:0]   add_n;
+    logic [255:0] add_data;
     logic         wide_beat;
     logic         quad_beat;
     logic [7:0]   frm_b0;
     logic [9:0]   frm_ldw;
     logic [15:0]  frm_hbytes, frm_pbytes;
-    logic [5:0]   base_c, n_c;
-    logic [511:0] merged;
 
     tlp_ram_we     = 1'b0;
     tlp_ram_we2    = 1'b0;
@@ -437,18 +445,17 @@ module rivet_mac_os_tx #(
     frm_ldw       = '0;
     frm_hbytes    = '0;
     frm_pbytes    = '0;
-    base_c        = '0;
-    n_c           = '0;
-    merged        = '0;
-    take_b        = '0;
     shifted       = emit_buf_q[127:0];
-    wide          = emit_buf_q;
-    rem_cnt       = emit_cnt_q;
+    base_buf      = emit_buf_q;
+    base_cnt      = emit_cnt_q;
+    add_en        = 1'b0;
+    add_n         = 6'd0;
+    add_data      = '0;
 
     if (take_tlp_start) begin
       tlp_ram_we    = 1'b1;
       tlp_ram_waddr = '0;
-      tlp_len_d     = beat_n;
+      tlp_len_d     = {8'd0, beat_n};
       if (quad_beat) begin
         tlp_ram_we2    = 1'b1;
         tlp_ram_we3    = 1'b1;
@@ -460,7 +467,7 @@ module rivet_mac_os_tx #(
         tlp_ram_wdata3 = masked_beat[191:128];
         tlp_ram_wdata4 = masked_beat[255:192];
         emit_buf_d     = {256'd0, masked_beat};
-        emit_cnt_d     = 6'(beat_n);
+        emit_cnt_d     = 7'(beat_n);
         tlp_wr_slot_d  = TLP_AW'(4);
         tlp_rd_slot_d  = TLP_AW'(4);
       end else if (wide_beat) begin
@@ -468,12 +475,12 @@ module rivet_mac_os_tx #(
         tlp_ram_waddr2 = TLP_AW'(1);
         tlp_ram_wdata2 = masked_beat[127:64];
         emit_buf_d     = {384'd0, masked_beat[127:0]};
-        emit_cnt_d     = 6'(beat_n);
+        emit_cnt_d     = 7'(beat_n);
         tlp_wr_slot_d  = TLP_AW'(2);
         tlp_rd_slot_d  = TLP_AW'(2);
       end else begin
-        emit_buf_d    = {192'd0, masked_lo};
-        emit_cnt_d    = 6'd8;
+        emit_buf_d    = {448'd0, masked_lo};
+        emit_cnt_d    = 7'd8;
         tlp_wr_slot_d = TLP_AW'(1);
         tlp_rd_slot_d = TLP_AW'(1);
       end
@@ -515,123 +522,118 @@ module rivet_mac_os_tx #(
         tlp_ram_we    = 1'b1;
         tlp_ram_waddr = tlp_wr_slot_q;
         tlp_wr_slot_d = tlp_wr_slot_q + TLP_AW'(1);
-        if (tlp_wr_slot_q == TLP_AW'(1))
-          emit_buf_d[127:64] = masked_lo;
-        if (dll_tx_beat_i.eop && !tlp_flow_q) begin
-          emit_cnt_d    = 6'd16;
-          tlp_rd_slot_d = TLP_AW'(2);
-        end else if ((tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop) begin
-          // 16-byte head is full and more beats follow. Emit starts next cycle.
-          emit_cnt_d    = 6'd16;
-          tlp_rd_slot_d = TLP_AW'(2);
+        if (!gen3_pkt) begin
+          if (tlp_wr_slot_q == TLP_AW'(1))
+            emit_buf_d[127:64] = masked_lo;
+          if (dll_tx_beat_i.eop && !tlp_flow_q) begin
+            emit_cnt_d    = 7'd16;
+            tlp_rd_slot_d = TLP_AW'(2);
+          end else if ((tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop) begin
+            // 16-byte head is full and more beats follow. Emit starts next cycle.
+            emit_cnt_d    = 7'd16;
+            tlp_rd_slot_d = TLP_AW'(2);
+          end
         end
       end
     end
-    // Gen4 collects the frame before the pipe starts. Pull RAM words
-    // into the window so the first stride is ready on the EOP cycle.
-    if ((sym_step > 6'd16) && !emit_fire && !take_tlp_start &&
-        ((mode_q == ST_TLP_COL) || (mode_q == ST_TLP_EM))) begin
-      if ((emit_cnt_q + 6'd32 <= 6'd64) &&
-          ((tlp_rd_slot_q + TLP_AW'(3)) < tlp_wr_slot_q)) begin
-        emit_buf_d[8*int'(emit_cnt_q) +: 64]           = tlp_ram_rdata;
-        emit_buf_d[8*int'(emit_cnt_q + 6'd8) +: 64]    = tlp_ram_rdata_b;
-        emit_buf_d[8*int'(emit_cnt_q + 6'd16) +: 64]   = tlp_ram_rdata_c;
-        emit_buf_d[8*int'(emit_cnt_q + 6'd24) +: 64]   = tlp_ram_rdata_d;
-        emit_cnt_d    = emit_cnt_q + 6'd32;
-        tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(4);
-      end else if ((emit_cnt_q + 6'd16 <= 6'd64) &&
-                   ((tlp_rd_slot_q + TLP_AW'(1)) < tlp_wr_slot_q)) begin
-        emit_buf_d[8*int'(emit_cnt_q) +: 64]        = tlp_ram_rdata;
-        emit_buf_d[8*int'(emit_cnt_q + 6'd8) +: 64] = tlp_ram_rdata_b;
-        emit_cnt_d    = emit_cnt_q + 6'd16;
-        tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(2);
-      end
-    end
-    if (emit_fire && !take_tlp_start) begin
-      // Gen2 consumes sym_step-1 bytes on the STP beat and sym_step thereafter.
-      // Gen3 consumes sym_step-3 on the length beat, then sym_step.
-      take_b = take_b_c;
-      if (gen3_pkt) begin
-        wide    = emit_buf_q >> (8 * int'(take_b));
-        rem_cnt = emit_cnt_q - take_b;
-        // Gen4 stride is 32 bytes. Refill four words or the next beat
-        // underruns and would insert idle inside the TLP.
-        if ((sym_step > 6'd16) && (rem_cnt + 6'd32 <= 6'd64) &&
-            ((tlp_rd_slot_q + TLP_AW'(3)) < tlp_wr_slot_q)) begin
-          emit_buf_d = wide;
-          emit_buf_d[8*int'(rem_cnt) +: 64]          = tlp_ram_rdata;
-          emit_buf_d[8*int'(rem_cnt + 6'd8) +: 64]   = tlp_ram_rdata_b;
-          emit_buf_d[8*int'(rem_cnt + 6'd16) +: 64]  = tlp_ram_rdata_c;
-          emit_buf_d[8*int'(rem_cnt + 6'd24) +: 64]  = tlp_ram_rdata_d;
-          emit_cnt_d    = rem_cnt + 6'd32;
-          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(4);
-        end else if ((rem_cnt + 6'd16 <= ((sym_step > 6'd16) ? 6'd64 : 6'd32)) &&
-            ((tlp_rd_slot_q + TLP_AW'(1)) < tlp_wr_slot_q)) begin
-          emit_buf_d = wide;
-          emit_buf_d[8*int'(rem_cnt) +: 64]      = tlp_ram_rdata;
-          emit_buf_d[8*int'(rem_cnt + 6'd8) +: 64] = tlp_ram_rdata_b;
-          emit_cnt_d    = rem_cnt + 6'd16;
-          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(2);
-        end else if ((rem_cnt + 6'd8 <= 6'd32) &&
-                     (tlp_rd_slot_q < tlp_wr_slot_q)) begin
-          emit_buf_d = wide;
-          emit_buf_d[8*int'(rem_cnt) +: 64] = tlp_ram_rdata;
-          emit_cnt_d    = rem_cnt + 6'd8;
-          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(1);
+
+    // Step 1: Consume from emit_buf_q using constant-shift cases (no dynamic
+    // 512-bit barrel shifter). Step 2: Single mutually exclusive refill or
+    // bypass merge into the 64-byte window.
+    if (!take_tlp_start && gen3_pkt) begin
+      if (emit_fire) begin
+        if (last_beat_g3) begin
+          base_buf = 512'h0;
+          base_cnt = 7'd0;
         end else begin
-          emit_buf_d = wide;
-          emit_cnt_d = rem_cnt;
+          unique case (slot_b)
+            6'd1:    base_buf = {  8'd0, emit_buf_q[511:  8]};
+            6'd4:    base_buf = { 32'd0, emit_buf_q[511: 32]};
+            6'd5:    base_buf = { 40'd0, emit_buf_q[511: 40]};
+            6'd8:    base_buf = { 64'd0, emit_buf_q[511: 64]};
+            6'd9:    base_buf = { 72'd0, emit_buf_q[511: 72]};
+            6'd12:   base_buf = { 96'd0, emit_buf_q[511: 96]};
+            6'd13:   base_buf = {104'd0, emit_buf_q[511:104]};
+            6'd16:   base_buf = {128'd0, emit_buf_q[511:128]};
+            6'd21:   base_buf = {168'd0, emit_buf_q[511:168]};
+            6'd24:   base_buf = {192'd0, emit_buf_q[511:192]};
+            6'd29:   base_buf = {232'd0, emit_buf_q[511:232]};
+            default: base_buf = {256'd0, emit_buf_q[511:256]};
+          endcase
+          base_cnt = emit_cnt_q - {1'b0, slot_b};
         end
-      end else begin
-      unique case (take_b)
-        5'd1:    shifted = { 8'd0, emit_buf_q[127: 8]};
-        5'd2:    shifted = {16'd0, emit_buf_q[127:16]};
-        5'd3:    shifted = {24'd0, emit_buf_q[127:24]};
-        5'd4:    shifted = {32'd0, emit_buf_q[127:32]};
-        5'd7:    shifted = {56'd0, emit_buf_q[127:56]};
+      end
+
+      emit_buf_d = base_buf;
+      emit_cnt_d = base_cnt;
+
+      if (!(emit_fire && last_beat_g3) &&
+          ((mode_q == ST_TLP_COL) || (mode_q == ST_TLP_EM))) begin
+        if ((base_cnt <= 7'd32) &&
+            ((tlp_rd_slot_q + TLP_AW'(3)) < tlp_wr_slot_q)) begin
+          add_en        = 1'b1;
+          add_n         = 6'd32;
+          add_data      = {tlp_ram_rdata_d, tlp_ram_rdata_c, tlp_ram_rdata_b, tlp_ram_rdata};
+          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(4);
+        end else if ((base_cnt <= 7'd48) &&
+                     ((tlp_rd_slot_q + TLP_AW'(1)) < tlp_wr_slot_q)) begin
+          add_en        = 1'b1;
+          add_n         = 6'd16;
+          add_data      = {128'd0, tlp_ram_rdata_b, tlp_ram_rdata};
+          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(2);
+        end else if ((base_cnt <= 7'd56) &&
+                     (tlp_rd_slot_q < tlp_wr_slot_q)) begin
+          add_en        = 1'b1;
+          add_n         = 6'd8;
+          add_data      = {192'd0, tlp_ram_rdata};
+          tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(1);
+        end else if (take_tlp_col && (tlp_rd_slot_q == tlp_wr_slot_q) &&
+                     (beat_n != 8'd0) && ((base_cnt + 7'(beat_n)) <= 7'd64)) begin
+          add_en        = 1'b1;
+          add_n         = beat_n[5:0];
+          add_data      = masked_beat;
+          tlp_rd_slot_d = tlp_wr_slot_d;
+        end
+      end
+
+      if (add_en) begin
+        automatic logic [7:0] ab [32];
+        for (int unsigned i = 0; i < 32; i++)
+          ab[5'(i)] = add_data[8*5'(i) +: 8];
+        for (int unsigned k = 0; k < 64; k++) begin
+          automatic logic [6:0] diff = 7'(k) - base_cnt;
+          if ((7'(k) >= base_cnt) && (diff < {1'b0, add_n}))
+            emit_buf_d[8*6'(k) +: 8] = ab[diff[4:0]];
+        end
+        emit_cnt_d = base_cnt + {1'b0, add_n};
+      end
+    end else if (!take_tlp_start && emit_fire) begin
+      unique case (take_b_g2)
+        4'd1:    shifted = { 8'd0, emit_buf_q[127: 8]};
+        4'd2:    shifted = {16'd0, emit_buf_q[127:16]};
+        4'd3:    shifted = {24'd0, emit_buf_q[127:24]};
+        4'd4:    shifted = {32'd0, emit_buf_q[127:32]};
+        4'd7:    shifted = {56'd0, emit_buf_q[127:56]};
         default: shifted = {64'd0, emit_buf_q[127:64]};
       endcase
-      rem_cnt = emit_cnt_q - {1'b0, take_b};
-      if ((rem_cnt <= 5'd8) && (tlp_rd_slot_q < tlp_wr_slot_q)) begin
-        unique case (rem_cnt[3:0])
-          4'd0:    emit_buf_d = {64'd0, tlp_ram_rdata};
-          4'd1:    emit_buf_d = {56'd0, tlp_ram_rdata, shifted[ 7:0]};
-          4'd2:    emit_buf_d = {48'd0, tlp_ram_rdata, shifted[15:0]};
-          4'd3:    emit_buf_d = {40'd0, tlp_ram_rdata, shifted[23:0]};
-          4'd4:    emit_buf_d = {32'd0, tlp_ram_rdata, shifted[31:0]};
-          4'd5:    emit_buf_d = {24'd0, tlp_ram_rdata, shifted[39:0]};
-          4'd6:    emit_buf_d = {16'd0, tlp_ram_rdata, shifted[47:0]};
-          4'd7:    emit_buf_d = { 8'd0, tlp_ram_rdata, shifted[55:0]};
-          default: emit_buf_d = {       tlp_ram_rdata, shifted[63:0]};
+      base_cnt = emit_cnt_q - {3'd0, take_b_g2};
+      if ((base_cnt <= 7'd8) && (tlp_rd_slot_q < tlp_wr_slot_q)) begin
+        unique case (base_cnt[3:0])
+          4'd0:    emit_buf_d = {384'd0, 64'd0, tlp_ram_rdata};
+          4'd1:    emit_buf_d = {384'd0, 56'd0, tlp_ram_rdata, shifted[ 7:0]};
+          4'd2:    emit_buf_d = {384'd0, 48'd0, tlp_ram_rdata, shifted[15:0]};
+          4'd3:    emit_buf_d = {384'd0, 40'd0, tlp_ram_rdata, shifted[23:0]};
+          4'd4:    emit_buf_d = {384'd0, 32'd0, tlp_ram_rdata, shifted[31:0]};
+          4'd5:    emit_buf_d = {384'd0, 24'd0, tlp_ram_rdata, shifted[39:0]};
+          4'd6:    emit_buf_d = {384'd0, 16'd0, tlp_ram_rdata, shifted[47:0]};
+          4'd7:    emit_buf_d = {384'd0,  8'd0, tlp_ram_rdata, shifted[55:0]};
+          default: emit_buf_d = {384'd0,        tlp_ram_rdata, shifted[63:0]};
         endcase
-        emit_cnt_d    = rem_cnt + 5'd8;
+        emit_cnt_d    = base_cnt + 7'd8;
         tlp_rd_slot_d = tlp_rd_slot_q + TLP_AW'(1);
       end else begin
-        emit_buf_d = shifted;
-        emit_cnt_d = rem_cnt;
-      end
-      end
-    end
-    // The beat accepted this cycle is not visible in the RAM read yet.
-    // Append it after any consume so the next symbol-time is not short.
-    if (gen3_pkt && take_tlp_col && (tlp_rd_slot_q == tlp_wr_slot_q) &&
-        (beat_n != 8'd0)) begin
-      automatic logic [7:0] mb [32];
-      n_c    = 6'(beat_n);
-      base_c = emit_cnt_d;
-      merged = emit_buf_d;
-      for (int unsigned i = 0; i < 32; i++)
-        mb[5'(i)] = masked_beat[8*5'(i) +: 8];
-      if (({1'b0, base_c} + {1'b0, n_c}) <= 7'd64) begin
-        for (int unsigned k = 0; k < 64; k++) begin
-          automatic logic [6:0] diff;
-          diff = 7'(k) - {1'b0, base_c};
-          if ((7'(k) >= {1'b0, base_c}) && (diff < {1'b0, n_c}))
-            merged[8*6'(k) +: 8] = mb[diff[4:0]];
-        end
-        emit_buf_d    = merged;
-        emit_cnt_d    = base_c + n_c;
-        tlp_rd_slot_d = tlp_wr_slot_d;
+        emit_buf_d = {384'd0, shifted};
+        emit_cnt_d = base_cnt;
       end
     end
   end
@@ -708,25 +710,76 @@ module rivet_mac_os_tx #(
   end
 
   always_comb begin
+    logic [8:0]  tlp_sym [0:31];
+    logic [15:0] tlp_lim_g3;
+    logic [15:0] rem_sym_g3;
+    logic [15:0] rem_sym_g2;
+    logic        pos_z;
+    logic [7:0]  len_lo, len_hi;
+    logic [63:0] dllp_src;
+    logic [6:0]  pkt_base;
+
     sym_data_d  = '0;
     sym_datak_d = '0;
     sym_os_d_d  = '0;
     sym_tmp     = '0;
     stream_idx  = '0;
+
+    // Pre-build dense TLP symbol vector indexed by constant k = 0..31 so each
+    // lane/symbol only selects across enabled-lane mapping, not a 32:1 mux.
+    pos_z      = (tlp_pos_q == 16'd0);
+    len_lo     = (frame_len_q != 16'd0) ? frame_len_q[7:0]  : tlp_len_q[7:0];
+    len_hi     = (frame_len_q != 16'd0) ? frame_len_q[15:8] : tlp_len_q[15:8];
+    tlp_lim_g3 = tlp_len_q + 16'd3;
+    rem_sym_g3 = (tlp_lim_g3 > tlp_pos_q) ? (tlp_lim_g3 - tlp_pos_q) : 16'd0;
+    rem_sym_g2 = ((tlp_len_q + 16'd1) >= tlp_pos_q) ? ((tlp_len_q + 16'd1) - tlp_pos_q) : 16'd0;
+    for (int unsigned k = 0; k < 32; k++) begin
+      if (gen3_pkt) begin
+        automatic logic in_rng = (rem_sym_g3[15:5] != 11'd0) || (rem_sym_g3[4:0] > 5'(k));
+        if (!emit_fire || !in_rng) begin
+          tlp_sym[k] = {1'b0, 8'h00};
+        end else if (pos_z && (k == 0)) begin
+          tlp_sym[k] = {1'b0, RIVET_SYM_STP};
+        end else if (pos_z && (k == 1)) begin
+          tlp_sym[k] = {1'b0, len_lo};
+        end else if (pos_z && (k == 2)) begin
+          tlp_sym[k] = {1'b0, len_hi};
+        end else if (pos_z && (k >= 3)) begin
+          tlp_sym[k] = {1'b0, emit_buf_q[8*((k >= 3) ? (k - 3) : 0) +: 8]};
+        end else begin
+          tlp_sym[k] = {1'b0, emit_buf_q[8*k +: 8]};
+        end
+      end else if (k < 8) begin
+        if (pos_z && (k == 0)) begin
+          tlp_sym[k] = {1'b1, RIVET_SYM_STP};
+        end else if (tlp_closed_q && ((tlp_len_q + 16'd1) >= tlp_pos_q) &&
+                     (rem_sym_g2 == 16'(k))) begin
+          tlp_sym[k] = {1'b1, RIVET_SYM_END};
+        end else if (!tlp_closed_q ||
+                     ((tlp_len_q >= tlp_pos_q) && ((tlp_len_q - tlp_pos_q) >= 16'(k)))) begin
+          if (pos_z && (k >= 1))
+            tlp_sym[k] = {1'b0, emit_buf_q[8*((k >= 1) ? (k - 1) : 0) +: 8]};
+          else
+            tlp_sym[k] = {1'b0, emit_buf_q[8*k +: 8]};
+        end else begin
+          tlp_sym[k] = {1'b0, 8'h00};
+        end
+      end else begin
+        tlp_sym[k] = {1'b0, 8'h00};
+      end
+    end
+
+    dllp_src = take_dllp ? dll_tx_beat_i.data : pkt_q;
+    pkt_base = take_dllp ? 7'd0 : pkt_ptr_q[6:0];
+
     if (take_dllp || (mode_q == ST_PKT)) begin
       // Stripe each symbol time across enabled lanes only (SDP on logical 0).
       for (int unsigned s = 0; s < SYMS; s++) begin
         automatic int unsigned ord = 0;
         for (int unsigned l = 0; l < LANES; l++) begin
-          if (lane_en_i[l]) begin
-            if (take_dllp)
-              stream_idx = PTR_W'(s * int'(n_en) + ord);
-            else
-              stream_idx = pkt_ptr_q + PTR_W'(s * int'(n_en) + ord);
-            if (take_dllp)
-              sym_tmp = pkt_symbol(stream_idx[6:0], dll_tx_beat_i.data);
-            else
-              sym_tmp = pkt_symbol(stream_idx[6:0], pkt_q);
+          if (lane_en_loc_q[l]) begin
+            stream_idx = PTR_W'(pkt_base + 7'(s * int'(n_en) + ord));
+            sym_tmp    = pkt_symbol(stream_idx[6:0], dllp_src);
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
             // Gen3 frame token is a data byte. datak is 2 bits per lane.
             if (gen3_pkt)
@@ -741,42 +794,9 @@ module rivet_mac_os_tx #(
       for (int unsigned s = 0; s < SYMS; s++) begin
         automatic int unsigned ord = 0;
         for (int unsigned l = 0; l < LANES; l++) begin
-          if (lane_en_i[l]) begin
-            automatic logic [15:0] idx;
-            automatic logic [2:0] boff;
-            automatic int unsigned sym_i;
-            sym_i = s * int'(n_en) + ord;
-            idx   = tlp_pos_q + 16'(sym_i);
-            // Wait for a full stride. A Gen4 underrun drops sym_valid so
-            // these bytes never reach the wire. Gen3 still idles the beat.
-            if (gen3_pkt && !emit_fire) begin
-              sym_tmp = {1'b0, 8'h00};
-            end else if (gen3_pkt) begin
-              if (idx == 16'd0) begin
-                sym_tmp = {1'b0, RIVET_SYM_STP};
-              end else if (idx == 16'd1) begin
-                sym_tmp = {1'b0, ((frame_len_q != 16'd0) ? frame_len_q[7:0]
-                                                        : tlp_len_q[7:0])};
-              end else if (idx == 16'd2) begin
-                sym_tmp = {1'b0, ((frame_len_q != 16'd0) ? frame_len_q[15:8]
-                                                        : tlp_len_q[15:8])};
-              end else if (idx < (tlp_len_q + 16'd3)) begin
-                automatic logic [15:0] poff;
-                poff = (tlp_pos_q == 16'd0) ? (idx - 16'd3) : (idx - tlp_pos_q);
-                sym_tmp = {1'b0, emit_buf_q[8*int'(poff[4:0]) +: 8]};
-              end else begin
-                sym_tmp = {1'b0, 8'h00};
-              end
-            end else if (idx == 16'd0) begin
-              sym_tmp = {1'b1, RIVET_SYM_STP};
-            end else if (tlp_closed_q && (idx == (tlp_len_q + 16'd1))) begin
-              sym_tmp = {1'b1, RIVET_SYM_END};
-            end else if ((idx != 16'd0) && (!tlp_closed_q || (idx <= tlp_len_q))) begin
-              boff = (tlp_pos_q == 16'd0) ? (3'(sym_i) - 3'd1) : 3'(sym_i);
-              sym_tmp = {1'b0, head_byte(emit_buf_q[63:0], boff)};
-            end else begin
-              sym_tmp = {1'b0, 8'h00};
-            end
+          if (lane_en_loc_q[l]) begin
+            automatic int unsigned sym_i = s * int'(n_en) + ord;
+            sym_tmp = tlp_sym[sym_i[4:0]];
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
             if (gen3_pkt)
               sym_tmp[8] = 1'b0;
@@ -791,14 +811,14 @@ module rivet_mac_os_tx #(
         for (int unsigned s = 0; s < SYMS; s++) begin
           if (s >= int'(os_step))
             continue;
-          sym_tmp = os_symbol(cur, 4'(ptr_q + 5'(s)), tx_lane_num_i[8*l +: 8]);
-          if (lane_en_i[l]) begin
+          sym_tmp = os_symbol(cur, 4'(ptr_q + 5'(s)), tx_lane_num_i[8*l +: 8], gen3_pkt);
+          if (lane_en_loc_q[l]) begin
             sym_data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = sym_tmp[7:0];
             if (s < 2) begin
               sym_datak_d[2*l + s] = sym_tmp[8];
               if ((!sym_tmp[8] &&
                    ((cur == RIVET_MAC_OS_TS1) || (cur == RIVET_MAC_OS_TS2))) ||
-                  (rivet_pkg::rivet_pipe_block_rate(rate_i) &&
+                  (gen3_pkt &&
                    (cur != RIVET_MAC_OS_NONE) && (cur != RIVET_MAC_OS_IDLE)))
                 sym_os_d_d[2*l + s] = 1'b1;
             end
@@ -814,41 +834,55 @@ module rivet_mac_os_tx #(
   // next word is a block start that does not reseed an armed LFSR.
   wire tlp_underrun;
   assign tlp_underrun = ((mode_q == ST_TLP_EM) || tlp_flow_q) &&
-                        (sym_step > 6'd16) && !emit_fire;
+                        sym_step_gt16_q && !emit_fire;
   assign sym_valid_d = !tlp_underrun &&
                        (take_dllp ||
                        (mode_q == ST_PKT) || (mode_q == ST_TLP_EM) || tlp_flow_q ||
                        (cur != RIVET_MAC_OS_NONE));
-  assign sym_blk_start_d = rivet_pkg::rivet_pipe_block_rate(rate_i) && sym_valid_d &&
+  assign sym_blk_start_d = gen3_pkt && sym_valid_d &&
                            (word_q == 2'd0);
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
-      cur_q         <= RIVET_MAC_OS_NONE;
-      ptr_q         <= '0;
-      sent_q        <= '0;
-      mode_q        <= ST_OS;
-      pkt_q         <= '0;
-      pkt_ptr_q     <= '0;
-      skp_sym_q     <= '0;
-      skp_due_q     <= 1'b0;
-      word_q        <= '0;
-      tlp_follow_q  <= 1'b0;
-      emit_buf_q    <= '0;
-      emit_cnt_q    <= '0;
-      tlp_wr_slot_q <= '0;
-      tlp_rd_slot_q <= '0;
-      tlp_len_q     <= '0;
-      frame_len_q   <= '0;
-      tlp_pos_q     <= '0;
-      tlp_flow_q    <= 1'b0;
-      tlp_closed_q  <= 1'b0;
-      sym_data_q    <= '0;
-      sym_datak_q   <= '0;
+      rate_loc_q      <= RIVET_PIPE_RATE_GEN1;
+      lane_en_loc_q   <= '0;
+      gen3_pkt_q      <= 1'b0;
+      n_en_q          <= 3'(LANES);
+      os_step_q       <= 5'd2;
+      sym_step_q      <= 6'(2 * LANES);
+      sym_step_gt16_q <= 1'b0;
+      cur_q           <= RIVET_MAC_OS_NONE;
+      ptr_q           <= '0;
+      sent_q          <= '0;
+      mode_q          <= ST_OS;
+      pkt_q           <= '0;
+      pkt_ptr_q       <= '0;
+      skp_sym_q       <= '0;
+      skp_due_q       <= 1'b0;
+      word_q          <= '0;
+      tlp_follow_q    <= 1'b0;
+      emit_buf_q      <= '0;
+      emit_cnt_q      <= '0;
+      tlp_wr_slot_q   <= '0;
+      tlp_rd_slot_q   <= '0;
+      tlp_len_q       <= '0;
+      frame_len_q     <= '0;
+      tlp_pos_q       <= '0;
+      tlp_flow_q      <= 1'b0;
+      tlp_closed_q    <= 1'b0;
+      sym_data_q      <= '0;
+      sym_datak_q     <= '0;
       sym_os_d_q      <= '0;
       sym_valid_q     <= 1'b0;
       sym_blk_start_q <= 1'b0;
     end else begin
+      rate_loc_q      <= rate_i;
+      lane_en_loc_q   <= lane_en_i;
+      gen3_pkt_q      <= rivet_pkg::rivet_pipe_block_rate(rate_i);
+      n_en_q          <= n_en_next;
+      os_step_q       <= 5'(rivet_pkg::rivet_pipe_nsym(rate_i));
+      sym_step_q      <= sym_step_next;
+      sym_step_gt16_q <= (sym_step_next > 6'd16);
       mode_q          <= mode_d;
       pkt_q           <= pkt_d;
       pkt_ptr_q       <= pkt_ptr_d;
@@ -887,9 +921,9 @@ module rivet_mac_os_tx #(
 
       // Block-word counter. Reset outside 128b/130b so word 0 aligns with the
       // first block after a rate change. Gen3 is four words. Gen4 is two.
-      if (!rivet_pkg::rivet_pipe_block_rate(rate_i) || !sym_valid_d)
+      if (!gen3_pkt || !sym_valid_d)
         word_q <= 2'd0;
-      else if ((rate_i == RIVET_PIPE_RATE_GEN4) && (word_q == 2'd1))
+      else if ((rate_loc_q == RIVET_PIPE_RATE_GEN4) && (word_q == 2'd1))
         word_q <= 2'd0;
       else
         word_q <= word_q + 2'd1;

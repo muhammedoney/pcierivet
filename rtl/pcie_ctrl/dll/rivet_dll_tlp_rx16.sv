@@ -227,27 +227,22 @@ module rivet_dll_tlp_rx16 #(
   // is two words (16 frame bytes). A Gen4 beat is four (32). The accumulator
   // realigns that onto OUT_B TLP bytes.
   always_comb begin
-    logic [12:0] word_off;
-    logic [12:0] rem_frame;
-    logic [5:0]  raw_avail;
     logic [5:0]  avail;
     logic [6:0]  n_after;
     logic        want;
     logic        would_emit;
     logic [5:0]  room;
-    word_off  = {word_idx_q, 3'b000};
-    rem_frame = (play_len_q > word_off) ? (play_len_q - word_off) : 13'd0;
-    raw_avail = (rem_frame >= 13'(OUT_B)) ? 6'(OUT_B) : rem_frame[5:0];
-    avail     = (word_idx_q == '0)
-                  ? ((raw_avail > 6'd2) ? (raw_avail - 6'd2) : 6'd0)
-                  : raw_avail;
-    take_skip  = (word_idx_q == '0) ? 6'd2 : 6'd0;
-    take_n     = (14'(avail) > pld_left_q) ? pld_left_q[5:0] : avail;
+    // pld_left_q is always frame_len - 6 (2B seq + 4B LCRC), so the remaining
+    // payload in the current beat never exceeds OUT_B - 2 on word 0 or OUT_B
+    // on later words; no frame_len - word_off subtraction is needed.
+    avail          = (word_idx_q == '0) ? 6'(OUT_B - 2) : 6'(OUT_B);
+    take_skip      = (word_idx_q == '0) ? 6'd2 : 6'd0;
+    left_after_z_c = (pld_left_q <= 14'(avail));
+    take_n         = left_after_z_c ? pld_left_q[5:0] : avail;
     // 64 does not fit in 6 bits, so a 6-bit compare against 64 is a
     // compare against 0 and every Gen4 beat stalls.
     n_after        = {1'b0, acc_n_q} + {1'b0, take_n};
-    left_after_c   = pld_left_q - 14'(take_n);
-    left_after_z_c = (pld_left_q <= 14'(avail));
+    left_after_c   = left_after_z_c ? 14'd0 : (pld_left_q - 14'(avail));
     can_send       = !tl_v_q || tl_ready_i;
     room           = (OUT_B == 32) ? 6'd32 : 6'd16;
     want           = (play_st_q == PLAY_RUN) && fresh_q && (pld_left_q != 14'd0) &&
@@ -557,7 +552,7 @@ module rivet_dll_tlp_rx16 #(
           play_st_q <= PLAY_IDLE;
       end
 
-      if (((play_st_q == PLAY_IDLE) || finish) && (play_st_q != PLAY_PREP)) begin
+      if (play_st_q == PLAY_IDLE) begin
         if (ready_b0) begin
           launch   = 1'b1;
           launch_b = 1'b0;

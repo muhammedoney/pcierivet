@@ -68,6 +68,8 @@ module rivet_mac_scrambler #(
         automatic logic skp_word = os_word &&
                                    (data_i[PIPE_DATA_WIDTH*l +: 8] == RIVET_SYM_SKP_BLK);
         if (!skp_word) begin
+          automatic logic [22:0] st;
+          automatic logic [22:0] st4;
           // Reload on a block boundary only. A mid-block reseed after the
           // Gen4 rate change leaves the peer, which arms on start_block,
           // one clock off for the rest of the link.
@@ -75,18 +77,20 @@ module rivet_mac_scrambler #(
             lfsr23_next[l] = RIVET_LFSR23_SEED;
           if (!os_word && (lfsr23_data_q || blk_start_i))
             lfsr23_data_n = 1'b1;
+          st  = lfsr23_next[l];
+          st4 = lfsr23_next[l];
           for (int unsigned s = 0; s < SYMS; s++) begin
             automatic logic [7:0]  din;
             automatic logic [30:0] step;
-            // Gen3 on a 64-bit pipe uses the low four symbols.
-            if ((rate_i == RIVET_PIPE_RATE_GEN3) && (s >= 4))
-              continue;
-            din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-            step = rivet_lfsr23_byte(lfsr23_next[l]);
-            lfsr23_next[l] = step[30:8];
-            if (!os_word)
+            din  = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+            step = rivet_lfsr23_byte(st);
+            st   = step[30:8];
+            if (s == 3)
+              st4 = st;
+            if (!os_word && !((rate_i == RIVET_PIPE_RATE_GEN3) && (s >= 4)))
               data_scr[PIPE_DATA_WIDTH*l + 8*s +: 8] = din ^ step[7:0];
           end
+          lfsr23_next[l] = ((SYMS > 4) && (rate_i == RIVET_PIPE_RATE_GEN3)) ? st4 : st;
         end
       end else if (valid_i && lane_en_i[l]) begin
         for (int unsigned s = 0; s < SYMS; s++) begin

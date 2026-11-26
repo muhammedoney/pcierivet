@@ -72,6 +72,16 @@ module rivet_tl_rq_g4 #(
   logic [9:0]   acc_len_q;
   logic [7:0]   acc_tag_q;
 
+  // One-beat skid stage decouples tx_tready_i (from u_tx_mux / u_tl_msi) from
+  // the 64-byte residue packer and s_axis_rq_tready with zero bubbles.
+  logic [255:0] skid_d_q;
+  logic [31:0]  skid_k_q;
+  logic         skid_l_q, skid_v_q;
+  logic [7:0]   skid_hdr_q;
+  logic         skid_wr_q;
+  logic [9:0]   skid_len_q;
+  logic [7:0]   skid_tag_q;
+
   logic         slot_free;
   logic         accept;
   logic         split_beat;
@@ -89,7 +99,7 @@ module rivet_tl_rq_g4 #(
   assign rq_tag_vld_o     = tx_accept_o && !acc_wr_q;
   assign rq_tag_av_o      = tag_av_q;
 
-  assign slot_free = !tx_v_q || tx_tready_i;
+  assign slot_free = !skid_v_q;
   // A split beat ends the open TLP at byte 16. That tail has to leave in
   // this cycle, before the next descriptor joins the residue.
   assign split_beat = s_axis_rq_tvalid && s_axis_rq_tlast &&
@@ -296,6 +306,14 @@ module rivet_tl_rq_g4 #(
       acc_wr_q   <= 1'b0;
       acc_len_q  <= '0;
       acc_tag_q  <= '0;
+      skid_d_q   <= '0;
+      skid_k_q   <= '0;
+      skid_l_q   <= 1'b0;
+      skid_v_q   <= 1'b0;
+      skid_hdr_q <= '0;
+      skid_wr_q  <= 1'b0;
+      skid_len_q <= '0;
+      skid_tag_q <= '0;
     end else begin
       logic [511:0] res;
       logic [6:0]   rn;
@@ -476,20 +494,42 @@ module rivet_tl_rq_g4 #(
         end
       end
 
-      if (do_cap) begin
-        acc_hdr_q <= cap_hdr;
-        acc_wr_q  <= cap_wr;
-        acc_len_q <= cap_len;
-        acc_tag_q <= cap_tag;
-      end
-
-      if (emitted) begin
-        tx_d_q <= ed;
-        tx_k_q <= ek;
-        tx_l_q <= el;
-        tx_v_q <= 1'b1;
-      end else if (tx_v_q && tx_tready_i) begin
-        tx_v_q <= 1'b0;
+      if (!tx_v_q || tx_tready_i) begin
+        if (skid_v_q) begin
+          tx_d_q    <= skid_d_q;
+          tx_k_q    <= skid_k_q;
+          tx_l_q    <= skid_l_q;
+          tx_v_q    <= 1'b1;
+          acc_hdr_q <= skid_hdr_q;
+          acc_wr_q  <= skid_wr_q;
+          acc_len_q <= skid_len_q;
+          acc_tag_q <= skid_tag_q;
+          skid_v_q  <= 1'b0;
+        end else if (emitted) begin
+          tx_d_q <= ed;
+          tx_k_q <= ek;
+          tx_l_q <= el;
+          tx_v_q <= 1'b1;
+          if (do_cap) begin
+            acc_hdr_q <= cap_hdr;
+            acc_wr_q  <= cap_wr;
+            acc_len_q <= cap_len;
+            acc_tag_q <= cap_tag;
+          end
+        end else begin
+          tx_v_q <= 1'b0;
+        end
+      end else if (emitted) begin
+        skid_d_q <= ed;
+        skid_k_q <= ek;
+        skid_l_q <= el;
+        skid_v_q <= 1'b1;
+        if (do_cap) begin
+          skid_hdr_q <= cap_hdr;
+          skid_wr_q  <= cap_wr;
+          skid_len_q <= cap_len;
+          skid_tag_q <= cap_tag;
+        end
       end
 
       res_q      <= res;

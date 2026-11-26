@@ -96,19 +96,23 @@ module rivet_mac_descrambler #(
           else
             skp_left_n[l] = skp_left_q[l] - 3'd1;
         end else begin
+          automatic logic [22:0] st;
+          automatic logic [22:0] st4;
           skp_left_n[l] = 3'd0;
+          st  = lfsr23_next[l];
+          st4 = lfsr23_next[l];
           for (int unsigned s = 0; s < SYMS; s++) begin
             automatic logic [7:0]  din;
             automatic logic [30:0] step;
-            // Gen3 on a 64-bit pipe uses the low four symbols.
-            if ((rate_i == RIVET_PIPE_RATE_GEN3) && (s >= 4))
-              continue;
-            din = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-            step = rivet_lfsr23_byte(lfsr23_next[l]);
-            lfsr23_next[l] = step[30:8];
-            if (!os_block_i[l])
+            din  = data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+            step = rivet_lfsr23_byte(st);
+            st   = step[30:8];
+            if (s == 3)
+              st4 = st;
+            if (!os_block_i[l] && !((rate_i == RIVET_PIPE_RATE_GEN3) && (s >= 4)))
               data_d[PIPE_DATA_WIDTH*l + 8*s +: 8] = din ^ step[7:0];
           end
+          lfsr23_next[l] = ((SYMS > 4) && (rate_i == RIVET_PIPE_RATE_GEN3)) ? st4 : st;
         end
       end else if (valid_i[l] && lane_en_i[l]) begin
         for (int unsigned s = 0; s < SYMS; s++) begin
