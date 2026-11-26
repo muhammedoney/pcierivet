@@ -94,7 +94,6 @@ module rivet_dll_tlp_tx16 #(
   logic         live_v;
   logic         live_eop;
   logic [5:0]   live_n;
-  logic [6:0]   left_n;
   logic         third_frame;
   logic [15:0]  room_add;
 
@@ -148,14 +147,13 @@ module rivet_dll_tlp_tx16 #(
   always_comb begin
     logic [15:0] nb;
     logic [15:0] need;
-    left_n = acc_n_q;
-    if (live_v && beat_ready_i)
-      left_n = acc_n_q - {1'b0, live_n};
     // Two finished frames already sit in the accumulator. The next beat
     // would be a third, and there is only one slot behind the first end.
     // A parked beat is sized from its keep, not from a full beat. The max
     // Gen4 frame is 4118 bytes and the slot is 4128; reserving BEAT_B+4
     // for a 16-byte tail refuses that tail and never closes the packet.
+    // Size room against registered acc_n_q (not post-drain) so tl_ready_o
+    // never depends combinationally on beat_ready_i or cap_ready_i.
     third_frame = !pkt_q && (eop2_n_q != 6'd0);
     nb   = (tl_len_i >= 16'(BEAT_B)) ? 16'(BEAT_B) : tl_len_i;
     need = room_add;
@@ -164,7 +162,7 @@ module rivet_dll_tlp_tx16 #(
              (tl_last_i ? 16'(RIVET_TLP_LCRC_BYTES) : 16'd0);
     tl_ready_o = enable_i && !replay_en_i && !start_rp &&
                  (state_q != ST_EMIT) && !third_frame &&
-                 (({1'b0, left_n} + {1'b0, need[6:0]}) <= 8'(ACC_B)) &&
+                 (({1'b0, acc_n_q} + {1'b0, need[6:0]}) <= 8'(ACC_B)) &&
                  ((pay_q + need) <= 16'(SLOT_BYTES));
   end
 
@@ -177,81 +175,18 @@ module rivet_dll_tlp_tx16 #(
     return k;
   endfunction
 
-  function automatic logic [31:0] fold16(
-      input logic [31:0]  crc,
-      input logic [255:0] data,
-      input logic [5:0]   n);
-    logic [31:0] c;
-    c = crc;
-    for (int unsigned w = 0; w < 4; w++) begin
-      if (n > 6'(w * 8)) begin
-        automatic logic [5:0] left;
-        automatic logic [3:0] nw;
-        left = n - 6'(w * 8);
-        nw   = (left >= 6'd8) ? 4'd8 : left[3:0];
-        c    = rivet_crc32_fold(c, data[64*w +: 64], nw);
-      end
-    end
-    return c;
-  endfunction
-
-  typedef struct packed {
-    logic [63:0] acc;
-    logic [3:0]  acc_n;
-    logic        pend;
-    logic [63:0] word;
-    logic        word_last;
-  } pack_r_t;
-
-  function automatic pack_r_t pack_bytes(
-      input logic [63:0] acc_in,
-      input logic [3:0]  acc_n_in,
-      input logic [63:0] src,
-      input logic [3:0]  n,
-      input logic        last);
-    logic [7:0]   sb [8];
-    logic [127:0] wide;
-    logic [4:0]   sum;
-    pack_r_t r;
-    for (int unsigned i = 0; i < 8; i++)
-      sb[3'(i)] = src[8*3'(i) +: 8];
-    wide = {64'h0, acc_in};
-    for (int unsigned k = 0; k < 16; k++) begin
-      automatic logic [4:0] diff;
-      diff = 5'(k) - {1'b0, acc_n_in};
-      if ((5'(k) >= {1'b0, acc_n_in}) && (diff < {1'b0, n}))
-        wide[8*4'(k) +: 8] = sb[diff[2:0]];
-    end
-    sum = {1'b0, acc_n_in} + {1'b0, n};
-    r = '0;
-    if (sum >= 5'd8) begin
-      r.pend      = 1'b1;
-      r.word      = wide[63:0];
-      r.acc       = wide[127:64];
-      r.acc_n     = 4'(sum - 5'd8);
-      r.word_last = last && (sum == 5'd8);
-    end else if (last && (sum != 5'd0)) begin
-      r.pend      = 1'b1;
-      r.word      = wide[63:0];
-      r.word_last = 1'b1;
-    end else begin
-      r.acc   = wide[63:0];
-      r.acc_n = sum[3:0];
-    end
-    return r;
-  endfunction
-
-  // Destination-byte-first append of a pre-assembled chunk (up to 38 B:
-  // optional 2 B seq + up to 32 B payload + optional 4 B LCRC) in one pass.
-  function automatic logic [639:0] append_chunk(
+  // Destination-byte-first append of payload (optional 2 B seq + up to 32 B
+  // payload) in one pass. LCRC (4 B) is inserted directly afterward so it
+  // bypasses the 38:1 chunk mux.
+  function automatic logic [639:0] append_pay(
       input logic [639:0] acc_in,
       input logic [6:0]   n0,
-      input logic [303:0] src,
+      input logic [271:0] src,
       input logic [5:0]   n);
     logic [7:0]   sb [64];
     logic [639:0] a;
     for (int unsigned i = 0; i < 64; i++)
-      sb[i] = (i < 38) ? src[8*i +: 8] : 8'h00;
+      sb[i] = (i < 34) ? src[8*i +: 8] : 8'h00;
     a = acc_in;
     for (int unsigned k = 0; k < 80; k++) begin
       automatic logic [6:0] diff;
@@ -420,54 +355,47 @@ module rivet_dll_tlp_tx16 #(
         seq_q       <= seq;
       end else begin
         if (live_v && beat_ready_i) begin
-          pack_r_t pk0, pk1, pk2, pk3;
-          logic [3:0] n_lo, n_hi, n_2, n_3;
-          n_lo = (live_n >= 6'd8) ? 4'd8 : live_n[3:0];
-          n_hi = (live_n > 6'd8) ? ((live_n >= 6'd16) ? 4'd8 : 4'(live_n - 6'd8)) : 4'd0;
-          n_2  = (live_n > 6'd16) ? ((live_n >= 6'd24) ? 4'd8 : 4'(live_n - 6'd16)) : 4'd0;
-          n_3  = (live_n > 6'd24) ? 4'(live_n - 6'd24) : 4'd0;
-          pk0  = pack_bytes(cap_acc, cap_n, acc[63:0], n_lo,
-                            live_eop && (n_hi == 4'd0));
-          if (n_hi != 4'd0)
-            pk1 = pack_bytes(pk0.acc, pk0.acc_n, acc[127:64], n_hi,
-                             live_eop && (n_2 == 4'd0));
-          else
-            pk1 = pk0;
-          if (n_2 != 4'd0)
-            pk2 = pack_bytes(pk1.acc, pk1.acc_n, acc[191:128], n_2,
-                             live_eop && (n_3 == 4'd0));
-          else
-            pk2 = pk1;
-          if (n_3 != 4'd0)
-            pk3 = pack_bytes(pk2.acc, pk2.acc_n, acc[255:192], n_3, live_eop);
-          else
-            pk3 = pk2;
-          cap_acc = pk3.acc;
-          cap_n   = pk3.acc_n;
-          cap_ex  = 1'b0;
-          if (pk0.pend) begin
-            cap_pend     = 1'b1;
-            cap_word     = pk0.word;
-            cap_hi       = pk1.pend && (n_hi != 4'd0);
-            cap_hi_word  = pk1.word;
-            cap_last     = pk0.word_last;
-            if (cap_hi)
-              cap_last = pk1.word_last;
-            if (pk2.pend && (n_2 != 4'd0)) begin
-              cap_ex  = 1'b1;
-              cap_ex0 = pk2.word;
-              cap_ex1 = pk3.word;
-              cap_last = pk2.word_last;
-              if (n_3 != 4'd0)
-                cap_last = pk3.word_last;
-            end
-          end else if (pk1.pend && (n_hi != 4'd0)) begin
-            cap_pend    = 1'b1;
-            cap_word    = pk1.word;
-            cap_last    = pk1.word_last;
-            cap_hi      = 1'b0;
+          // Flatten replay capture into one parallel 40-byte merge instead of
+          // four serial pack_bytes stages.
+          logic [7:0]   src_b [32];
+          logic [319:0] wide;
+          logic [5:0]   tot;
+          logic [2:0]   full_w;
+          logic [2:0]   rem_b;
+          logic [2:0]   emit_w;
+          for (int unsigned i = 0; i < 32; i++)
+            src_b[5'(i)] = acc[8*5'(i) +: 8];
+          wide = {256'h0, cap_acc};
+          for (int unsigned k = 0; k < 40; k++) begin
+            automatic logic [5:0] diff;
+            diff = 6'(k) - {2'd0, cap_n};
+            if ((6'(k) >= {2'd0, cap_n}) && (diff < live_n))
+              wide[8*k +: 8] = src_b[diff[4:0]];
           end
-          acc = acc >> (32'(live_n) * 8);
+          tot    = {2'd0, cap_n} + live_n;
+          full_w = tot[5:3];
+          rem_b  = tot[2:0];
+          emit_w = full_w + ((live_eop && (rem_b != 3'd0) && (full_w < 3'd4)) ? 3'd1 : 3'd0);
+          cap_pend = (emit_w != 3'd0);
+          cap_hi   = (emit_w >= 3'd2);
+          cap_ex   = (emit_w >= 3'd3);
+          if (cap_pend) begin
+            cap_word    = wide[63:0];
+            cap_hi_word = wide[127:64];
+            cap_ex0     = wide[191:128];
+            cap_ex1     = wide[255:192];
+            cap_last    = live_eop && ((full_w < 3'd4) || (rem_b == 3'd0));
+          end
+          case (full_w)
+            3'd0:    cap_acc = live_eop ? 64'h0 : wide[63:0];
+            3'd1:    cap_acc = wide[127:64];
+            3'd2:    cap_acc = wide[191:128];
+            3'd3:    cap_acc = wide[255:192];
+            default: cap_acc = wide[319:256];
+          endcase
+          cap_n = (live_eop && (full_w < 3'd4)) ? 4'd0 : {1'b0, rem_b};
+
+          acc = live_eop ? (acc >> (32'(live_n) * 8)) : (acc >> (BEAT_B * 8));
           an  = an - {1'b0, live_n};
           if (live_eop) begin
             logic closed_tail;
@@ -477,7 +405,8 @@ module rivet_dll_tlp_tx16 #(
             else
               eop_n = '0;
             eop2    = '0;
-            pkt     = (an != 6'd0) && !closed_tail;
+            // pkt_q already tracks whether a subsequent frame is open; avoid
+            // routing live_eop back into add_seq / CRC on the same cycle.
             sop     = 1'b1;
             cap_acc = '0;
             cap_n   = '0;
@@ -497,57 +426,52 @@ module rivet_dll_tlp_tx16 #(
 
         if (tl_valid_i && tl_ready_o) begin
           logic [5:0]   nb;
+          logic [31:0]  crc_base;
           logic [31:0]  lcrc;
           logic [15:0]  seq_w;
           logic         add_seq;
           logic [5:0]   seq_len;
           logic [5:0]   pay_end;
           logic [5:0]   chunk_n;
+          logic [6:0]   lcrc_off;
           logic [255:0] w256;
-          logic [303:0] chunk;
+          logic [271:0] pay_chunk;
           nb = (tl_len_i >= 16'(BEAT_B)) ? 6'(BEAT_B) : tl_len_i[5:0];
           if (nb != 6'd0) begin
-            add_seq = !pkt;
-            seq_w   = rivet_tlp_seq_bytes(nseq);
+            add_seq  = !pkt_q;
+            seq_w    = rivet_tlp_seq_bytes(nseq);
+            crc_base = crc;
             if (add_seq) begin
-              if (an == 7'd0)
+              if (acc_n_q == 7'd0)
                 sop = 1'b1;
-              seq   = nseq;
-              nseq  = nseq + 12'd1;
-              crc   = rivet_crc32_fold(32'hFFFF_FFFF, {48'h0, seq_w}, 4'd2);
-              pay   = 16'd2;
-              pkt   = 1'b1;
+              seq      = nseq;
+              nseq     = nseq + 12'd1;
+              crc_base = rivet_crc32_fold(32'hFFFF_FFFF, {48'h0, seq_w}, 4'd2);
+              pay      = 16'd2;
+              pkt      = 1'b1;
             end
             w256 = 256'(tl_word_i);
-            crc  = fold16(crc, w256, nb);
+            crc  = rivet_crc32_fold32(crc_base, w256, nb);
             lcrc = ~crc;
             pay  = pay + 16'(nb);
 
-            // Pack optional 2 B seq + payload + optional 4 B LCRC into one
-            // contiguous chunk and append to acc in a single parallel step.
-            seq_len = add_seq ? 6'd2 : 6'd0;
-            pay_end = seq_len + nb;
-            chunk_n = pay_end + (tl_last_i ? 6'd4 : 6'd0);
-            chunk   = '0;
-            for (int unsigned j = 0; j < 38; j++) begin
-              if (add_seq && (j < 2)) begin
-                chunk[8*j +: 8] = seq_w[8*j +: 8];
-              end else if ((6'(j) >= seq_len) && ((6'(j) - seq_len) < nb)) begin
-                if (add_seq) begin
-                  if ((j >= 2) && (j < 34))
-                    chunk[8*j +: 8] = w256[8*(j - 2) +: 8];
-                end else begin
-                  if (j < 32)
-                    chunk[8*j +: 8] = w256[8*j +: 8];
-                end
-              end else if (tl_last_i && (6'(j) >= pay_end) && ((6'(j) - pay_end) < 6'd4)) begin
-                automatic logic [5:0] loff;
-                loff = 6'(j) - pay_end;
-                chunk[8*j +: 8] = lcrc[8*loff[1:0] +: 8];
+            // Append optional 2 B seq + payload in parallel with CRC, then
+            // insert the 4 B LCRC directly at lcrc_off = an + pay_end.
+            seq_len   = add_seq ? 6'd2 : 6'd0;
+            pay_end   = seq_len + nb;
+            chunk_n   = pay_end + (tl_last_i ? 6'd4 : 6'd0);
+            pay_chunk = add_seq ? {w256, seq_w} : {16'h0, w256};
+            acc       = append_pay(acc, an, pay_chunk, pay_end);
+            lcrc_off  = an + {1'b0, pay_end};
+            if (tl_last_i) begin
+              for (int unsigned k = 0; k < 80; k++) begin
+                automatic logic [6:0] loff;
+                loff = 7'(k) - lcrc_off;
+                if ((7'(k) >= lcrc_off) && (loff < 7'd4))
+                  acc[8*k +: 8] = lcrc[8*loff[1:0] +: 8];
               end
             end
-            acc = append_chunk(acc, an, chunk, chunk_n);
-            an  = an + {1'b0, chunk_n};
+            an = an + {1'b0, chunk_n};
 
             if (tl_last_i) begin
               if (eop_n == 7'd0)

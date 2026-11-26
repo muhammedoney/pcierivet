@@ -63,6 +63,7 @@ module rivet_dll_replay #(
   logic [IDX_W-1:0]  wr_q, rd_q, replay_idx_q;
   logic [WORD_W-1:0] wr_word_q;
   logic [15:0]       count_q;
+  logic              full_q;
   logic              replay_active_q;
   logic              replay_done_q;
   logic              replay_valid_q;
@@ -85,10 +86,10 @@ module rivet_dll_replay #(
   assign head_ack    = ack_live && (count_q != 16'd0) && valid_q[rd_q] &&
                        seq_acked(seq_q[rd_q], ack_seq_eff);
 
-  assign full_o      = (count_q == TLP_SLOTS[15:0]);
+  assign full_o      = full_q;
   assign empty_o     = (count_q == 16'd0);
   assign occupancy_o = count_q;
-  assign cap_ready_o = !replay_active_q && (filling_q || !full_o);
+  assign cap_ready_o = !replay_active_q && (filling_q || !full_q);
   assign cap_fire    = cap_valid_i && cap_ready_o;
 
   assign replay_active_o = replay_active_q;
@@ -125,6 +126,7 @@ module rivet_dll_replay #(
       wr_word_q       <= '0;
       rd_q            <= '0;
       count_q         <= '0;
+      full_q          <= 1'b0;
       replay_idx_q    <= '0;
       replay_active_q <= 1'b0;
       replay_done_q   <= 1'b0;
@@ -142,6 +144,7 @@ module rivet_dll_replay #(
       wr_word_q       <= '0;
       rd_q            <= '0;
       count_q         <= '0;
+      full_q          <= 1'b0;
       replay_idx_q    <= '0;
       replay_active_q <= 1'b0;
       replay_done_q   <= 1'b0;
@@ -154,9 +157,11 @@ module rivet_dll_replay #(
       logic             ack_hold_d;
       logic [11:0]      ack_seq_d;
       logic             purge_d;
+      logic [15:0]      count_d;
       replay_done_q <= 1'b0;
       ack_hold_d = ack_hold_q;
       ack_seq_d  = ack_seq_q;
+      count_d    = count_q;
       if (ack_valid_i) begin
         ack_hold_d = 1'b1;
         ack_seq_d  = ack_seq_i;
@@ -171,24 +176,26 @@ module rivet_dll_replay #(
         wr_word_q     <= '0;
         filling_q     <= 1'b0;
         if (!filling_q)
-          count_q <= count_q + 16'd1;
+          count_d = count_q + 16'd1;
       end else if (cap_fire) begin
         wr_word_q <= wr_word_q + (cap_ex_valid_i ? WORD_W'(4) :
                                   cap_hi_valid_i ? WORD_W'(2) : WORD_W'(1));
         if (!filling_q) begin
           filling_q <= 1'b1;
-          count_q   <= count_q + 16'd1;
+          count_d   = count_q + 16'd1;
         end
       end else if (purge_d) begin
         valid_q[rd_q] <= 1'b0;
         rd_q          <= rd_next;
-        count_q       <= count_q - 16'd1;
+        count_d       = count_q - 16'd1;
         if ((count_q == 16'd1) || !valid_q[rd_next] ||
             !seq_acked(seq_q[rd_next], ack_seq_eff))
           ack_hold_d = 1'b0;
       end else if (!head_ack) begin
         ack_hold_d = 1'b0;
       end
+      count_q    <= count_d;
+      full_q     <= (count_d == TLP_SLOTS[15:0]);
       ack_hold_q <= ack_hold_d;
       ack_seq_q  <= ack_seq_d;
 

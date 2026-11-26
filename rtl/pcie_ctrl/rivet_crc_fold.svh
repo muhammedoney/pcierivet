@@ -318,3 +318,769 @@ function automatic logic [31:0] rivet_crc32_fold(
   endcase
   return crc;
 endfunction
+
+function automatic logic [31:0] rivet_crc32_z8(input logic [31:0] crc_in);
+  logic [31:0] crc;
+  crc[ 0] = ^(crc_in & 32'h481B4E5A);
+  crc[ 1] = ^(crc_in & 32'h90369CB5);
+  crc[ 2] = ^(crc_in & 32'h206D396B);
+  crc[ 3] = ^(crc_in & 32'h40DA72D7);
+  crc[ 4] = ^(crc_in & 32'h81B4E5AF);
+  crc[ 5] = ^(crc_in & 32'h0369CB5E);
+  crc[ 6] = ^(crc_in & 32'h4EC8D8E6);
+  crc[ 7] = ^(crc_in & 32'h9D91B1CD);
+  crc[ 8] = ^(crc_in & 32'h3B23639A);
+  crc[ 9] = ^(crc_in & 32'h3E5D896E);
+  crc[10] = ^(crc_in & 32'h34A05C86);
+  crc[11] = ^(crc_in & 32'h6940B90C);
+  crc[12] = ^(crc_in & 32'hD2817218);
+  crc[13] = ^(crc_in & 32'hA502E430);
+  crc[14] = ^(crc_in & 32'h4A05C860);
+  crc[15] = ^(crc_in & 32'h940B90C0);
+  crc[16] = ^(crc_in & 32'h600C6FDA);
+  crc[17] = ^(crc_in & 32'hC018DFB5);
+  crc[18] = ^(crc_in & 32'h8031BF6A);
+  crc[19] = ^(crc_in & 32'h00637ED5);
+  crc[20] = ^(crc_in & 32'h48DDB3F0);
+  crc[21] = ^(crc_in & 32'hD9A029BB);
+  crc[22] = ^(crc_in & 32'hFB5B1D2C);
+  crc[23] = ^(crc_in & 32'hF6B63A59);
+  crc[24] = ^(crc_in & 32'hA5773AE8);
+  crc[25] = ^(crc_in & 32'h02F53B8A);
+  crc[26] = ^(crc_in & 32'h05EA7715);
+  crc[27] = ^(crc_in & 32'h43CFA071);
+  crc[28] = ^(crc_in & 32'hCF840EB8);
+  crc[29] = ^(crc_in & 32'h9F081D70);
+  crc[30] = ^(crc_in & 32'h760B74BB);
+  crc[31] = ^(crc_in & 32'hA40DA72D);
+  return crc;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_z16(input logic [31:0] crc_in);
+  logic [31:0] crc;
+  crc[ 0] = ^(crc_in & 32'hEB46DE2F);
+  crc[ 1] = ^(crc_in & 32'hD68DBC5E);
+  crc[ 2] = ^(crc_in & 32'hAD1B78BC);
+  crc[ 3] = ^(crc_in & 32'h5A36F178);
+  crc[ 4] = ^(crc_in & 32'hB46DE2F1);
+  crc[ 5] = ^(crc_in & 32'h68DBC5E2);
+  crc[ 6] = ^(crc_in & 32'h3AF155EA);
+  crc[ 7] = ^(crc_in & 32'h75E2ABD5);
+  crc[ 8] = ^(crc_in & 32'hEBC557AB);
+  crc[ 9] = ^(crc_in & 32'h3CCC7178);
+  crc[10] = ^(crc_in & 32'h92DE3CDE);
+  crc[11] = ^(crc_in & 32'h25BC79BC);
+  crc[12] = ^(crc_in & 32'h4B78F379);
+  crc[13] = ^(crc_in & 32'h96F1E6F2);
+  crc[14] = ^(crc_in & 32'h2DE3CDE4);
+  crc[15] = ^(crc_in & 32'h5BC79BC9);
+  crc[16] = ^(crc_in & 32'h5CC9E9BC);
+  crc[17] = ^(crc_in & 32'hB993D378);
+  crc[18] = ^(crc_in & 32'h7327A6F0);
+  crc[19] = ^(crc_in & 32'hE64F4DE1);
+  crc[20] = ^(crc_in & 32'h27D845EC);
+  crc[21] = ^(crc_in & 32'hA4F655F7);
+  crc[22] = ^(crc_in & 32'hA2AA75C1);
+  crc[23] = ^(crc_in & 32'h4554EB82);
+  crc[24] = ^(crc_in & 32'h61EF092A);
+  crc[25] = ^(crc_in & 32'h2898CC7B);
+  crc[26] = ^(crc_in & 32'h513198F7);
+  crc[27] = ^(crc_in & 32'h4925EFC1);
+  crc[28] = ^(crc_in & 32'h790D01AC);
+  crc[29] = ^(crc_in & 32'hF21A0359);
+  crc[30] = ^(crc_in & 32'h0F72D89C);
+  crc[31] = ^(crc_in & 32'hF5A36F17);
+  return crc;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_z24(input logic [31:0] crc_in);
+  logic [31:0] crc;
+  crc[ 0] = ^(crc_in & 32'hC6F00657);
+  crc[ 1] = ^(crc_in & 32'h8DE00CAF);
+  crc[ 2] = ^(crc_in & 32'h1BC0195F);
+  crc[ 3] = ^(crc_in & 32'h378032BE);
+  crc[ 4] = ^(crc_in & 32'h6F00657C);
+  crc[ 5] = ^(crc_in & 32'hDE00CAF9);
+  crc[ 6] = ^(crc_in & 32'h7AF193A4);
+  crc[ 7] = ^(crc_in & 32'hF5E32748);
+  crc[ 8] = ^(crc_in & 32'hEBC64E91);
+  crc[ 9] = ^(crc_in & 32'h117C9B74);
+  crc[10] = ^(crc_in & 32'hE40930BF);
+  crc[11] = ^(crc_in & 32'hC812617E);
+  crc[12] = ^(crc_in & 32'h9024C2FC);
+  crc[13] = ^(crc_in & 32'h204985F9);
+  crc[14] = ^(crc_in & 32'h40930BF3);
+  crc[15] = ^(crc_in & 32'h812617E6);
+  crc[16] = ^(crc_in & 32'hC4BC299B);
+  crc[17] = ^(crc_in & 32'h89785336);
+  crc[18] = ^(crc_in & 32'h12F0A66D);
+  crc[19] = ^(crc_in & 32'h25E14CDA);
+  crc[20] = ^(crc_in & 32'h8D329FE2);
+  crc[21] = ^(crc_in & 32'hDC953993);
+  crc[22] = ^(crc_in & 32'h7FDA7570);
+  crc[23] = ^(crc_in & 32'hFFB4EAE0);
+  crc[24] = ^(crc_in & 32'h3999D397);
+  crc[25] = ^(crc_in & 32'hB5C3A178);
+  crc[26] = ^(crc_in & 32'h6B8742F0);
+  crc[27] = ^(crc_in & 32'h11FE83B6);
+  crc[28] = ^(crc_in & 32'hE50D013A);
+  crc[29] = ^(crc_in & 32'hCA1A0274);
+  crc[30] = ^(crc_in & 32'h52C402BE);
+  crc[31] = ^(crc_in & 32'h6378032B);
+  return crc;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_z32(input logic [31:0] crc_in);
+  logic [31:0] crc;
+  crc[ 0] = ^(crc_in & 32'h74482112);
+  crc[ 1] = ^(crc_in & 32'hE8904225);
+  crc[ 2] = ^(crc_in & 32'hD120844A);
+  crc[ 3] = ^(crc_in & 32'hA2410895);
+  crc[ 4] = ^(crc_in & 32'h4482112A);
+  crc[ 5] = ^(crc_in & 32'h89042255);
+  crc[ 6] = ^(crc_in & 32'h664065B8);
+  crc[ 7] = ^(crc_in & 32'hCC80CB71);
+  crc[ 8] = ^(crc_in & 32'h990196E3);
+  crc[ 9] = ^(crc_in & 32'h464B0CD4);
+  crc[10] = ^(crc_in & 32'hF8DE38BB);
+  crc[11] = ^(crc_in & 32'hF1BC7176);
+  crc[12] = ^(crc_in & 32'hE378E2EC);
+  crc[13] = ^(crc_in & 32'hC6F1C5D8);
+  crc[14] = ^(crc_in & 32'h8DE38BB0);
+  crc[15] = ^(crc_in & 32'h1BC71760);
+  crc[16] = ^(crc_in & 32'h43C60FD2);
+  crc[17] = ^(crc_in & 32'h878C1FA5);
+  crc[18] = ^(crc_in & 32'h0F183F4A);
+  crc[19] = ^(crc_in & 32'h1E307E95);
+  crc[20] = ^(crc_in & 32'h4828DC39);
+  crc[21] = ^(crc_in & 32'hE4199960);
+  crc[22] = ^(crc_in & 32'hBC7B13D3);
+  crc[23] = ^(crc_in & 32'h78F627A7);
+  crc[24] = ^(crc_in & 32'h85A46E5D);
+  crc[25] = ^(crc_in & 32'h7F00FDA8);
+  crc[26] = ^(crc_in & 32'hFE01FB50);
+  crc[27] = ^(crc_in & 32'h884BD7B2);
+  crc[28] = ^(crc_in & 32'h64DF8E77);
+  crc[29] = ^(crc_in & 32'hC9BF1CEF);
+  crc[30] = ^(crc_in & 32'hE73618CD);
+  crc[31] = ^(crc_in & 32'hBA241089);
+  return crc;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_z_tail(
+    input logic [31:0] crc_in,
+    input logic [2:0]  rem);
+  logic [31:0] crc;
+  crc = crc_in;
+  case (rem)
+    3'd1: begin
+      crc[ 0] = ^(crc_in & 32'h00000104);
+      crc[ 1] = ^(crc_in & 32'h00000209);
+      crc[ 2] = ^(crc_in & 32'h00000413);
+      crc[ 3] = ^(crc_in & 32'h00000826);
+      crc[ 4] = ^(crc_in & 32'h0000104D);
+      crc[ 5] = ^(crc_in & 32'h0000209A);
+      crc[ 6] = ^(crc_in & 32'h00004030);
+      crc[ 7] = ^(crc_in & 32'h00008061);
+      crc[ 8] = ^(crc_in & 32'h000100C2);
+      crc[ 9] = ^(crc_in & 32'h00020080);
+      crc[10] = ^(crc_in & 32'h00040004);
+      crc[11] = ^(crc_in & 32'h00080008);
+      crc[12] = ^(crc_in & 32'h00100011);
+      crc[13] = ^(crc_in & 32'h00200023);
+      crc[14] = ^(crc_in & 32'h00400046);
+      crc[15] = ^(crc_in & 32'h0080008C);
+      crc[16] = ^(crc_in & 32'h0100001D);
+      crc[17] = ^(crc_in & 32'h0200003B);
+      crc[18] = ^(crc_in & 32'h04000077);
+      crc[19] = ^(crc_in & 32'h080000EE);
+      crc[20] = ^(crc_in & 32'h100000D8);
+      crc[21] = ^(crc_in & 32'h200000B4);
+      crc[22] = ^(crc_in & 32'h4000006C);
+      crc[23] = ^(crc_in & 32'h800000D8);
+      crc[24] = ^(crc_in & 32'h000000B5);
+      crc[25] = ^(crc_in & 32'h0000006F);
+      crc[26] = ^(crc_in & 32'h000000DF);
+      crc[27] = ^(crc_in & 32'h000000BA);
+      crc[28] = ^(crc_in & 32'h00000071);
+      crc[29] = ^(crc_in & 32'h000000E3);
+      crc[30] = ^(crc_in & 32'h000000C3);
+      crc[31] = ^(crc_in & 32'h00000082);
+    end
+    3'd2: begin
+      crc[ 0] = ^(crc_in & 32'h000104D1);
+      crc[ 1] = ^(crc_in & 32'h000209A2);
+      crc[ 2] = ^(crc_in & 32'h00041344);
+      crc[ 3] = ^(crc_in & 32'h00082688);
+      crc[ 4] = ^(crc_in & 32'h00104D10);
+      crc[ 5] = ^(crc_in & 32'h00209A20);
+      crc[ 6] = ^(crc_in & 32'h00403091);
+      crc[ 7] = ^(crc_in & 32'h00806122);
+      crc[ 8] = ^(crc_in & 32'h0100C245);
+      crc[ 9] = ^(crc_in & 32'h0200805A);
+      crc[10] = ^(crc_in & 32'h04000464);
+      crc[11] = ^(crc_in & 32'h080008C8);
+      crc[12] = ^(crc_in & 32'h10001191);
+      crc[13] = ^(crc_in & 32'h20002323);
+      crc[14] = ^(crc_in & 32'h40004646);
+      crc[15] = ^(crc_in & 32'h80008C8C);
+      crc[16] = ^(crc_in & 32'h00001DC9);
+      crc[17] = ^(crc_in & 32'h00003B93);
+      crc[18] = ^(crc_in & 32'h00007726);
+      crc[19] = ^(crc_in & 32'h0000EE4D);
+      crc[20] = ^(crc_in & 32'h0000D84B);
+      crc[21] = ^(crc_in & 32'h0000B446);
+      crc[22] = ^(crc_in & 32'h00006C5C);
+      crc[23] = ^(crc_in & 32'h0000D8B8);
+      crc[24] = ^(crc_in & 32'h0000B5A1);
+      crc[25] = ^(crc_in & 32'h00006F92);
+      crc[26] = ^(crc_in & 32'h0000DF24);
+      crc[27] = ^(crc_in & 32'h0000BA99);
+      crc[28] = ^(crc_in & 32'h000071E3);
+      crc[29] = ^(crc_in & 32'h0000E3C6);
+      crc[30] = ^(crc_in & 32'h0000C35C);
+      crc[31] = ^(crc_in & 32'h00008268);
+    end
+    3'd3: begin
+      crc[ 0] = ^(crc_in & 32'h0104D101);
+      crc[ 1] = ^(crc_in & 32'h0209A203);
+      crc[ 2] = ^(crc_in & 32'h04134407);
+      crc[ 3] = ^(crc_in & 32'h0826880E);
+      crc[ 4] = ^(crc_in & 32'h104D101D);
+      crc[ 5] = ^(crc_in & 32'h209A203B);
+      crc[ 6] = ^(crc_in & 32'h40309176);
+      crc[ 7] = ^(crc_in & 32'h806122EC);
+      crc[ 8] = ^(crc_in & 32'h00C245D8);
+      crc[ 9] = ^(crc_in & 32'h00805AB1);
+      crc[10] = ^(crc_in & 32'h00046462);
+      crc[11] = ^(crc_in & 32'h0008C8C5);
+      crc[12] = ^(crc_in & 32'h0011918A);
+      crc[13] = ^(crc_in & 32'h00232315);
+      crc[14] = ^(crc_in & 32'h0046462B);
+      crc[15] = ^(crc_in & 32'h008C8C56);
+      crc[16] = ^(crc_in & 32'h001DC9AC);
+      crc[17] = ^(crc_in & 32'h003B9359);
+      crc[18] = ^(crc_in & 32'h007726B2);
+      crc[19] = ^(crc_in & 32'h00EE4D64);
+      crc[20] = ^(crc_in & 32'h00D84BC8);
+      crc[21] = ^(crc_in & 32'h00B44690);
+      crc[22] = ^(crc_in & 32'h006C5C21);
+      crc[23] = ^(crc_in & 32'h00D8B843);
+      crc[24] = ^(crc_in & 32'h00B5A187);
+      crc[25] = ^(crc_in & 32'h006F920E);
+      crc[26] = ^(crc_in & 32'h00DF241C);
+      crc[27] = ^(crc_in & 32'h00BA9938);
+      crc[28] = ^(crc_in & 32'h0071E370);
+      crc[29] = ^(crc_in & 32'h00E3C6E0);
+      crc[30] = ^(crc_in & 32'h00C35CC0);
+      crc[31] = ^(crc_in & 32'h00826880);
+    end
+    3'd4: begin
+      crc[ 0] = ^(crc_in & 32'h04D101DF);
+      crc[ 1] = ^(crc_in & 32'h09A203BE);
+      crc[ 2] = ^(crc_in & 32'h1344077D);
+      crc[ 3] = ^(crc_in & 32'h26880EFA);
+      crc[ 4] = ^(crc_in & 32'h4D101DF4);
+      crc[ 5] = ^(crc_in & 32'h9A203BE9);
+      crc[ 6] = ^(crc_in & 32'h3091760D);
+      crc[ 7] = ^(crc_in & 32'h6122EC1A);
+      crc[ 8] = ^(crc_in & 32'hC245D835);
+      crc[ 9] = ^(crc_in & 32'h805AB1B5);
+      crc[10] = ^(crc_in & 32'h046462B5);
+      crc[11] = ^(crc_in & 32'h08C8C56A);
+      crc[12] = ^(crc_in & 32'h11918AD4);
+      crc[13] = ^(crc_in & 32'h232315A9);
+      crc[14] = ^(crc_in & 32'h46462B53);
+      crc[15] = ^(crc_in & 32'h8C8C56A6);
+      crc[16] = ^(crc_in & 32'h1DC9AC92);
+      crc[17] = ^(crc_in & 32'h3B935924);
+      crc[18] = ^(crc_in & 32'h7726B249);
+      crc[19] = ^(crc_in & 32'hEE4D6493);
+      crc[20] = ^(crc_in & 32'hD84BC8F9);
+      crc[21] = ^(crc_in & 32'hB446902D);
+      crc[22] = ^(crc_in & 32'h6C5C2184);
+      crc[23] = ^(crc_in & 32'hD8B84309);
+      crc[24] = ^(crc_in & 32'hB5A187CC);
+      crc[25] = ^(crc_in & 32'h6F920E46);
+      crc[26] = ^(crc_in & 32'hDF241C8C);
+      crc[27] = ^(crc_in & 32'hBA9938C7);
+      crc[28] = ^(crc_in & 32'h71E37051);
+      crc[29] = ^(crc_in & 32'hE3C6E0A3);
+      crc[30] = ^(crc_in & 32'hC35CC098);
+      crc[31] = ^(crc_in & 32'h826880EF);
+    end
+    3'd5: begin
+      crc[ 0] = ^(crc_in & 32'hD101DF48);
+      crc[ 1] = ^(crc_in & 32'hA203BE90);
+      crc[ 2] = ^(crc_in & 32'h44077D20);
+      crc[ 3] = ^(crc_in & 32'h880EFA40);
+      crc[ 4] = ^(crc_in & 32'h101DF481);
+      crc[ 5] = ^(crc_in & 32'h203BE903);
+      crc[ 6] = ^(crc_in & 32'h91760D4E);
+      crc[ 7] = ^(crc_in & 32'h22EC1A9D);
+      crc[ 8] = ^(crc_in & 32'h45D8353B);
+      crc[ 9] = ^(crc_in & 32'h5AB1B53E);
+      crc[10] = ^(crc_in & 32'h6462B534);
+      crc[11] = ^(crc_in & 32'hC8C56A69);
+      crc[12] = ^(crc_in & 32'h918AD4D2);
+      crc[13] = ^(crc_in & 32'h2315A9A5);
+      crc[14] = ^(crc_in & 32'h462B534A);
+      crc[15] = ^(crc_in & 32'h8C56A694);
+      crc[16] = ^(crc_in & 32'hC9AC9260);
+      crc[17] = ^(crc_in & 32'h935924C0);
+      crc[18] = ^(crc_in & 32'h26B24980);
+      crc[19] = ^(crc_in & 32'h4D649300);
+      crc[20] = ^(crc_in & 32'h4BC8F948);
+      crc[21] = ^(crc_in & 32'h46902DD9);
+      crc[22] = ^(crc_in & 32'h5C2184FB);
+      crc[23] = ^(crc_in & 32'hB84309F6);
+      crc[24] = ^(crc_in & 32'hA187CCA5);
+      crc[25] = ^(crc_in & 32'h920E4602);
+      crc[26] = ^(crc_in & 32'h241C8C05);
+      crc[27] = ^(crc_in & 32'h9938C743);
+      crc[28] = ^(crc_in & 32'hE37051CF);
+      crc[29] = ^(crc_in & 32'hC6E0A39F);
+      crc[30] = ^(crc_in & 32'h5CC09876);
+      crc[31] = ^(crc_in & 32'h6880EFA4);
+    end
+    3'd6: begin
+      crc[ 0] = ^(crc_in & 32'h01DF481B);
+      crc[ 1] = ^(crc_in & 32'h03BE9036);
+      crc[ 2] = ^(crc_in & 32'h077D206D);
+      crc[ 3] = ^(crc_in & 32'h0EFA40DA);
+      crc[ 4] = ^(crc_in & 32'h1DF481B4);
+      crc[ 5] = ^(crc_in & 32'h3BE90369);
+      crc[ 6] = ^(crc_in & 32'h760D4EC8);
+      crc[ 7] = ^(crc_in & 32'hEC1A9D91);
+      crc[ 8] = ^(crc_in & 32'hD8353B23);
+      crc[ 9] = ^(crc_in & 32'hB1B53E5D);
+      crc[10] = ^(crc_in & 32'h62B534A0);
+      crc[11] = ^(crc_in & 32'hC56A6940);
+      crc[12] = ^(crc_in & 32'h8AD4D281);
+      crc[13] = ^(crc_in & 32'h15A9A502);
+      crc[14] = ^(crc_in & 32'h2B534A05);
+      crc[15] = ^(crc_in & 32'h56A6940B);
+      crc[16] = ^(crc_in & 32'hAC92600C);
+      crc[17] = ^(crc_in & 32'h5924C018);
+      crc[18] = ^(crc_in & 32'hB2498031);
+      crc[19] = ^(crc_in & 32'h64930063);
+      crc[20] = ^(crc_in & 32'hC8F948DD);
+      crc[21] = ^(crc_in & 32'h902DD9A0);
+      crc[22] = ^(crc_in & 32'h2184FB5B);
+      crc[23] = ^(crc_in & 32'h4309F6B6);
+      crc[24] = ^(crc_in & 32'h87CCA577);
+      crc[25] = ^(crc_in & 32'h0E4602F5);
+      crc[26] = ^(crc_in & 32'h1C8C05EA);
+      crc[27] = ^(crc_in & 32'h38C743CF);
+      crc[28] = ^(crc_in & 32'h7051CF84);
+      crc[29] = ^(crc_in & 32'hE0A39F08);
+      crc[30] = ^(crc_in & 32'hC098760B);
+      crc[31] = ^(crc_in & 32'h80EFA40D);
+    end
+    3'd7: begin
+      crc[ 0] = ^(crc_in & 32'hDF481B4E);
+      crc[ 1] = ^(crc_in & 32'hBE90369C);
+      crc[ 2] = ^(crc_in & 32'h7D206D39);
+      crc[ 3] = ^(crc_in & 32'hFA40DA72);
+      crc[ 4] = ^(crc_in & 32'hF481B4E5);
+      crc[ 5] = ^(crc_in & 32'hE90369CB);
+      crc[ 6] = ^(crc_in & 32'h0D4EC8D8);
+      crc[ 7] = ^(crc_in & 32'h1A9D91B1);
+      crc[ 8] = ^(crc_in & 32'h353B2363);
+      crc[ 9] = ^(crc_in & 32'hB53E5D89);
+      crc[10] = ^(crc_in & 32'hB534A05C);
+      crc[11] = ^(crc_in & 32'h6A6940B9);
+      crc[12] = ^(crc_in & 32'hD4D28172);
+      crc[13] = ^(crc_in & 32'hA9A502E4);
+      crc[14] = ^(crc_in & 32'h534A05C8);
+      crc[15] = ^(crc_in & 32'hA6940B90);
+      crc[16] = ^(crc_in & 32'h92600C6F);
+      crc[17] = ^(crc_in & 32'h24C018DF);
+      crc[18] = ^(crc_in & 32'h498031BF);
+      crc[19] = ^(crc_in & 32'h9300637E);
+      crc[20] = ^(crc_in & 32'hF948DDB3);
+      crc[21] = ^(crc_in & 32'h2DD9A029);
+      crc[22] = ^(crc_in & 32'h84FB5B1D);
+      crc[23] = ^(crc_in & 32'h09F6B63A);
+      crc[24] = ^(crc_in & 32'hCCA5773A);
+      crc[25] = ^(crc_in & 32'h4602F53B);
+      crc[26] = ^(crc_in & 32'h8C05EA77);
+      crc[27] = ^(crc_in & 32'hC743CFA0);
+      crc[28] = ^(crc_in & 32'h51CF840E);
+      crc[29] = ^(crc_in & 32'hA39F081D);
+      crc[30] = ^(crc_in & 32'h98760B74);
+      crc[31] = ^(crc_in & 32'hEFA40DA7);
+    end
+    default: crc = crc_in;
+  endcase
+  return crc;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_d8(input logic [63:0] data_in);
+  logic [31:0] crc;
+  crc[ 0] = ^(data_in & 64'h04D101DF481B4E5A);
+  crc[ 1] = ^(data_in & 64'h09A203BE90369CB5);
+  crc[ 2] = ^(data_in & 64'h1344077D206D396B);
+  crc[ 3] = ^(data_in & 64'h26880EFA40DA72D7);
+  crc[ 4] = ^(data_in & 64'h4D101DF481B4E5AF);
+  crc[ 5] = ^(data_in & 64'h9A203BE90369CB5E);
+  crc[ 6] = ^(data_in & 64'h3091760D4EC8D8E6);
+  crc[ 7] = ^(data_in & 64'h6122EC1A9D91B1CD);
+  crc[ 8] = ^(data_in & 64'hC245D8353B23639A);
+  crc[ 9] = ^(data_in & 64'h805AB1B53E5D896E);
+  crc[10] = ^(data_in & 64'h046462B534A05C86);
+  crc[11] = ^(data_in & 64'h08C8C56A6940B90C);
+  crc[12] = ^(data_in & 64'h11918AD4D2817218);
+  crc[13] = ^(data_in & 64'h232315A9A502E430);
+  crc[14] = ^(data_in & 64'h46462B534A05C860);
+  crc[15] = ^(data_in & 64'h8C8C56A6940B90C0);
+  crc[16] = ^(data_in & 64'h1DC9AC92600C6FDA);
+  crc[17] = ^(data_in & 64'h3B935924C018DFB5);
+  crc[18] = ^(data_in & 64'h7726B2498031BF6A);
+  crc[19] = ^(data_in & 64'hEE4D649300637ED5);
+  crc[20] = ^(data_in & 64'hD84BC8F948DDB3F0);
+  crc[21] = ^(data_in & 64'hB446902DD9A029BB);
+  crc[22] = ^(data_in & 64'h6C5C2184FB5B1D2C);
+  crc[23] = ^(data_in & 64'hD8B84309F6B63A59);
+  crc[24] = ^(data_in & 64'hB5A187CCA5773AE8);
+  crc[25] = ^(data_in & 64'h6F920E4602F53B8A);
+  crc[26] = ^(data_in & 64'hDF241C8C05EA7715);
+  crc[27] = ^(data_in & 64'hBA9938C743CFA071);
+  crc[28] = ^(data_in & 64'h71E37051CF840EB8);
+  crc[29] = ^(data_in & 64'hE3C6E0A39F081D70);
+  crc[30] = ^(data_in & 64'hC35CC098760B74BB);
+  crc[31] = ^(data_in & 64'h826880EFA40DA72D);
+  return crc;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_d_tail(
+    input logic [63:0] data_in,
+    input logic [2:0]  rem);
+  logic [31:0] crc;
+  crc = 32'h0;
+  case (rem)
+    3'd1: begin
+      crc[ 0] = ^(data_in & 64'h0000000000000004);
+      crc[ 1] = ^(data_in & 64'h0000000000000009);
+      crc[ 2] = ^(data_in & 64'h0000000000000013);
+      crc[ 3] = ^(data_in & 64'h0000000000000026);
+      crc[ 4] = ^(data_in & 64'h000000000000004D);
+      crc[ 5] = ^(data_in & 64'h000000000000009A);
+      crc[ 6] = ^(data_in & 64'h0000000000000030);
+      crc[ 7] = ^(data_in & 64'h0000000000000061);
+      crc[ 8] = ^(data_in & 64'h00000000000000C2);
+      crc[ 9] = ^(data_in & 64'h0000000000000080);
+      crc[10] = ^(data_in & 64'h0000000000000004);
+      crc[11] = ^(data_in & 64'h0000000000000008);
+      crc[12] = ^(data_in & 64'h0000000000000011);
+      crc[13] = ^(data_in & 64'h0000000000000023);
+      crc[14] = ^(data_in & 64'h0000000000000046);
+      crc[15] = ^(data_in & 64'h000000000000008C);
+      crc[16] = ^(data_in & 64'h000000000000001D);
+      crc[17] = ^(data_in & 64'h000000000000003B);
+      crc[18] = ^(data_in & 64'h0000000000000077);
+      crc[19] = ^(data_in & 64'h00000000000000EE);
+      crc[20] = ^(data_in & 64'h00000000000000D8);
+      crc[21] = ^(data_in & 64'h00000000000000B4);
+      crc[22] = ^(data_in & 64'h000000000000006C);
+      crc[23] = ^(data_in & 64'h00000000000000D8);
+      crc[24] = ^(data_in & 64'h00000000000000B5);
+      crc[25] = ^(data_in & 64'h000000000000006F);
+      crc[26] = ^(data_in & 64'h00000000000000DF);
+      crc[27] = ^(data_in & 64'h00000000000000BA);
+      crc[28] = ^(data_in & 64'h0000000000000071);
+      crc[29] = ^(data_in & 64'h00000000000000E3);
+      crc[30] = ^(data_in & 64'h00000000000000C3);
+      crc[31] = ^(data_in & 64'h0000000000000082);
+    end
+    3'd2: begin
+      crc[ 0] = ^(data_in & 64'h00000000000004D1);
+      crc[ 1] = ^(data_in & 64'h00000000000009A2);
+      crc[ 2] = ^(data_in & 64'h0000000000001344);
+      crc[ 3] = ^(data_in & 64'h0000000000002688);
+      crc[ 4] = ^(data_in & 64'h0000000000004D10);
+      crc[ 5] = ^(data_in & 64'h0000000000009A20);
+      crc[ 6] = ^(data_in & 64'h0000000000003091);
+      crc[ 7] = ^(data_in & 64'h0000000000006122);
+      crc[ 8] = ^(data_in & 64'h000000000000C245);
+      crc[ 9] = ^(data_in & 64'h000000000000805A);
+      crc[10] = ^(data_in & 64'h0000000000000464);
+      crc[11] = ^(data_in & 64'h00000000000008C8);
+      crc[12] = ^(data_in & 64'h0000000000001191);
+      crc[13] = ^(data_in & 64'h0000000000002323);
+      crc[14] = ^(data_in & 64'h0000000000004646);
+      crc[15] = ^(data_in & 64'h0000000000008C8C);
+      crc[16] = ^(data_in & 64'h0000000000001DC9);
+      crc[17] = ^(data_in & 64'h0000000000003B93);
+      crc[18] = ^(data_in & 64'h0000000000007726);
+      crc[19] = ^(data_in & 64'h000000000000EE4D);
+      crc[20] = ^(data_in & 64'h000000000000D84B);
+      crc[21] = ^(data_in & 64'h000000000000B446);
+      crc[22] = ^(data_in & 64'h0000000000006C5C);
+      crc[23] = ^(data_in & 64'h000000000000D8B8);
+      crc[24] = ^(data_in & 64'h000000000000B5A1);
+      crc[25] = ^(data_in & 64'h0000000000006F92);
+      crc[26] = ^(data_in & 64'h000000000000DF24);
+      crc[27] = ^(data_in & 64'h000000000000BA99);
+      crc[28] = ^(data_in & 64'h00000000000071E3);
+      crc[29] = ^(data_in & 64'h000000000000E3C6);
+      crc[30] = ^(data_in & 64'h000000000000C35C);
+      crc[31] = ^(data_in & 64'h0000000000008268);
+    end
+    3'd3: begin
+      crc[ 0] = ^(data_in & 64'h000000000004D101);
+      crc[ 1] = ^(data_in & 64'h000000000009A203);
+      crc[ 2] = ^(data_in & 64'h0000000000134407);
+      crc[ 3] = ^(data_in & 64'h000000000026880E);
+      crc[ 4] = ^(data_in & 64'h00000000004D101D);
+      crc[ 5] = ^(data_in & 64'h00000000009A203B);
+      crc[ 6] = ^(data_in & 64'h0000000000309176);
+      crc[ 7] = ^(data_in & 64'h00000000006122EC);
+      crc[ 8] = ^(data_in & 64'h0000000000C245D8);
+      crc[ 9] = ^(data_in & 64'h0000000000805AB1);
+      crc[10] = ^(data_in & 64'h0000000000046462);
+      crc[11] = ^(data_in & 64'h000000000008C8C5);
+      crc[12] = ^(data_in & 64'h000000000011918A);
+      crc[13] = ^(data_in & 64'h0000000000232315);
+      crc[14] = ^(data_in & 64'h000000000046462B);
+      crc[15] = ^(data_in & 64'h00000000008C8C56);
+      crc[16] = ^(data_in & 64'h00000000001DC9AC);
+      crc[17] = ^(data_in & 64'h00000000003B9359);
+      crc[18] = ^(data_in & 64'h00000000007726B2);
+      crc[19] = ^(data_in & 64'h0000000000EE4D64);
+      crc[20] = ^(data_in & 64'h0000000000D84BC8);
+      crc[21] = ^(data_in & 64'h0000000000B44690);
+      crc[22] = ^(data_in & 64'h00000000006C5C21);
+      crc[23] = ^(data_in & 64'h0000000000D8B843);
+      crc[24] = ^(data_in & 64'h0000000000B5A187);
+      crc[25] = ^(data_in & 64'h00000000006F920E);
+      crc[26] = ^(data_in & 64'h0000000000DF241C);
+      crc[27] = ^(data_in & 64'h0000000000BA9938);
+      crc[28] = ^(data_in & 64'h000000000071E370);
+      crc[29] = ^(data_in & 64'h0000000000E3C6E0);
+      crc[30] = ^(data_in & 64'h0000000000C35CC0);
+      crc[31] = ^(data_in & 64'h0000000000826880);
+    end
+    3'd4: begin
+      crc[ 0] = ^(data_in & 64'h0000000004D101DF);
+      crc[ 1] = ^(data_in & 64'h0000000009A203BE);
+      crc[ 2] = ^(data_in & 64'h000000001344077D);
+      crc[ 3] = ^(data_in & 64'h0000000026880EFA);
+      crc[ 4] = ^(data_in & 64'h000000004D101DF4);
+      crc[ 5] = ^(data_in & 64'h000000009A203BE9);
+      crc[ 6] = ^(data_in & 64'h000000003091760D);
+      crc[ 7] = ^(data_in & 64'h000000006122EC1A);
+      crc[ 8] = ^(data_in & 64'h00000000C245D835);
+      crc[ 9] = ^(data_in & 64'h00000000805AB1B5);
+      crc[10] = ^(data_in & 64'h00000000046462B5);
+      crc[11] = ^(data_in & 64'h0000000008C8C56A);
+      crc[12] = ^(data_in & 64'h0000000011918AD4);
+      crc[13] = ^(data_in & 64'h00000000232315A9);
+      crc[14] = ^(data_in & 64'h0000000046462B53);
+      crc[15] = ^(data_in & 64'h000000008C8C56A6);
+      crc[16] = ^(data_in & 64'h000000001DC9AC92);
+      crc[17] = ^(data_in & 64'h000000003B935924);
+      crc[18] = ^(data_in & 64'h000000007726B249);
+      crc[19] = ^(data_in & 64'h00000000EE4D6493);
+      crc[20] = ^(data_in & 64'h00000000D84BC8F9);
+      crc[21] = ^(data_in & 64'h00000000B446902D);
+      crc[22] = ^(data_in & 64'h000000006C5C2184);
+      crc[23] = ^(data_in & 64'h00000000D8B84309);
+      crc[24] = ^(data_in & 64'h00000000B5A187CC);
+      crc[25] = ^(data_in & 64'h000000006F920E46);
+      crc[26] = ^(data_in & 64'h00000000DF241C8C);
+      crc[27] = ^(data_in & 64'h00000000BA9938C7);
+      crc[28] = ^(data_in & 64'h0000000071E37051);
+      crc[29] = ^(data_in & 64'h00000000E3C6E0A3);
+      crc[30] = ^(data_in & 64'h00000000C35CC098);
+      crc[31] = ^(data_in & 64'h00000000826880EF);
+    end
+    3'd5: begin
+      crc[ 0] = ^(data_in & 64'h00000004D101DF48);
+      crc[ 1] = ^(data_in & 64'h00000009A203BE90);
+      crc[ 2] = ^(data_in & 64'h0000001344077D20);
+      crc[ 3] = ^(data_in & 64'h00000026880EFA40);
+      crc[ 4] = ^(data_in & 64'h0000004D101DF481);
+      crc[ 5] = ^(data_in & 64'h0000009A203BE903);
+      crc[ 6] = ^(data_in & 64'h0000003091760D4E);
+      crc[ 7] = ^(data_in & 64'h0000006122EC1A9D);
+      crc[ 8] = ^(data_in & 64'h000000C245D8353B);
+      crc[ 9] = ^(data_in & 64'h000000805AB1B53E);
+      crc[10] = ^(data_in & 64'h000000046462B534);
+      crc[11] = ^(data_in & 64'h00000008C8C56A69);
+      crc[12] = ^(data_in & 64'h00000011918AD4D2);
+      crc[13] = ^(data_in & 64'h000000232315A9A5);
+      crc[14] = ^(data_in & 64'h00000046462B534A);
+      crc[15] = ^(data_in & 64'h0000008C8C56A694);
+      crc[16] = ^(data_in & 64'h0000001DC9AC9260);
+      crc[17] = ^(data_in & 64'h0000003B935924C0);
+      crc[18] = ^(data_in & 64'h0000007726B24980);
+      crc[19] = ^(data_in & 64'h000000EE4D649300);
+      crc[20] = ^(data_in & 64'h000000D84BC8F948);
+      crc[21] = ^(data_in & 64'h000000B446902DD9);
+      crc[22] = ^(data_in & 64'h0000006C5C2184FB);
+      crc[23] = ^(data_in & 64'h000000D8B84309F6);
+      crc[24] = ^(data_in & 64'h000000B5A187CCA5);
+      crc[25] = ^(data_in & 64'h0000006F920E4602);
+      crc[26] = ^(data_in & 64'h000000DF241C8C05);
+      crc[27] = ^(data_in & 64'h000000BA9938C743);
+      crc[28] = ^(data_in & 64'h00000071E37051CF);
+      crc[29] = ^(data_in & 64'h000000E3C6E0A39F);
+      crc[30] = ^(data_in & 64'h000000C35CC09876);
+      crc[31] = ^(data_in & 64'h000000826880EFA4);
+    end
+    3'd6: begin
+      crc[ 0] = ^(data_in & 64'h000004D101DF481B);
+      crc[ 1] = ^(data_in & 64'h000009A203BE9036);
+      crc[ 2] = ^(data_in & 64'h00001344077D206D);
+      crc[ 3] = ^(data_in & 64'h000026880EFA40DA);
+      crc[ 4] = ^(data_in & 64'h00004D101DF481B4);
+      crc[ 5] = ^(data_in & 64'h00009A203BE90369);
+      crc[ 6] = ^(data_in & 64'h00003091760D4EC8);
+      crc[ 7] = ^(data_in & 64'h00006122EC1A9D91);
+      crc[ 8] = ^(data_in & 64'h0000C245D8353B23);
+      crc[ 9] = ^(data_in & 64'h0000805AB1B53E5D);
+      crc[10] = ^(data_in & 64'h0000046462B534A0);
+      crc[11] = ^(data_in & 64'h000008C8C56A6940);
+      crc[12] = ^(data_in & 64'h000011918AD4D281);
+      crc[13] = ^(data_in & 64'h0000232315A9A502);
+      crc[14] = ^(data_in & 64'h000046462B534A05);
+      crc[15] = ^(data_in & 64'h00008C8C56A6940B);
+      crc[16] = ^(data_in & 64'h00001DC9AC92600C);
+      crc[17] = ^(data_in & 64'h00003B935924C018);
+      crc[18] = ^(data_in & 64'h00007726B2498031);
+      crc[19] = ^(data_in & 64'h0000EE4D64930063);
+      crc[20] = ^(data_in & 64'h0000D84BC8F948DD);
+      crc[21] = ^(data_in & 64'h0000B446902DD9A0);
+      crc[22] = ^(data_in & 64'h00006C5C2184FB5B);
+      crc[23] = ^(data_in & 64'h0000D8B84309F6B6);
+      crc[24] = ^(data_in & 64'h0000B5A187CCA577);
+      crc[25] = ^(data_in & 64'h00006F920E4602F5);
+      crc[26] = ^(data_in & 64'h0000DF241C8C05EA);
+      crc[27] = ^(data_in & 64'h0000BA9938C743CF);
+      crc[28] = ^(data_in & 64'h000071E37051CF84);
+      crc[29] = ^(data_in & 64'h0000E3C6E0A39F08);
+      crc[30] = ^(data_in & 64'h0000C35CC098760B);
+      crc[31] = ^(data_in & 64'h0000826880EFA40D);
+    end
+    3'd7: begin
+      crc[ 0] = ^(data_in & 64'h0004D101DF481B4E);
+      crc[ 1] = ^(data_in & 64'h0009A203BE90369C);
+      crc[ 2] = ^(data_in & 64'h001344077D206D39);
+      crc[ 3] = ^(data_in & 64'h0026880EFA40DA72);
+      crc[ 4] = ^(data_in & 64'h004D101DF481B4E5);
+      crc[ 5] = ^(data_in & 64'h009A203BE90369CB);
+      crc[ 6] = ^(data_in & 64'h003091760D4EC8D8);
+      crc[ 7] = ^(data_in & 64'h006122EC1A9D91B1);
+      crc[ 8] = ^(data_in & 64'h00C245D8353B2363);
+      crc[ 9] = ^(data_in & 64'h00805AB1B53E5D89);
+      crc[10] = ^(data_in & 64'h00046462B534A05C);
+      crc[11] = ^(data_in & 64'h0008C8C56A6940B9);
+      crc[12] = ^(data_in & 64'h0011918AD4D28172);
+      crc[13] = ^(data_in & 64'h00232315A9A502E4);
+      crc[14] = ^(data_in & 64'h0046462B534A05C8);
+      crc[15] = ^(data_in & 64'h008C8C56A6940B90);
+      crc[16] = ^(data_in & 64'h001DC9AC92600C6F);
+      crc[17] = ^(data_in & 64'h003B935924C018DF);
+      crc[18] = ^(data_in & 64'h007726B2498031BF);
+      crc[19] = ^(data_in & 64'h00EE4D649300637E);
+      crc[20] = ^(data_in & 64'h00D84BC8F948DDB3);
+      crc[21] = ^(data_in & 64'h00B446902DD9A029);
+      crc[22] = ^(data_in & 64'h006C5C2184FB5B1D);
+      crc[23] = ^(data_in & 64'h00D8B84309F6B63A);
+      crc[24] = ^(data_in & 64'h00B5A187CCA5773A);
+      crc[25] = ^(data_in & 64'h006F920E4602F53B);
+      crc[26] = ^(data_in & 64'h00DF241C8C05EA77);
+      crc[27] = ^(data_in & 64'h00BA9938C743CFA0);
+      crc[28] = ^(data_in & 64'h0071E37051CF840E);
+      crc[29] = ^(data_in & 64'h00E3C6E0A39F081D);
+      crc[30] = ^(data_in & 64'h00C35CC098760B74);
+      crc[31] = ^(data_in & 64'h00826880EFA40DA7);
+    end
+    default: crc = 32'h0;
+  endcase
+  return crc;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_zero32(
+    input logic [31:0] crc_in,
+    input logic [5:0]  nbytes);
+  logic [31:0] zq;
+  case (nbytes[5:3])
+    3'd1:    zq = rivet_crc32_z8(crc_in);
+    3'd2:    zq = rivet_crc32_z16(crc_in);
+    3'd3:    zq = rivet_crc32_z24(crc_in);
+    3'd4:    zq = rivet_crc32_z32(crc_in);
+    default: zq = crc_in;
+  endcase
+  return rivet_crc32_z_tail(zq, nbytes[2:0]);
+endfunction
+
+function automatic logic [31:0] rivet_crc32_data32(
+    input logic [255:0] data_in,
+    input logic [5:0]   nbytes);
+  logic [31:0] d0, d1, d2, d3, df, dt;
+  logic [63:0] tail_w;
+  d0 = rivet_crc32_d8(data_in[63:0]);
+  d1 = rivet_crc32_d8(data_in[127:64]);
+  d2 = rivet_crc32_d8(data_in[191:128]);
+  d3 = rivet_crc32_d8(data_in[255:192]);
+  case (nbytes[5:3])
+    3'd1:    df = d0;
+    3'd2:    df = rivet_crc32_z8(d0) ^ d1;
+    3'd3:    df = rivet_crc32_z16(d0) ^ rivet_crc32_z8(d1) ^ d2;
+    3'd4:    df = rivet_crc32_z24(d0) ^ rivet_crc32_z16(d1) ^ rivet_crc32_z8(d2) ^ d3;
+    default: df = 32'h0;
+  endcase
+  case (nbytes[4:3])
+    2'd0:    tail_w = data_in[63:0];
+    2'd1:    tail_w = data_in[127:64];
+    2'd2:    tail_w = data_in[191:128];
+    default: tail_w = data_in[255:192];
+  endcase
+  dt = rivet_crc32_d_tail(tail_w, nbytes[2:0]);
+  return rivet_crc32_z_tail(df, nbytes[2:0]) ^ dt;
+endfunction
+
+function automatic logic [31:0] rivet_crc32_fold32(
+    input logic [31:0]  crc_in,
+    input logic [255:0] data_in,
+    input logic [5:0]   nbytes);
+  logic [31:0] d0, d1, d2, d3, df, zq, mid, dt;
+  logic [63:0] tail_w;
+  d0 = rivet_crc32_d8(data_in[63:0]);
+  d1 = rivet_crc32_d8(data_in[127:64]);
+  d2 = rivet_crc32_d8(data_in[191:128]);
+  d3 = rivet_crc32_d8(data_in[255:192]);
+  case (nbytes[5:3])
+    3'd1: begin
+      zq = rivet_crc32_z8(crc_in);
+      df = d0;
+    end
+    3'd2: begin
+      zq = rivet_crc32_z16(crc_in);
+      df = rivet_crc32_z8(d0) ^ d1;
+    end
+    3'd3: begin
+      zq = rivet_crc32_z24(crc_in);
+      df = rivet_crc32_z16(d0) ^ rivet_crc32_z8(d1) ^ d2;
+    end
+    3'd4: begin
+      zq = rivet_crc32_z32(crc_in);
+      df = rivet_crc32_z24(d0) ^ rivet_crc32_z16(d1) ^ rivet_crc32_z8(d2) ^ d3;
+    end
+    default: begin
+      zq = crc_in;
+      df = 32'h0;
+    end
+  endcase
+  case (nbytes[4:3])
+    2'd0:    tail_w = data_in[63:0];
+    2'd1:    tail_w = data_in[127:64];
+    2'd2:    tail_w = data_in[191:128];
+    default: tail_w = data_in[255:192];
+  endcase
+  mid = zq ^ df;
+  dt  = rivet_crc32_d_tail(tail_w, nbytes[2:0]);
+  return rivet_crc32_z_tail(mid, nbytes[2:0]) ^ dt;
+endfunction

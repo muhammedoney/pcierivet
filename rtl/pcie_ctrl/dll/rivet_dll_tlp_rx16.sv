@@ -74,6 +74,10 @@ module rivet_dll_tlp_rx16 #(
   logic [11:0]       seq_q;
   logic              cap_ovf_q;
   logic [31:0]       cap_crc_q;
+  logic              crc_p1_v_q;
+  logic              crc_p1_sop_q;
+  logic [5:0]        crc_p1_n_q;
+  logic [31:0]       crc_p1_d_q;
   logic [11:0]       expect_q;
   logic [11:0]       last_good_q;
   logic              lcrc_err_q;
@@ -102,6 +106,8 @@ module rivet_dll_tlp_rx16 #(
   logic              rd_issue;
   logic [5:0]        take_n;
   logic [5:0]        take_skip;
+  logic [13:0]       left_after_c;
+  logic              left_after_z_c;
   logic              words_ok;
   logic              hold_tail;
 
@@ -166,36 +172,16 @@ module rivet_dll_tlp_rx16 #(
     return k;
   endfunction
 
-  function automatic logic [31:0] fold16(
-      input logic [31:0]  crc,
-      input logic [255:0] data,
-      input logic [5:0]   n);
-    logic [31:0] c;
-    c = crc;
-    for (int unsigned w = 0; w < 4; w++) begin
-      if (n > 6'(w * 8)) begin
-        automatic logic [5:0] left;
-        automatic logic [3:0] nw;
-        left = n - 6'(w * 8);
-        nw   = (left >= 6'd8) ? 4'd8 : left[3:0];
-        c    = rivet_crc32_fold(c, data[64*w +: 64], nw);
-      end
-    end
-    return c;
-  endfunction
-
   logic        take_beat;
   logic [7:0]  nbytes;
-  logic [31:0] crc_next;
+  logic [31:0] crc_p1_d_c;
   logic [12:0] len_next;
 
   assign nbytes    = keep_popcount(beat_i.keep);
   assign take_beat = beat_valid_i && beat_ready_o &&
                      (beat_i.pkt_type == RIVET_MAC_PKT_TLP) && !beat_i.err;
   assign len_next  = beat_i.sop ? {5'd0, nbytes} : (cap_len_q + {5'd0, nbytes});
-  assign crc_next  = fold16(
-      (take_beat && beat_i.sop) ? 32'hFFFF_FFFF : cap_crc_q,
-      beat_i.data, nbytes[5:0]);
+  assign crc_p1_d_c = rivet_crc32_data32(beat_i.data, nbytes[5:0]);
 
   assign ram_we    = take_beat && !cap_ovf_q &&
                      (wr_idx_q != IDX_W'(10'h3FF) || beat_i.sop);
@@ -242,53 +228,42 @@ module rivet_dll_tlp_rx16 #(
   // realigns that onto OUT_B TLP bytes.
   always_comb begin
     logic [12:0] word_off;
+    logic [12:0] rem_frame;
+    logic [5:0]  raw_avail;
     logic [5:0]  avail;
     logic [6:0]  n_after;
-    logic [13:0] left_after;
     logic        want;
     logic        would_emit;
     logic [5:0]  room;
-    word_off = {word_idx_q, 3'b000};
-    avail    = '0;
-    for (int unsigned wi = 0; wi < 4; wi++) begin
-      if (wi < NWORD) begin
-        automatic logic [12:0] off;
-        automatic logic [5:0]  nb;
-        off = word_off + 13'(wi * 8);
-        nb  = '0;
-        if (off < play_len_q) begin
-          if (({1'b0, off} + 13'd8) <= {1'b0, play_len_q})
-            nb = 6'd8;
-          else
-            nb = 6'(play_len_q - off);
-        end
-        if ((wi == 0) && (word_idx_q == '0))
-          nb = (nb > 6'd2) ? (nb - 6'd2) : 6'd0;
-        avail = avail + nb;
-      end
-    end
+    word_off  = {word_idx_q, 3'b000};
+    rem_frame = (play_len_q > word_off) ? (play_len_q - word_off) : 13'd0;
+    raw_avail = (rem_frame >= 13'(OUT_B)) ? 6'(OUT_B) : rem_frame[5:0];
+    avail     = (word_idx_q == '0)
+                  ? ((raw_avail > 6'd2) ? (raw_avail - 6'd2) : 6'd0)
+                  : raw_avail;
     take_skip  = (word_idx_q == '0) ? 6'd2 : 6'd0;
     take_n     = (14'(avail) > pld_left_q) ? pld_left_q[5:0] : avail;
     // 64 does not fit in 6 bits, so a 6-bit compare against 64 is a
     // compare against 0 and every Gen4 beat stalls.
-    n_after    = {1'b0, acc_n_q} + {1'b0, take_n};
-    left_after = pld_left_q - 14'(take_n);
-    can_send   = !tl_v_q || tl_ready_i;
-    room       = (OUT_B == 32) ? 6'd32 : 6'd16;
-    want       = (play_st_q == PLAY_RUN) && fresh_q && (pld_left_q != 14'd0) &&
-                 (acc_n_q <= room);
-    would_emit = (n_after >= room) || ((left_after == 14'd0) && (n_after != 6'd0));
+    n_after        = {1'b0, acc_n_q} + {1'b0, take_n};
+    left_after_c   = pld_left_q - 14'(take_n);
+    left_after_z_c = (pld_left_q <= 14'(avail));
+    can_send       = !tl_v_q || tl_ready_i;
+    room           = (OUT_B == 32) ? 6'd32 : 6'd16;
+    want           = (play_st_q == PLAY_RUN) && fresh_q && (pld_left_q != 14'd0) &&
+                     (acc_n_q <= room);
+    would_emit     = (n_after >= room) || (left_after_z_c && (n_after != 6'd0));
     // Words written on earlier cycles. A live frame must not read the beat
     // that capture is writing now, and must not end while more payload may
     // still arrive.
     words_ok   = !play_open_q || (play_bank_q != cap_bank_q) ||
                  (({1'b0, word_idx_q} + 7'(NWORD)) <= {1'b0, wr_idx_q});
-    hold_tail  = play_open_q && (pld_left_q != 14'd0) && (pld_left_q <= 14'(avail));
+    hold_tail  = play_open_q && (pld_left_q != 14'd0) && left_after_z_c;
     play_stall = want && (!words_ok || hold_tail ||
                           (n_after > ((OUT_B == 32) ? 7'd64 : 7'd32)) ||
                           (would_emit && !can_send));
     play_consume = want && !play_stall;
-    more_after = play_consume && (left_after != 14'd0);
+    more_after = play_consume && !left_after_z_c;
     rd_issue   = (play_st_q == PLAY_PREP) || more_after;
   end
 
@@ -313,6 +288,10 @@ module rivet_dll_tlp_rx16 #(
       seq_q          <= '0;
       cap_ovf_q      <= 1'b0;
       cap_crc_q      <= 32'hFFFF_FFFF;
+      crc_p1_v_q     <= 1'b0;
+      crc_p1_sop_q   <= 1'b0;
+      crc_p1_n_q     <= '0;
+      crc_p1_d_q     <= '0;
       expect_q       <= 12'd0;
       last_good_q    <= 12'hFFF;
       lcrc_err_q     <= 1'b0;
@@ -372,13 +351,14 @@ module rivet_dll_tlp_rx16 #(
       pld_vis_c   = 14'd0;
       pld_delta   = 14'd0;
       tl_abort_q  <= 1'b0;
-      if (take_beat && !beat_i.eop) begin
+      if ((cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop)) begin
         // Hold the last 4 bytes until EOP. They may still be LCRC.
-        frame_vis_c = (len_next > 13'd4) ? (len_next - 13'd4) : 13'd0;
-        if (frame_vis_c > 13'd2)
-          pld_vis_c = 14'(frame_vis_c - 13'd2);
+        // Evaluate from registered cap_len_q (beats already written to RAM)
+        // so cut-through launch stays off the beat_i.keep popcount path.
+        frame_vis_c = (cap_len_q > 13'd4) ? (cap_len_q - 13'd4) : 13'd0;
+        pld_vis_c   = (cap_len_q > 13'd6) ? 14'(cap_len_q - 13'd6) : 14'd0;
       end
-      launch_live = take_beat && !beat_i.eop && !play_open_q &&
+      launch_live = (cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop) && !play_open_q &&
                     (play_st_q == PLAY_IDLE) && (pld_vis_c >= 14'(OUT_B)) &&
                     !bank_ready_q[0] && !bank_ready_q[1];
       emitted  = 1'b0;
@@ -393,6 +373,12 @@ module rivet_dll_tlp_rx16 #(
 
       lcrc_err_q <= 1'b0;
 
+      // Stage 2 of pipelined LCRC-32: fold prior beat's registered data CRC.
+      if (crc_p1_v_q) begin
+        cap_crc_q <= rivet_crc32_zero32(
+            crc_p1_sop_q ? 32'hFFFF_FFFF : cap_crc_q, crc_p1_n_q) ^ crc_p1_d_q;
+      end
+
       begin
         logic [2:0] nwords;
         nwords = 3'd1;
@@ -402,6 +388,7 @@ module rivet_dll_tlp_rx16 #(
           nwords = 3'd3;
         if (nbytes > 8'd24)
           nwords = 3'd4;
+      crc_p1_v_q <= take_beat;
       if (take_beat) begin
 `ifndef SYNTHESIS
         if (!beat_i.sop && (cap_len_q[2:0] != 3'b000))
@@ -410,11 +397,13 @@ module rivet_dll_tlp_rx16 #(
           $error("rivet_dll_tlp_rx16: keep %04h is not a low prefix of %0d bytes",
                  beat_i.keep, nbytes);
 `endif
-        cap_len_q <= len_next;
-        cap_crc_q <= crc_next;
-        wr_idx_q  <= beat_i.sop
-                       ? IDX_W'(nwords)
-                       : (wr_idx_q + IDX_W'(nwords));
+        cap_len_q    <= len_next;
+        crc_p1_sop_q <= beat_i.sop;
+        crc_p1_n_q   <= nbytes[5:0];
+        crc_p1_d_q   <= crc_p1_d_c;
+        wr_idx_q     <= beat_i.sop
+                          ? IDX_W'(nwords)
+                          : (wr_idx_q + IDX_W'(nwords));
         if (beat_i.sop) begin
           cap_seq_q <= {beat_i.data[3:0], beat_i.data[15:8]};
           cap_st_q  <= CAP_RUN;
@@ -430,8 +419,8 @@ module rivet_dll_tlp_rx16 #(
         if (play_open_q || launch_live)
           cap_bank_q <= ~cap_bank_q;
       end else if (cap_st_q == CAP_DEC) begin
-        if (ack_n == 2'd2) begin
-          // The ACK/NAK queue is full. Hold the decision for one cycle.
+        if (crc_p1_v_q || (ack_n == 2'd2)) begin
+          // Wait for Stage-2 LCRC fold or a free slot in the ACK/NAK queue.
         end else begin
           logic        lcrc_ok;
           logic        seq_ok;
@@ -508,16 +497,18 @@ module rivet_dll_tlp_rx16 #(
         logic [511:0] acc_t;
         logic [5:0]   n_t;
         logic [13:0]  left_t;
+        logic         left_t_z;
         logic [5:0]   emit_n;
         logic [5:0]   room;
         logic [255:0] srcw;
         logic [31:0]  keep_full;
-        acc_t  = acc_q;
-        n_t    = acc_n_q;
-        left_t = pld_left_q;
-        emit_n = 6'd0;
-        room   = 6'(OUT_B);
-        srcw   = {rd_d_q, rd_c_q, rd_hi_q, rd_lo_q};
+        acc_t    = acc_q;
+        n_t      = acc_n_q;
+        left_t   = play_consume ? left_after_c : pld_left_q;
+        left_t_z = play_consume ? left_after_z_c : (pld_left_q == 14'd0);
+        emit_n   = 6'd0;
+        room     = 6'(OUT_B);
+        srcw     = {rd_d_q, rd_c_q, rd_hi_q, rd_lo_q};
         if (play_consume) begin
           // Pre-shift by take_skip (0 or 2) with a 2:1 mux, then select
           // each destination byte in parallel instead of a 32-deep cascade.
@@ -532,23 +523,22 @@ module rivet_dll_tlp_rx16 #(
             if ((7'(k) >= {1'b0, acc_n_q}) && (diff < {1'b0, take_n}))
               acc_t[8*6'(k) +: 8] = sb[diff[4:0]];
           end
-          n_t    = acc_n_q + take_n;
-          left_t = pld_left_q - 14'(take_n);
+          n_t = acc_n_q + take_n;
         end
         if (!play_stall && can_send &&
-            ((n_t >= room) || ((left_t == 14'd0) && (n_t != 6'd0)))) begin
+            ((n_t >= room) || (left_t_z && (n_t != 6'd0)))) begin
           emit_n = (n_t >= room) ? room : n_t;
           keep_full = keep_prefix(emit_n);
           tl_data_q <= acc_t[DATA_W-1:0];
           tl_keep_q <= keep_full[DATA_W/8-1:0];
           tl_v_q    <= 1'b1;
-          tl_last_q <= (left_t == 14'd0) && (emit_n == n_t) && !play_open_q;
+          tl_last_q <= left_t_z && (emit_n == n_t) && !play_open_q;
           tl_sent_q <= 1'b1;
           emitted    = 1'b1;
           // Full beat always shifts by constant OUT_B; short final beat drains n_t to 0.
           acc_t = (n_t >= room) ? (acc_t >> (OUT_B * 8)) : 512'h0;
           n_t   = n_t - emit_n;
-          if ((left_t == 14'd0) && (n_t == 6'd0))
+          if (left_t_z && (n_t == 6'd0))
             finish = 1'b1;
         end
         acc_q      <= acc_t;
@@ -594,8 +584,8 @@ module rivet_dll_tlp_rx16 #(
         cap_bank_q <= ~cap_bank_q;
       end
 
-      if (play_open_q && take_beat && !beat_i.eop && !launch_live &&
-          (pld_vis_c > pld_seen_q)) begin
+      if (play_open_q && (cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop) &&
+          !launch_live && (pld_vis_c > pld_seen_q)) begin
         pld_delta   = pld_vis_c - pld_seen_q;
         pld_seen_q  <= pld_vis_c;
         play_len_q  <= frame_vis_c;
