@@ -69,6 +69,8 @@ module rivet_dll_tlp_rx16 #(
 
   logic [IDX_W-1:0]  wr_idx_q;
   logic [12:0]       cap_len_q;
+  logic [12:0]       cap_frame_vis_q;
+  logic [13:0]       cap_pld_q;
   logic [13:0]       pld_left_q;
   logic [11:0]       cap_seq_q;
   logic [11:0]       seq_q;
@@ -77,7 +79,8 @@ module rivet_dll_tlp_rx16 #(
   logic              crc_p0_v_q;
   logic              crc_p0_sop_q;
   logic [5:0]        crc_p0_n_q;
-  logic [255:0]      crc_p0_data_q;
+  logic [31:0]       crc_p0_d0_q, crc_p0_d1_q, crc_p0_d2_q, crc_p0_d3_q;
+  logic [63:0]       crc_p0_tail_w_q;
   logic              crc_p1_v_q;
   logic              crc_p1_sop_q;
   logic [5:0]        crc_p1_n_q;
@@ -278,6 +281,8 @@ module rivet_dll_tlp_rx16 #(
       bank_pld_q[1]  <= '0;
       wr_idx_q       <= '0;
       cap_len_q      <= '0;
+      cap_frame_vis_q <= '0;
+      cap_pld_q      <= '0;
       pld_left_q     <= '0;
       cap_seq_q      <= '0;
       seq_q          <= '0;
@@ -286,7 +291,11 @@ module rivet_dll_tlp_rx16 #(
       crc_p0_v_q     <= 1'b0;
       crc_p0_sop_q   <= 1'b0;
       crc_p0_n_q     <= '0;
-      crc_p0_data_q  <= '0;
+      crc_p0_d0_q    <= '0;
+      crc_p0_d1_q    <= '0;
+      crc_p0_d2_q    <= '0;
+      crc_p0_d3_q    <= '0;
+      crc_p0_tail_w_q <= '0;
       crc_p1_v_q     <= 1'b0;
       crc_p1_sop_q   <= 1'b0;
       crc_p1_n_q     <= '0;
@@ -325,7 +334,9 @@ module rivet_dll_tlp_rx16 #(
       logic              abort_live;
       logic [12:0]       frame_vis_c;
       logic [13:0]       pld_vis_c;
-      logic [13:0]       pld_delta;
+      logic [13:0]       pld_delta_raw;
+      logic              pld_delta_gt;
+      logic              add_delta;
       logic              emitted;
       logic [1:0]        ack_n;
       rivet_dllp_req_t   ack0;
@@ -346,19 +357,16 @@ module rivet_dll_tlp_rx16 #(
       launch_live = 1'b0;
       close_live  = 1'b0;
       abort_live  = 1'b0;
-      frame_vis_c = 13'd0;
-      pld_vis_c   = 14'd0;
-      pld_delta   = 14'd0;
+      frame_vis_c = ((cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop))
+                      ? cap_frame_vis_q : 13'd0;
+      pld_vis_c   = ((cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop))
+                      ? cap_pld_q : 14'd0;
+      pld_delta_gt  = (cap_pld_q > pld_seen_q);
+      pld_delta_raw = pld_delta_gt ? (cap_pld_q - pld_seen_q) : 14'd0;
+      add_delta     = 1'b0;
       tl_abort_q  <= 1'b0;
-      if ((cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop)) begin
-        // Hold the last 4 bytes until EOP. They may still be LCRC.
-        // Evaluate from registered cap_len_q (beats already written to RAM)
-        // so cut-through launch stays off the beat_i.keep popcount path.
-        frame_vis_c = (cap_len_q > 13'd4) ? (cap_len_q - 13'd4) : 13'd0;
-        pld_vis_c   = (cap_len_q > 13'd6) ? 14'(cap_len_q - 13'd6) : 14'd0;
-      end
       launch_live = (cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop) && !play_open_q &&
-                    (play_st_q == PLAY_IDLE) && (pld_vis_c >= 14'(OUT_B)) &&
+                    (play_st_q == PLAY_IDLE) && (cap_pld_q >= 14'(OUT_B)) &&
                     !bank_ready_q[0] && !bank_ready_q[1];
       emitted  = 1'b0;
       ack0     = ack_slot_q[0];
@@ -378,12 +386,22 @@ module rivet_dll_tlp_rx16 #(
             crc_p1_sop_q ? 32'hFFFF_FFFF : cap_crc_q, crc_p1_n_q) ^ crc_p1_d_q;
       end
 
-      // Stage 1 of pipelined LCRC-32: compute data-only CRC from registered beat.
+      // Stage 1 of pipelined LCRC-32: combine pre-folded 8B block CRCs + tail.
       crc_p1_v_q <= crc_p0_v_q;
       if (crc_p0_v_q) begin
+        automatic logic [31:0] df_p1;
+        case (crc_p0_n_q[5:3])
+          3'd1:    df_p1 = crc_p0_d0_q;
+          3'd2:    df_p1 = rivet_crc32_z8(crc_p0_d0_q) ^ crc_p0_d1_q;
+          3'd3:    df_p1 = rivet_crc32_z16(crc_p0_d0_q) ^ rivet_crc32_z8(crc_p0_d1_q) ^ crc_p0_d2_q;
+          3'd4:    df_p1 = rivet_crc32_z24(crc_p0_d0_q) ^ rivet_crc32_z16(crc_p0_d1_q) ^
+                           rivet_crc32_z8(crc_p0_d2_q) ^ crc_p0_d3_q;
+          default: df_p1 = 32'h0;
+        endcase
         crc_p1_sop_q <= crc_p0_sop_q;
         crc_p1_n_q   <= crc_p0_n_q;
-        crc_p1_d_q   <= rivet_crc32_data32(crc_p0_data_q, crc_p0_n_q);
+        crc_p1_d_q   <= rivet_crc32_z_tail(df_p1, crc_p0_n_q[2:0]) ^
+                        rivet_crc32_d_tail(crc_p0_tail_w_q, crc_p0_n_q[2:0]);
       end
 
       begin
@@ -404,10 +422,21 @@ module rivet_dll_tlp_rx16 #(
           $error("rivet_dll_tlp_rx16: keep %04h is not a low prefix of %0d bytes",
                  beat_i.keep, nbytes);
 `endif
-        cap_len_q     <= len_next;
-        crc_p0_sop_q  <= beat_i.sop;
-        crc_p0_n_q    <= nbytes[5:0];
-        crc_p0_data_q <= beat_i.data[255:0];
+        cap_len_q       <= len_next;
+        cap_frame_vis_q <= (len_next > 13'd4) ? (len_next - 13'd4) : 13'd0;
+        cap_pld_q       <= (len_next > 13'd6) ? 14'(len_next - 13'd6) : 14'd0;
+        crc_p0_sop_q    <= beat_i.sop;
+        crc_p0_n_q      <= nbytes[5:0];
+        crc_p0_d0_q     <= rivet_crc32_d8(beat_i.data[63:0]);
+        crc_p0_d1_q     <= rivet_crc32_d8(beat_i.data[127:64]);
+        crc_p0_d2_q     <= rivet_crc32_d8(beat_i.data[191:128]);
+        crc_p0_d3_q     <= rivet_crc32_d8(beat_i.data[255:192]);
+        case (nbytes[4:3])
+          2'd0:    crc_p0_tail_w_q <= beat_i.data[63:0];
+          2'd1:    crc_p0_tail_w_q <= beat_i.data[127:64];
+          2'd2:    crc_p0_tail_w_q <= beat_i.data[191:128];
+          default: crc_p0_tail_w_q <= beat_i.data[255:192];
+        endcase
         wr_idx_q      <= beat_i.sop
                            ? IDX_W'(nwords)
                            : (wr_idx_q + IDX_W'(nwords));
@@ -439,17 +468,19 @@ module rivet_dll_tlp_rx16 #(
           seq_ok   = (cap_seq_q == expect_q);
           seq_delta = expect_q - cap_seq_q;
           seq_dup  = lcrc_ok && !seq_ok && (seq_delta != 12'd0) && (seq_delta <= 12'd32);
-          pld_len  = (int'(cap_len_q) >= MIN_FR) ? 14'(int'(cap_len_q) - MIN_FR) : 14'd0;
+          pld_len  = cap_pld_q;
 `ifndef SYNTHESIS
           $display("[%t] : TLP RX eop len=%0d seq=%03h expect=%03h crc=%08h ok=%0b seq_ok=%0b dup=%0b",
                    $realtime, int'(cap_len_q), cap_seq_q, expect_q, cap_crc_q,
                    lcrc_ok, seq_ok, seq_dup);
 `endif
-          cap_ovf_q <= 1'b0;
-          cap_len_q <= '0;
-          cap_crc_q <= 32'hFFFF_FFFF;
-          wr_idx_q  <= '0;
-          ack_new   = '0;
+          cap_ovf_q       <= 1'b0;
+          cap_len_q       <= '0;
+          cap_frame_vis_q <= '0;
+          cap_pld_q       <= '0;
+          cap_crc_q       <= 32'hFFFF_FFFF;
+          wr_idx_q        <= '0;
+          ack_new          = '0;
           if (lcrc_ok && seq_ok) begin
             last_good_q    <= cap_seq_q;
             expect_q       <= cap_seq_q + 12'd1;
@@ -459,8 +490,8 @@ module rivet_dll_tlp_rx16 #(
               // Bytes are already moving. Releasing the held tail is enough.
               // cap_bank already moved off this frame at EOP.
               close_live = 1'b1;
-              if (pld_len > pld_seen_q)
-                pld_delta = pld_len - pld_seen_q;
+              if (pld_delta_gt)
+                add_delta = 1'b1;
             end else if (pld_len != 14'd0) begin
               bank_len_q[cap_bank_q]   <= cap_len_q;
               bank_seq_q[cap_bank_q]   <= cap_seq_q;
@@ -598,17 +629,17 @@ module rivet_dll_tlp_rx16 #(
       end
 
       if (play_open_q && (cap_st_q == CAP_RUN) && !(take_beat && beat_i.eop) &&
-          !launch_live && (pld_vis_c > pld_seen_q)) begin
-        pld_delta   = pld_vis_c - pld_seen_q;
-        pld_seen_q  <= pld_vis_c;
+          !launch_live && pld_delta_gt) begin
+        add_delta   = 1'b1;
+        pld_seen_q  <= cap_pld_q;
         play_len_q  <= frame_vis_c;
       end
-      if ((pld_delta != 14'd0) &&
+      if (add_delta &&
           ((play_st_q == PLAY_RUN) || (play_st_q == PLAY_PREP)))
-        pld_left_q <= (play_consume ? (pld_left_q - 14'(take_n)) : pld_left_q) + pld_delta;
+        pld_left_q <= (play_consume ? left_after_c : pld_left_q) + pld_delta_raw;
       if (close_live) begin
         play_open_q <= 1'b0;
-        pld_seen_q  <= pld_seen_q + pld_delta;
+        pld_seen_q  <= pld_delta_gt ? cap_pld_q : pld_seen_q;
         play_len_q  <= cap_len_q;
       end
       if (abort_live) begin

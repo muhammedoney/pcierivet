@@ -239,12 +239,28 @@ module rivet_mac_os_tx #(
   logic [63:0]            tlp_ram_wdata, tlp_ram_wdata2, tlp_ram_wdata3, tlp_ram_wdata4;
   logic [TLP_AW-1:0]      tlp_waddr_a [4];
   logic [63:0]            tlp_wdata_a [4];
-  logic [TLP_AW-1:0]      tlp_raddr_a [4];
+  (* max_fanout = 16 *) logic [TLP_AW-3:0] tlp_ridx_q [4];
   logic [63:0]            tlp_rdata_a [4];
   logic [63:0]            tlp_ram_rdata;
   logic [63:0]            tlp_ram_rdata_b;
   logic [63:0]            tlp_ram_rdata_c;
   logic [63:0]            tlp_ram_rdata_d;
+
+  // 2-entry decoded input skid stage: pre-computes keep popcount, masked data,
+  // wide/quad flags, and Gen3 frame length so dll_tx_beat_i never feeds
+  // emit_buf_q, tlp_em_done_q, or the distributed TLP RAM directly.
+  logic [1:0]             in_v_q;
+  logic [1:0]             in_dllp_ok_q;
+  logic [1:0]             in_tlp_ok_q;
+  logic [1:0]             in_sop_q;
+  logic [1:0]             in_eop_q;
+  logic [1:0]             in_quad_q;
+  logic [1:0]             in_wide_q;
+  logic [7:0]             in_nbytes_q [2];
+  logic [15:0]            in_frm_len_q [2];
+  logic [255:0]           in_data_q [2];
+  logic                   in_push;
+  logic                   in_pop;
 
   // 64-byte window. Gen3 reads two RAM words. Gen4 reads four so a
   // 32-byte stride can refill in the same cycle it is consumed.
@@ -252,7 +268,8 @@ module rivet_mac_os_tx #(
   logic [511:0]           emit_buf_q, emit_buf_d;
   logic [6:0]             emit_cnt_q, emit_cnt_d;
   logic [TLP_AW-1:0]      tlp_wr_slot_q, tlp_wr_slot_d;
-  logic [TLP_AW-1:0]      tlp_rd_slot_q, tlp_rd_slot_d;
+  (* max_fanout = 32 *) logic [TLP_AW-1:0] tlp_rd_slot_q;
+  logic [TLP_AW-1:0]      tlp_rd_slot_d;
   logic [15:0]            tlp_len_q, tlp_len_d;
   // Gen3 STP length, known from the TLP header in the first DLL beat.
   logic [15:0]            frame_len_q, frame_len_d;
@@ -301,10 +318,6 @@ module rivet_mac_os_tx #(
 
   assign tlp_waddr_a = '{tlp_ram_waddr, tlp_ram_waddr2, tlp_ram_waddr3, tlp_ram_waddr4};
   assign tlp_wdata_a = '{tlp_ram_wdata, tlp_ram_wdata2, tlp_ram_wdata3, tlp_ram_wdata4};
-  assign tlp_raddr_a[0] = tlp_rd_slot_q;
-  assign tlp_raddr_a[1] = tlp_rd_slot_q + TLP_AW'(1);
-  assign tlp_raddr_a[2] = tlp_rd_slot_q + TLP_AW'(2);
-  assign tlp_raddr_a[3] = tlp_rd_slot_q + TLP_AW'(3);
   assign tlp_ram_rdata   = tlp_rdata_a[0];
   assign tlp_ram_rdata_b = tlp_rdata_a[1];
   assign tlp_ram_rdata_c = tlp_rdata_a[2];
@@ -313,12 +326,13 @@ module rivet_mac_os_tx #(
   rivet_ram_lane4_comb #(
     .DEPTH(TLP_RAM_DEPTH)
   ) u_tlp_ram (
-    .clk_i   (pclk_i),
-    .we_i    ({tlp_ram_we4, tlp_ram_we3, tlp_ram_we2, tlp_ram_we}),
-    .waddr_i (tlp_waddr_a),
-    .wdata_i (tlp_wdata_a),
-    .raddr_i (tlp_raddr_a),
-    .rdata_o (tlp_rdata_a)
+    .clk_i    (pclk_i),
+    .we_i     ({tlp_ram_we4, tlp_ram_we3, tlp_ram_we2, tlp_ram_we}),
+    .waddr_i  (tlp_waddr_a),
+    .wdata_i  (tlp_wdata_a),
+    .ridx_i   (tlp_ridx_q),
+    .rbank0_i (tlp_rd_slot_q[1:0]),
+    .rdata_o  (tlp_rdata_a)
   );
 
   assign at_boundary  = (ptr_q == 5'd0) && (mode_q == ST_OS);
@@ -340,14 +354,9 @@ module rivet_mac_os_tx #(
   assign ptr_next     = set_done ? 5'd0 : (ptr_q + os_step);
 
   // A DLLP is one 8-byte beat. A TLP may use the high half at Gen3.
-  assign dllp_ok = dll_tx_valid_i &&
-                   (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_DLLP) &&
-                   dll_tx_beat_i.sop && dll_tx_beat_i.eop &&
-                   (dll_tx_beat_i.keep[7:0] == 8'hFF) &&
-                   (dll_tx_beat_i.keep[31:8] == 24'h0);
-  assign tlp_ok = dll_tx_valid_i &&
-                  (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_TLP) &&
-                  (dll_tx_beat_i.keep != 32'h0);
+  // Decoded from the registered head of the 2-entry input skid buffer.
+  assign dllp_ok = in_v_q[0] && in_dllp_ok_q[0];
+  assign tlp_ok  = in_v_q[0] && in_tlp_ok_q[0];
 
   // Insert DLLP only between Idle OS boundaries while packet-enabled (SKP first).
   // Gen3 uses the same beat stream inside a 128b/130b data block. The token
@@ -358,11 +367,13 @@ module rivet_mac_os_tx #(
                      ((gen3_pkt) && tlp_follow_q);
   assign want_pkt = pkt_rate_ok && l0_idle_ok_q && at_boundary && !want_skp && dllp_ok;
   assign want_tlp = tlp_rate_ok && l0_idle_ok_q && at_boundary && !want_skp &&
-                    tlp_ok && dll_tx_beat_i.sop && !dllp_ok;
+                    tlp_ok && in_sop_q[0] && !dllp_ok;
   assign take_dllp      = want_pkt;
   assign take_tlp_start = want_tlp;
   assign take_tlp_col   = (mode_q == ST_TLP_COL) && tlp_ok;
-  assign dll_tx_ready_o = take_dllp || take_tlp_start || take_tlp_col;
+  assign in_pop         = take_dllp || take_tlp_start || take_tlp_col;
+  assign dll_tx_ready_o = !in_v_q[1];
+  assign in_push        = dll_tx_valid_i && !in_v_q[1];
 
   always_comb begin
     int unsigned step_i;
@@ -393,7 +404,7 @@ module rivet_mac_os_tx #(
                          tlp_flow_q;
   assign skp_finishing =
       (mode_q == ST_OS) && !in_pkt_emit && set_done && (cur == RIVET_MAC_OS_SKP);
-  assign beat_n_c      = keep_nbytes(dll_tx_beat_i.keep);
+  assign beat_n_c      = in_nbytes_q[0];
 
   always_comb begin
     logic [255:0] masked_beat;
@@ -407,9 +418,6 @@ module rivet_mac_os_tx #(
     logic [255:0] add_data;
     logic         wide_beat;
     logic         quad_beat;
-    logic [7:0]   frm_b0;
-    logic [9:0]   frm_ldw;
-    logic [15:0]  frm_hbytes, frm_pbytes;
 
     tlp_ram_we     = 1'b0;
     tlp_ram_we2    = 1'b0;
@@ -422,13 +430,9 @@ module rivet_mac_os_tx #(
     tlp_ram_wdata2 = '0;
     tlp_ram_wdata3 = '0;
     tlp_ram_wdata4 = '0;
-    masked_beat    = '0;
-    for (int unsigned i = 0; i < 32; i++) begin
-      if (dll_tx_beat_i.keep[i])
-        masked_beat[8*i +: 8] = dll_tx_beat_i.data[8*i +: 8];
-    end
-    masked_lo     = masked_beat[63:0];
-    tlp_ram_wdata = masked_lo;
+    masked_beat    = in_data_q[0];
+    masked_lo      = masked_beat[63:0];
+    tlp_ram_wdata  = masked_lo;
 
     emit_buf_d    = emit_buf_q;
     emit_cnt_d    = emit_cnt_q;
@@ -436,13 +440,9 @@ module rivet_mac_os_tx #(
     tlp_rd_slot_d = tlp_rd_slot_q;
     tlp_len_d     = tlp_len_q;
     frame_len_d   = frame_len_q;
-    beat_n        = beat_n_c;
-    quad_beat     = beat_n > 8'd16;
-    wide_beat     = (beat_n > 8'd8) && !quad_beat;
-    frm_b0        = '0;
-    frm_ldw       = '0;
-    frm_hbytes    = '0;
-    frm_pbytes    = '0;
+    beat_n        = in_nbytes_q[0];
+    quad_beat     = in_quad_q[0];
+    wide_beat     = in_wide_q[0];
     shifted       = emit_buf_q[127:0];
     base_buf      = emit_buf_q;
     base_cnt      = emit_cnt_q;
@@ -482,18 +482,8 @@ module rivet_mac_os_tx #(
         tlp_wr_slot_d = TLP_AW'(1);
         tlp_rd_slot_d = TLP_AW'(1);
       end
-      // STP length is the DLL frame: seq + TLP + LCRC. The header is in
-      // this first beat, after the two sequence bytes.
-      if ((gen3_pkt) && (beat_n >= 8'd6)) begin
-        frm_b0     = masked_beat[23:16];
-        frm_ldw    = {masked_beat[33:32], masked_beat[47:40]};
-        frm_hbytes = frm_b0[5] ? 16'd16 : 16'd12;
-        frm_pbytes = frm_b0[6] ? (((frm_ldw == 10'd0) ? 16'd1024 : {6'd0, frm_ldw}) * 16'd4)
-                               : 16'd0;
-        frame_len_d = 16'd6 + frm_hbytes + frm_pbytes;
-      end else begin
-        frame_len_d = '0;
-      end
+      // STP length is pre-decoded on input skid push.
+      frame_len_d = gen3_pkt ? in_frm_len_q[0] : 16'd0;
     end else if (take_tlp_col) begin
       tlp_len_d = tlp_len_q + 16'(beat_n);
       if (quad_beat) begin
@@ -523,10 +513,10 @@ module rivet_mac_os_tx #(
         if (!gen3_pkt) begin
           if (tlp_wr_slot_q == TLP_AW'(1))
             emit_buf_d[127:64] = masked_lo;
-          if (dll_tx_beat_i.eop && !tlp_flow_q) begin
+          if (in_eop_q[0] && !tlp_flow_q) begin
             emit_cnt_d    = 7'd16;
             tlp_rd_slot_d = TLP_AW'(2);
-          end else if ((tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop) begin
+          end else if ((tlp_wr_slot_q == TLP_AW'(1)) && !in_eop_q[0]) begin
             // 16-byte head is full and more beats follow. Emit starts next cycle.
             emit_cnt_d    = 7'd16;
             tlp_rd_slot_d = TLP_AW'(2);
@@ -649,7 +639,7 @@ module rivet_mac_os_tx #(
         tlp_closed_d = 1'b0;
         tlp_rem_d    = 16'd0;
         if (take_dllp) begin
-          pkt_d = dll_tx_beat_i.data;
+          pkt_d = in_data_q[0][63:0];
           // First cycle already emits symbols 0..sym_step-1.
           if (sym_step >= RIVET_DLLP_FRAMED_LEN) begin
             mode_d    = ST_OS;
@@ -664,9 +654,9 @@ module rivet_mac_os_tx #(
           tlp_pos_d    = '0;
           tlp_rem_d    = {8'd0, beat_n_c} + (gen3_pkt ? 16'd3 : 16'd2);
           pkt_ptr_d    = '0;
-          tlp_closed_d = dll_tx_beat_i.eop;
-          mode_d       = dll_tx_beat_i.eop ? ST_TLP_EM : ST_TLP_COL;
-          if ((gen3_pkt) && !dll_tx_beat_i.eop)
+          tlp_closed_d = in_eop_q[0];
+          mode_d       = in_eop_q[0] ? ST_TLP_EM : ST_TLP_COL;
+          if ((gen3_pkt) && !in_eop_q[0])
             tlp_flow_d = 1'b1;
         end
       end
@@ -680,10 +670,10 @@ module rivet_mac_os_tx #(
       end
       ST_TLP_COL: begin
         // Gen3 waits for EOP so the dump never inserts idle inside the length.
-        if (take_tlp_col && (tlp_wr_slot_q == TLP_AW'(1)) && !dll_tx_beat_i.eop &&
+        if (take_tlp_col && (tlp_wr_slot_q == TLP_AW'(1)) && !in_eop_q[0] &&
             !gen3_pkt)
           tlp_flow_d = 1'b1;
-        if (take_tlp_col && dll_tx_beat_i.eop) begin
+        if (take_tlp_col && in_eop_q[0]) begin
           mode_d       = ST_TLP_EM;
           tlp_closed_d = 1'b1;
           if (!tlp_flow_q) begin
@@ -773,7 +763,7 @@ module rivet_mac_os_tx #(
       end
     end
 
-    dllp_src = take_dllp ? dll_tx_beat_i.data : pkt_q;
+    dllp_src = take_dllp ? in_data_q[0][63:0] : pkt_q;
     pkt_base = take_dllp ? 7'd0 : pkt_ptr_q[6:0];
 
     if (take_dllp || (mode_q == ST_PKT)) begin
@@ -871,6 +861,21 @@ module rivet_mac_os_tx #(
       emit_cnt_q      <= '0;
       tlp_wr_slot_q   <= '0;
       tlp_rd_slot_q   <= '0;
+      for (int unsigned b = 0; b < 4; b++)
+        tlp_ridx_q[b] <= '0;
+      in_v_q          <= 2'b00;
+      in_dllp_ok_q    <= 2'b00;
+      in_tlp_ok_q     <= 2'b00;
+      in_sop_q        <= 2'b00;
+      in_eop_q        <= 2'b00;
+      in_quad_q       <= 2'b00;
+      in_wide_q       <= 2'b00;
+      in_nbytes_q[0]  <= '0;
+      in_nbytes_q[1]  <= '0;
+      in_frm_len_q[0] <= '0;
+      in_frm_len_q[1] <= '0;
+      in_data_q[0]    <= '0;
+      in_data_q[1]    <= '0;
       tlp_ram_occ_q   <= '0;
       tlp_len_q       <= '0;
       frame_len_q     <= '0;
@@ -910,7 +915,115 @@ module rivet_mac_os_tx #(
       emit_cnt_q      <= emit_cnt_d;
       tlp_wr_slot_q   <= tlp_wr_slot_d;
       tlp_rd_slot_q   <= tlp_rd_slot_d;
+      for (int unsigned b = 0; b < 4; b++) begin
+        tlp_ridx_q[b] <= tlp_rd_slot_d[TLP_AW-1:2] +
+                         ((2'(b) < tlp_rd_slot_d[1:0]) ? (TLP_AW-2)'(1) : (TLP_AW-2)'(0));
+      end
       tlp_ram_occ_q   <= tlp_wr_slot_d - tlp_rd_slot_d;
+
+      // 2-entry decoded input skid update.
+      begin
+        automatic logic [7:0]   p_nb = keep_nbytes(dll_tx_beat_i.keep);
+        automatic logic         p_dllp_ok = (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_DLLP) &&
+                                            dll_tx_beat_i.sop && dll_tx_beat_i.eop &&
+                                            (dll_tx_beat_i.keep[7:0] == 8'hFF) &&
+                                            (dll_tx_beat_i.keep[31:8] == 24'h0);
+        automatic logic         p_tlp_ok  = (dll_tx_beat_i.pkt_type == RIVET_MAC_PKT_TLP) &&
+                                            (dll_tx_beat_i.keep != 32'h0);
+        automatic logic         p_quad = (p_nb > 8'd16);
+        automatic logic         p_wide = (p_nb > 8'd8) && !p_quad;
+        automatic logic [255:0] p_data = '0;
+        automatic logic [7:0]   p_b0;
+        automatic logic [9:0]   p_ldw;
+        automatic logic [15:0]  p_hbytes, p_pbytes, p_frm_len;
+        for (int unsigned i = 0; i < 32; i++) begin
+          if (dll_tx_beat_i.keep[i])
+            p_data[8*i +: 8] = dll_tx_beat_i.data[8*i +: 8];
+        end
+        p_b0      = p_data[23:16];
+        p_ldw     = {p_data[33:32], p_data[47:40]};
+        p_hbytes  = p_b0[5] ? 16'd16 : 16'd12;
+        p_pbytes  = p_b0[6] ? (((p_ldw == 10'd0) ? 16'd1024 : {6'd0, p_ldw}) * 16'd4) : 16'd0;
+        p_frm_len = (p_nb >= 8'd6) ? (16'd6 + p_hbytes + p_pbytes) : 16'd0;
+
+        case ({in_push, in_pop})
+          2'b01: begin
+            in_v_q[0]       <= in_v_q[1];
+            in_dllp_ok_q[0] <= in_dllp_ok_q[1];
+            in_tlp_ok_q[0]  <= in_tlp_ok_q[1];
+            in_sop_q[0]     <= in_sop_q[1];
+            in_eop_q[0]     <= in_eop_q[1];
+            in_quad_q[0]    <= in_quad_q[1];
+            in_wide_q[0]    <= in_wide_q[1];
+            in_nbytes_q[0]  <= in_nbytes_q[1];
+            in_frm_len_q[0] <= in_frm_len_q[1];
+            in_data_q[0]    <= in_data_q[1];
+            in_v_q[1]       <= 1'b0;
+          end
+          2'b10: begin
+            if (!in_v_q[0]) begin
+              in_v_q[0]       <= 1'b1;
+              in_dllp_ok_q[0] <= p_dllp_ok;
+              in_tlp_ok_q[0]  <= p_tlp_ok;
+              in_sop_q[0]     <= dll_tx_beat_i.sop;
+              in_eop_q[0]     <= dll_tx_beat_i.eop;
+              in_quad_q[0]    <= p_quad;
+              in_wide_q[0]    <= p_wide;
+              in_nbytes_q[0]  <= p_nb;
+              in_frm_len_q[0] <= p_frm_len;
+              in_data_q[0]    <= p_data;
+            end else begin
+              in_v_q[1]       <= 1'b1;
+              in_dllp_ok_q[1] <= p_dllp_ok;
+              in_tlp_ok_q[1]  <= p_tlp_ok;
+              in_sop_q[1]     <= dll_tx_beat_i.sop;
+              in_eop_q[1]     <= dll_tx_beat_i.eop;
+              in_quad_q[1]    <= p_quad;
+              in_wide_q[1]    <= p_wide;
+              in_nbytes_q[1]  <= p_nb;
+              in_frm_len_q[1] <= p_frm_len;
+              in_data_q[1]    <= p_data;
+            end
+          end
+          2'b11: begin
+            if (in_v_q[1]) begin
+              in_v_q[0]       <= 1'b1;
+              in_dllp_ok_q[0] <= in_dllp_ok_q[1];
+              in_tlp_ok_q[0]  <= in_tlp_ok_q[1];
+              in_sop_q[0]     <= in_sop_q[1];
+              in_eop_q[0]     <= in_eop_q[1];
+              in_quad_q[0]    <= in_quad_q[1];
+              in_wide_q[0]    <= in_wide_q[1];
+              in_nbytes_q[0]  <= in_nbytes_q[1];
+              in_frm_len_q[0] <= in_frm_len_q[1];
+              in_data_q[0]    <= in_data_q[1];
+              in_v_q[1]       <= 1'b1;
+              in_dllp_ok_q[1] <= p_dllp_ok;
+              in_tlp_ok_q[1]  <= p_tlp_ok;
+              in_sop_q[1]     <= dll_tx_beat_i.sop;
+              in_eop_q[1]     <= dll_tx_beat_i.eop;
+              in_quad_q[1]    <= p_quad;
+              in_wide_q[1]    <= p_wide;
+              in_nbytes_q[1]  <= p_nb;
+              in_frm_len_q[1] <= p_frm_len;
+              in_data_q[1]    <= p_data;
+            end else begin
+              in_v_q[0]       <= 1'b1;
+              in_dllp_ok_q[0] <= p_dllp_ok;
+              in_tlp_ok_q[0]  <= p_tlp_ok;
+              in_sop_q[0]     <= dll_tx_beat_i.sop;
+              in_eop_q[0]     <= dll_tx_beat_i.eop;
+              in_quad_q[0]    <= p_quad;
+              in_wide_q[0]    <= p_wide;
+              in_nbytes_q[0]  <= p_nb;
+              in_frm_len_q[0] <= p_frm_len;
+              in_data_q[0]    <= p_data;
+              in_v_q[1]       <= 1'b0;
+            end
+          end
+          default: ;
+        endcase
+      end
       tlp_len_q       <= tlp_len_d;
       frame_len_q     <= frame_len_d;
       tlp_pos_q       <= tlp_pos_d;
@@ -1005,7 +1118,8 @@ module rivet_ram_lane4_comb #(
   input  logic [3:0]               we_i,
   input  logic [$clog2(DEPTH)-1:0] waddr_i [4],
   input  logic [63:0]              wdata_i [4],
-  input  logic [$clog2(DEPTH)-1:0] raddr_i [4],
+  input  logic [$clog2(DEPTH)-3:0] ridx_i [4],
+  input  logic [1:0]               rbank0_i,
   output logic [63:0]              rdata_o [4]
 );
   localparam int unsigned AW     = $clog2(DEPTH);
@@ -1017,7 +1131,7 @@ module rivet_ram_lane4_comb #(
     for (genvar b = 0; b < 4; b++) begin : g_bank
       (* ram_style = "distributed" *) logic [63:0] mem [0:BANK_N-1];
       logic              we;
-      logic [AW-3:0]     widx, ridx;
+      logic [AW-3:0]     widx;
       logic [63:0]       wdat;
 
 `ifndef SYNTHESIS
@@ -1031,7 +1145,6 @@ module rivet_ram_lane4_comb #(
         we   = 1'b0;
         widx = '0;
         wdat = '0;
-        ridx = '0;
         unique case (waddr_i[0][1:0])
           b[1:0]: begin
             we   = we_i[0];
@@ -1054,12 +1167,6 @@ module rivet_ram_lane4_comb #(
             wdat = wdata_i[3];
           end
         endcase
-        unique case (raddr_i[0][1:0])
-          b[1:0]:          ridx = raddr_i[0][AW-1:2];
-          (b[1:0] - 2'd1): ridx = raddr_i[1][AW-1:2];
-          (b[1:0] - 2'd2): ridx = raddr_i[2][AW-1:2];
-          default:         ridx = raddr_i[3][AW-1:2];
-        endcase
       end
 
       always_ff @(posedge clk_i) begin
@@ -1067,14 +1174,36 @@ module rivet_ram_lane4_comb #(
           mem[widx] <= wdat;
       end
 
-      assign dout_b[b] = mem[ridx];
+      assign dout_b[b] = mem[ridx_i[b]];
     end
   endgenerate
 
   always_comb begin
-    rdata_o[0] = dout_b[raddr_i[0][1:0]];
-    rdata_o[1] = dout_b[raddr_i[1][1:0]];
-    rdata_o[2] = dout_b[raddr_i[2][1:0]];
-    rdata_o[3] = dout_b[raddr_i[3][1:0]];
+    unique case (rbank0_i)
+      2'd0: begin
+        rdata_o[0] = dout_b[0];
+        rdata_o[1] = dout_b[1];
+        rdata_o[2] = dout_b[2];
+        rdata_o[3] = dout_b[3];
+      end
+      2'd1: begin
+        rdata_o[0] = dout_b[1];
+        rdata_o[1] = dout_b[2];
+        rdata_o[2] = dout_b[3];
+        rdata_o[3] = dout_b[0];
+      end
+      2'd2: begin
+        rdata_o[0] = dout_b[2];
+        rdata_o[1] = dout_b[3];
+        rdata_o[2] = dout_b[0];
+        rdata_o[3] = dout_b[1];
+      end
+      default: begin
+        rdata_o[0] = dout_b[3];
+        rdata_o[1] = dout_b[0];
+        rdata_o[2] = dout_b[1];
+        rdata_o[3] = dout_b[2];
+      end
+    endcase
   end
 endmodule : rivet_ram_lane4_comb

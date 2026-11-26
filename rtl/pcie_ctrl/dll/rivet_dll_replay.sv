@@ -73,8 +73,8 @@ module rivet_dll_replay #(
   localparam int unsigned RAM_AW = $clog2(RAM_WORDS);
   logic [RAM_AW-1:0] word_waddr [4];
   logic [RAM_AW-1:0] word_raddr [4];
-  logic [3:0]        wr_we_q;
-  logic [RAM_AW-1:0] wr_waddr_q [4];
+  (* max_fanout = 8 *) logic [3:0]        wr_we_q;
+  (* max_fanout = 8 *) logic [RAM_AW-1:0] wr_waddr_q [4];
   logic [63:0]       wr_wdata_q [4];
 
   logic [11:0]      ack_seq_eff;

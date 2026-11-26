@@ -1098,6 +1098,7 @@ module rivet_mac_os_rx #(
   logic                    live_closed_q, live_closed_d;
   logic [12:0]             live_len_q, live_len_d;
   logic [12:0]             live_sent_q, live_sent_d;
+  logic [12:0]             live_rem_q;
   logic [TLP_AW-1:0]       live_base_q, live_base_d;
   // A finished DLLP waits here when the beat slot is busy. Framing stays in
   // IDLE/RX_TLP so the next TLP is not dropped while the DLLP waits.
@@ -1790,7 +1791,7 @@ module rivet_mac_os_rx #(
       end else if (live_q && !live_words_ready(rd_addr_q, tlp_wr_slot_q,
                                               live_base_q, live_closed_q,
                                               live_len_q)) begin
-        if (live_closed_q && (live_sent_q >= live_len_q)) begin
+        if (live_closed_q && (live_rem_q == 13'd0)) begin
           live_d        = 1'b0;
           live_closed_d = 1'b0;
           live_sent_d   = '0;
@@ -1817,9 +1818,7 @@ module rivet_mac_os_rx #(
         live_sent_d           = '0;
         rd_ph_d               = 2'd0;
       end else begin
-        live_rem_b = 13'(RX_PLAY_B);
-        if (live_closed_q)
-          live_rem_b = (live_len_q > live_sent_q) ? (live_len_q - live_sent_q) : 13'd0;
+        live_rem_b = live_closed_q ? live_rem_q : 13'(RX_PLAY_B);
         if (live_rem_b != 13'd0) begin
           live_n = (live_rem_b >= 13'(RX_PLAY_B)) ? 6'(RX_PLAY_B) : live_rem_b[5:0];
           live_fin = live_closed_q && (live_rem_b <= 13'(live_n));
@@ -1952,6 +1951,7 @@ module rivet_mac_os_rx #(
       live_closed_q    <= 1'b0;
       live_len_q       <= '0;
       live_sent_q      <= '0;
+      live_rem_q       <= '0;
       live_base_q      <= '0;
       dllp_park_q      <= 1'b0;
       dllp_park_data_q <= '0;
@@ -1991,6 +1991,7 @@ module rivet_mac_os_rx #(
       live_closed_q    <= live_closed_d;
       live_len_q       <= live_len_d;
       live_sent_q      <= live_sent_d;
+      live_rem_q       <= (live_len_d > live_sent_d) ? (live_len_d - live_sent_d) : 13'd0;
       live_base_q      <= live_base_d;
       dllp_park_q      <= dllp_park_d;
       dllp_park_data_q <= dllp_park_data_d;
@@ -2101,6 +2102,13 @@ module rivet_mac_gf_scan_meta #(
     logic [31:0] stp_hi_z_at;
     logic [31:0] dllp_fin_at;
     logic [5:0]  end1_at [0:31];
+    logic [15:0] left_step2_at [0:31];
+    logic [31:0] left_hi_z_step2_at;
+    logic [2:0]  st_step2_at [0:31];
+    logic [1:0]  s2_drops_at [0:31];
+    logic [31:0] end_pos1_v_at;
+    logic [31:0] dllp_end1_v_at;
+    logic [5:0]  dllp_end1_at [0:31];
 
     // Step 1: resolve any open packet carried in (st_i, left_i).
     logic        open_fin;
@@ -2131,14 +2139,58 @@ module rivet_mac_gf_scan_meta #(
       data_b[i] = (i < NSYM) ? data_i[8*i +: 8] : 8'h00;
 
     for (int unsigned d = 0; d < 32; d++) begin
-      automatic logic [5:0] rem_d = (cnt_i > (6'(d) + 6'd1)) ? (cnt_i - 6'd1 - 6'(d)) : 6'd0;
-      automatic logic [5:0] rp_d  = (rem_d >= 6'd2) ? (rem_d - 6'd2) : 6'd0;
-      automatic logic       bor_d = (data_b[d + 1][5:0] < rp_d);
-      stp_fin_at[d]  = (rem_d >= 6'd2) && l_hi_z_i[d] &&
-                       ({1'b0, data_b[d + 1][4:0]} < rp_d);
-      stp_hi_z_at[d] = (l_hi6_z_i[d] && !bor_d) || (l_hi6_1_i[d] && bor_d);
-      end1_at[d]     = 6'(d) + 6'd3 + {1'b0, data_b[d + 1][4:0]};
-      dllp_fin_at[d] = (rem_d > 6'(DLLP_BYTES));
+      automatic logic [5:0]  rem_d = (cnt_i > (6'(d) + 6'd1)) ? (cnt_i - 6'd1 - 6'(d)) : 6'd0;
+      automatic logic [5:0]  rp_d  = (rem_d >= 6'd2) ? (rem_d - 6'd2) : 6'd0;
+      automatic logic [5:0]  lo_d  = data_b[d + 1][5:0] - rp_d;
+      automatic logic        bor_d = (data_b[d + 1][5:0] < rp_d);
+      automatic logic [9:0]  hi_d  = {data_b[d + 2], data_b[d + 1][7:6]};
+      automatic logic [15:0] stp_l_d  = {hi_d - {9'd0, bor_d}, lo_d};
+      automatic logic [15:0] dllp_l_d = 16'(DLLP_BYTES) - 16'(rem_d);
+      stp_fin_at[d]   = (rem_d >= 6'd2) && l_hi_z_i[d] &&
+                        ({1'b0, data_b[d + 1][4:0]} < rp_d);
+      stp_hi_z_at[d]  = (l_hi6_z_i[d] && !bor_d) || (l_hi6_1_i[d] && bor_d);
+      end1_at[d]      = 6'(d) + 6'd3 + {1'b0, data_b[d + 1][4:0]};
+      dllp_fin_at[d]  = (rem_d > 6'(DLLP_BYTES));
+      dllp_end1_at[d] = 6'(d) + 6'd1 + 6'(DLLP_BYTES);
+
+      end_pos1_v_at[d]  = 1'b0;
+      dllp_end1_v_at[d] = 1'b0;
+      if (stp_w[d]) begin
+        if (rem_d == 6'd0) begin
+          s2_drops_at[d]        = 2'd0;
+          st_step2_at[d]        = 3'd1;
+          left_step2_at[d]      = 16'd0;
+          left_hi_z_step2_at[d] = 1'b1;
+        end else if (rem_d == 6'd1) begin
+          s2_drops_at[d]        = 2'd1;
+          st_step2_at[d]        = 3'd2;
+          left_step2_at[d]      = {8'd0, data_b[d + 1]};
+          left_hi_z_step2_at[d] = (data_b[d + 1][7:6] == 2'b00);
+        end else begin
+          s2_drops_at[d] = 2'd2;
+          if (stp_fin_at[d]) begin
+            end_pos1_v_at[d]      = 1'b1;
+            st_step2_at[d]        = 3'd0;
+            left_step2_at[d]      = 16'd0;
+            left_hi_z_step2_at[d] = 1'b1;
+          end else begin
+            st_step2_at[d]        = 3'd3;
+            left_step2_at[d]      = stp_l_d;
+            left_hi_z_step2_at[d] = stp_hi_z_at[d];
+          end
+        end
+      end else begin
+        s2_drops_at[d]        = 2'd0;
+        left_hi_z_step2_at[d] = 1'b1;
+        if (dllp_fin_at[d]) begin
+          dllp_end1_v_at[d] = 1'b1;
+          st_step2_at[d]    = 3'd0;
+          left_step2_at[d]  = 16'd0;
+        end else begin
+          st_step2_at[d]    = 3'd4;
+          left_step2_at[d]  = dllp_l_d;
+        end
+      end
     end
 
     left_lt_cnt = left_hi_z_i && (left_i[5:0] < cnt_i);
@@ -2261,11 +2313,11 @@ module rivet_mac_gf_scan_meta #(
     s_idx = sp[4:0];
 
     is_stp      = stp_w[s_idx];
-    rem         = (cnt_i > ({1'b0, s_idx} + 6'd1)) ? (cnt_i - 6'd1 - {1'b0, s_idx}) : 6'd0;
-    rem_pay     = (rem >= 6'd2) ? (rem - 6'd2) : 6'd0;
-    b0          = data_b[{1'b0, s_idx} + 6'd1];
-    b1          = data_b[{1'b0, s_idx} + 6'd2];
-    l_new       = {b1, b0};
+    rem         = 6'd0;
+    rem_pay     = 6'd0;
+    b0          = 8'd0;
+    b1          = 8'd0;
+    l_new       = 16'd0;
     end_pos1_v  = 1'b0;
     end_pos1    = 6'd0;
     dllp_end1_v = 1'b0;
@@ -2276,44 +2328,14 @@ module rivet_mac_gf_scan_meta #(
     left_hi_z_o = (mid_left[15:6] == 10'd0);
 
     if (open_fin && found) begin
-      if (is_stp) begin
-        if (rem == 6'd0) begin
-          s2_drops    = 2'd0;
-          st_o        = 3'd1;
-          left_o      = 16'd0;
-          left_hi_z_o = 1'b1;
-        end else if (rem == 6'd1) begin
-          s2_drops    = 2'd1;
-          st_o        = 3'd2;
-          left_o      = {8'd0, b0};
-          left_hi_z_o = (b0[7:6] == 2'b00);
-        end else begin
-          s2_drops = 2'd2;
-          if (stp_fin_at[s_idx]) begin
-            end_pos1_v  = 1'b1;
-            end_pos1    = end1_at[s_idx];
-            st_o        = 3'd0;
-            left_o      = 16'd0;
-            left_hi_z_o = 1'b1;
-          end else begin
-            st_o        = 3'd3;
-            left_o      = l_new - 16'(rem_pay);
-            left_hi_z_o = stp_hi_z_at[s_idx];
-          end
-        end
-      end else begin
-        s2_drops    = 2'd0;
-        left_hi_z_o = 1'b1;
-        if (dllp_fin_at[s_idx]) begin
-          dllp_end1_v = 1'b1;
-          dllp_end1   = {1'b0, s_idx} + 6'd1 + 6'(DLLP_BYTES);
-          st_o        = 3'd0;
-          left_o      = 16'd0;
-        end else begin
-          st_o   = 3'd4;
-          left_o = 16'(DLLP_BYTES) - 16'(rem);
-        end
-      end
+      s2_drops    = s2_drops_at[s_idx];
+      st_o        = st_step2_at[s_idx];
+      left_o      = left_step2_at[s_idx];
+      left_hi_z_o = left_hi_z_step2_at[s_idx];
+      end_pos1_v  = end_pos1_v_at[s_idx];
+      end_pos1    = end1_at[s_idx];
+      dllp_end1_v = dllp_end1_v_at[s_idx];
+      dllp_end1   = dllp_end1_at[s_idx];
     end
 
     open_fin_o    = open_fin;
