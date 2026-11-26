@@ -235,11 +235,20 @@ module rivet_mac_os_tx #(
   // for word 0 inserts idle tokens between posted writes.
   logic                   tlp_follow_q;
 
-  // Block RAM: a 4 KB frame does not belong in the old 32-deep LUTRAM.
-  (* ram_style = "block" *) logic [63:0] tlp_ram [0:TLP_RAM_N-1];
+  // Four write ports and a same-cycle read. One array becomes registers
+  // and misses 250 MHz, so the words sit in four distributed banks.
+  localparam int unsigned TLP_RAM_DEPTH = 1024;
+  // 516 slot words, padded so each bank is a power of two.
+  if ((TLP_RAM_N > TLP_RAM_DEPTH) || (TLP_AW != $clog2(TLP_RAM_DEPTH))) begin : g_tlp_ram_depth
+    initial $error("TLP RAM banks do not cover the slot");
+  end
   logic                   tlp_ram_we, tlp_ram_we2, tlp_ram_we3, tlp_ram_we4;
   logic [TLP_AW-1:0]      tlp_ram_waddr, tlp_ram_waddr2, tlp_ram_waddr3, tlp_ram_waddr4;
   logic [63:0]            tlp_ram_wdata, tlp_ram_wdata2, tlp_ram_wdata3, tlp_ram_wdata4;
+  logic [TLP_AW-1:0]      tlp_waddr_a [4];
+  logic [63:0]            tlp_wdata_a [4];
+  logic [TLP_AW-1:0]      tlp_raddr_a [4];
+  logic [63:0]            tlp_rdata_a [4];
   logic [63:0]            tlp_ram_rdata;
   logic [63:0]            tlp_ram_rdata_b;
   logic [63:0]            tlp_ram_rdata_c;
@@ -274,27 +283,27 @@ module rivet_mac_os_tx #(
   logic                             sym_valid_d, sym_valid_q;
   logic                             sym_blk_start_d, sym_blk_start_q;
 
-`ifndef SYNTHESIS
-  initial begin
-    for (int unsigned ii = 0; ii < TLP_RAM_N; ii++) tlp_ram[ii] = '0;
-  end
-`endif
+  assign tlp_waddr_a = '{tlp_ram_waddr, tlp_ram_waddr2, tlp_ram_waddr3, tlp_ram_waddr4};
+  assign tlp_wdata_a = '{tlp_ram_wdata, tlp_ram_wdata2, tlp_ram_wdata3, tlp_ram_wdata4};
+  assign tlp_raddr_a[0] = tlp_rd_slot_q;
+  assign tlp_raddr_a[1] = tlp_rd_slot_q + TLP_AW'(1);
+  assign tlp_raddr_a[2] = tlp_rd_slot_q + TLP_AW'(2);
+  assign tlp_raddr_a[3] = tlp_rd_slot_q + TLP_AW'(3);
+  assign tlp_ram_rdata   = tlp_rdata_a[0];
+  assign tlp_ram_rdata_b = tlp_rdata_a[1];
+  assign tlp_ram_rdata_c = tlp_rdata_a[2];
+  assign tlp_ram_rdata_d = tlp_rdata_a[3];
 
-  assign tlp_ram_rdata   = tlp_ram[tlp_rd_slot_q];
-  assign tlp_ram_rdata_b = tlp_ram[tlp_rd_slot_q + TLP_AW'(1)];
-  assign tlp_ram_rdata_c = tlp_ram[tlp_rd_slot_q + TLP_AW'(2)];
-  assign tlp_ram_rdata_d = tlp_ram[tlp_rd_slot_q + TLP_AW'(3)];
-
-  always_ff @(posedge pclk_i) begin
-    if (tlp_ram_we)
-      tlp_ram[tlp_ram_waddr] <= tlp_ram_wdata;
-    if (tlp_ram_we2)
-      tlp_ram[tlp_ram_waddr2] <= tlp_ram_wdata2;
-    if (tlp_ram_we3)
-      tlp_ram[tlp_ram_waddr3] <= tlp_ram_wdata3;
-    if (tlp_ram_we4)
-      tlp_ram[tlp_ram_waddr4] <= tlp_ram_wdata4;
-  end
+  rivet_ram_lane4_comb #(
+    .DEPTH(TLP_RAM_DEPTH)
+  ) u_tlp_ram (
+    .clk_i   (pclk_i),
+    .we_i    ({tlp_ram_we4, tlp_ram_we3, tlp_ram_we2, tlp_ram_we}),
+    .waddr_i (tlp_waddr_a),
+    .wdata_i (tlp_wdata_a),
+    .raddr_i (tlp_raddr_a),
+    .rdata_o (tlp_rdata_a)
+  );
 
   assign at_boundary  = (ptr_q == 5'd0) && (mode_q == ST_OS);
   assign transmitting = os_req_valid_i && (os_req_i != RIVET_MAC_OS_NONE);
@@ -914,3 +923,87 @@ module rivet_mac_os_tx #(
   assign os_sent_cnt_o   = sent_q;
 
 endmodule : rivet_mac_os_tx
+
+// Same-cycle read of four consecutive 64-bit words. DEPTH is a power of
+// two and a multiple of four, and it must cover the caller's address range.
+// Address[1:0] selects the bank, so four consecutive words never share one.
+module rivet_ram_lane4_comb #(
+  parameter int unsigned DEPTH = 1024
+) (
+  input  logic                     clk_i,
+  input  logic [3:0]               we_i,
+  input  logic [$clog2(DEPTH)-1:0] waddr_i [4],
+  input  logic [63:0]              wdata_i [4],
+  input  logic [$clog2(DEPTH)-1:0] raddr_i [4],
+  output logic [63:0]              rdata_o [4]
+);
+  localparam int unsigned AW     = $clog2(DEPTH);
+  localparam int unsigned BANK_N = DEPTH / 4;
+
+  logic [63:0] dout_b [4];
+
+  generate
+    for (genvar b = 0; b < 4; b++) begin : g_bank
+      (* ram_style = "distributed" *) logic [63:0] mem [0:BANK_N-1];
+      logic              we;
+      logic [AW-3:0]     widx, ridx;
+      logic [63:0]       wdat;
+
+`ifndef SYNTHESIS
+      initial begin
+        for (int unsigned ii = 0; ii < BANK_N; ii++)
+          mem[ii] = '0;
+      end
+`endif
+
+      always_comb begin
+        we   = 1'b0;
+        widx = '0;
+        wdat = '0;
+        ridx = '0;
+        if (we_i[0] && (waddr_i[0][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[0][AW-1:2];
+          wdat = wdata_i[0];
+        end
+        if (we_i[1] && (waddr_i[1][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[1][AW-1:2];
+          wdat = wdata_i[1];
+        end
+        if (we_i[2] && (waddr_i[2][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[2][AW-1:2];
+          wdat = wdata_i[2];
+        end
+        if (we_i[3] && (waddr_i[3][1:0] == b[1:0])) begin
+          we   = 1'b1;
+          widx = waddr_i[3][AW-1:2];
+          wdat = wdata_i[3];
+        end
+        if (raddr_i[0][1:0] == b[1:0])
+          ridx = raddr_i[0][AW-1:2];
+        if (raddr_i[1][1:0] == b[1:0])
+          ridx = raddr_i[1][AW-1:2];
+        if (raddr_i[2][1:0] == b[1:0])
+          ridx = raddr_i[2][AW-1:2];
+        if (raddr_i[3][1:0] == b[1:0])
+          ridx = raddr_i[3][AW-1:2];
+      end
+
+      always_ff @(posedge clk_i) begin
+        if (we)
+          mem[widx] <= wdat;
+      end
+
+      assign dout_b[b] = mem[ridx];
+    end
+  endgenerate
+
+  always_comb begin
+    rdata_o[0] = dout_b[raddr_i[0][1:0]];
+    rdata_o[1] = dout_b[raddr_i[1][1:0]];
+    rdata_o[2] = dout_b[raddr_i[2][1:0]];
+    rdata_o[3] = dout_b[raddr_i[3][1:0]];
+  end
+endmodule : rivet_ram_lane4_comb
