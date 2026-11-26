@@ -550,14 +550,15 @@ module rivet_mac_os_rx #(
     RX_TLP_OUT = 3'b100
   } rx_pkt_e;
 
-  // Stage P0: registered per-symbol token flags
+  // Stage P0: registered dense (hole-free) per-symbol token flags
   logic             p0_lanes_ok_q;
-  logic [NSYM-1:0]  p0_en_q;
+  logic [5:0]       p0_cnt_q;
   logic [NSYM-1:0]  p0_sdp_q;
   logic [NSYM-1:0]  p0_stp_q;
   logic [NSYM-1:0]  p0_end_q;
   logic [NSYM-1:0]  p0_edb_q;
   logic [NSYM-1:0]  p0_k_q;
+  logic [NSYM-1:0]  p0_nz_q;
   logic [7:0]       p0_data_q [0:NSYM-1];
   // Gen3 TLP: STP, then a 2-byte length, then that many DLL bytes. The length
   // is stripped here and the following idle byte is presented as END so the
@@ -566,115 +567,388 @@ module rivet_mac_os_rx #(
   // mask token detection until their byte counts expire.
   logic [2:0]       gf_st_q;
   logic [15:0]      gf_left_q;
+  logic             gf_left_hi_z_q;
 
-  // Raw token detect is per symbol. The framing filter used to walk all
-  // NSYM symbols in one carry chain (96 LUT levels at Gen4 x4). The scan
-  // module folds that walk into a tree with the same beat-to-beat state.
+  // Raw token detect is per symbol. All SYMS symbols on a lane share one
+  // enable bit, so lane-periodic compaction packs enabled symbols into
+  // dense slots 0..gf_raw_cnt-1, registers Stage IN (in_*_q), runs Stage G0
+  // (framing state + metadata -> g0_*_q), then Stage G1 (filter + 5:1 compact
+  // -> p0_*_q) so every stage fits cleanly inside 4 ns at 250 MHz.
   logic              gf_gen3_c;
   logic              gf_ok_c;
-  logic [NSYM-1:0]   gf_en_c, gf_sdp_c, gf_stp_c, gf_end_c, gf_edb_c, gf_k_c;
-  logic [7:0]        gf_data_c [0:NSYM-1];
-  logic [2:0]        gf_st_f;
-  logic [15:0]       gf_left_f;
-  logic [NSYM-1:0]   gf_en_f, gf_sdp_f, gf_stp_f, gf_end_f, gf_edb_f;
+  logic [5:0]        gf_raw_cnt_c;
+  logic [NSYM-1:0]   gf_sdp_c, gf_stp_c, gf_end_c, gf_edb_c, gf_k_c;
   logic [8*NSYM-1:0] gf_data_pack;
 
+  // Stage IN registers (dense raw stream + pre-decoded high-byte-zero hints).
+  logic              in_gen3_q;
+  logic              in_ok_q;
+  logic [5:0]        in_cnt_q;
+  logic [NSYM-1:0]   in_sdp_q, in_stp_q, in_end_q, in_edb_q, in_k_q;
+  logic [8*NSYM-1:0] in_data_q;
+  logic [31:0]       in_l_hi_z_q;
+
+  // Stage G0 combinational outputs from rivet_mac_gf_scan_meta.
+  logic [2:0]        gf_st_f;
+  logic [15:0]       gf_left_f;
+  logic              g0_open_fin_c;
+  logic [5:0]        g0_h0_c;
+  logic              g0_end_pos0_v_c, g0_dllp_end0_v_c;
+  logic [5:0]        g0_end_pos0_c, g0_dllp_end0_c;
+  logic [1:0]        g0_s1_drops_c;
+  logic              g0_found_c;
+  logic [4:0]        g0_s_idx_c;
+  logic              g0_end_pos1_v_c, g0_dllp_end1_v_c;
+  logic [5:0]        g0_end_pos1_c, g0_dllp_end1_c;
+  logic [1:0]        g0_s2_drops_c;
+
+  // Stage G0 pipeline registers feeding Stage G1 compaction.
+  logic              g0_gen3_q;
+  logic              g0_ok_q;
+  logic [5:0]        g0_cnt_q;
+  logic [NSYM-1:0]   g0_sdp_q, g0_stp_q, g0_end_q, g0_edb_q, g0_k_q;
+  logic [8*NSYM-1:0] g0_data_q;
+  logic              g0_open_fin_q;
+  logic [5:0]        g0_h0_q;
+  logic              g0_end_pos0_v_q, g0_dllp_end0_v_q;
+  logic [5:0]        g0_end_pos0_q, g0_dllp_end0_q;
+  logic [1:0]        g0_s1_drops_q;
+  logic              g0_found_q;
+  logic [4:0]        g0_s_idx_q;
+  logic              g0_end_pos1_v_q, g0_dllp_end1_v_q;
+  logic [5:0]        g0_end_pos1_q, g0_dllp_end1_q;
+  logic [1:0]        g0_s2_drops_q;
+
+  // Stage G1 combinational outputs from rivet_mac_gf_compact -> p0_*_q.
+  logic [5:0]        gf_cnt_f;
+  logic [NSYM-1:0]   gf_sdp_f, gf_stp_f, gf_end_f, gf_edb_f, gf_k_f;
+  logic [8*NSYM-1:0] gf_data_f;
+
+  // Balanced 32-bit priority encoder (lowest set bit).
+  function automatic logic [5:0] prio32(input logic [31:0] m);
+    logic [7:0]  g_v;
+    logic [1:0]  g_i [8];
+    logic [1:0]  h_v;
+    logic [3:0]  h_i [2];
+    logic        v;
+    logic [4:0]  idx;
+    for (int unsigned g = 0; g < 8; g++) begin
+      g_v[g] = |m[4*g +: 4];
+      if      (m[4*g + 0]) g_i[g] = 2'd0;
+      else if (m[4*g + 1]) g_i[g] = 2'd1;
+      else if (m[4*g + 2]) g_i[g] = 2'd2;
+      else                 g_i[g] = 2'd3;
+    end
+    for (int unsigned h = 0; h < 2; h++) begin
+      h_v[h] = |g_v[4*h +: 4];
+      if      (g_v[4*h + 0]) h_i[h] = {2'd0, g_i[4*h + 0]};
+      else if (g_v[4*h + 1]) h_i[h] = {2'd1, g_i[4*h + 1]};
+      else if (g_v[4*h + 2]) h_i[h] = {2'd2, g_i[4*h + 2]};
+      else                   h_i[h] = {2'd3, g_i[4*h + 3]};
+    end
+    v   = h_v[0] || h_v[1];
+    idx = h_v[0] ? {1'b0, h_i[0]} : {1'b1, h_i[1]};
+    return {v, idx};
+  endfunction
+
   always_comb begin
+    logic [LANES-1:0] lane_e;
+    logic [2:0]       lane_k;
+    logic [1:0]       act_l [4];
+    logic [NSYM-1:0]  raw_sdp, raw_stp, raw_end, raw_edb, raw_k;
+    logic [7:0]       raw_data [0:NSYM-1];
+
     gf_gen3_c = ((PIPE_DATA_WIDTH == 32) && (rate_i == RIVET_PIPE_RATE_GEN3)) ||
                 ((PIPE_DATA_WIDTH == 64) && (rate_i == RIVET_PIPE_RATE_GEN4));
-    gf_ok_c = (PKT_RX_OK || gf_gen3_c) && sym_valid_i[0] && lane_en_i[0];
-    gf_en_c = '0;
-    gf_sdp_c = '0;
-    gf_stp_c = '0;
-    gf_end_c = '0;
-    gf_edb_c = '0;
-    gf_k_c = '0;
-    gf_data_pack = '0;
-    for (int unsigned p = 0; p < NSYM; p++) gf_data_c[p] = '0;
+    gf_ok_c   = (PKT_RX_OK || gf_gen3_c) && sym_valid_i[0] && lane_en_i[0];
+
+    lane_k = 3'd0;
+    for (int unsigned i = 0; i < 4; i++) act_l[i] = 2'd0;
+    for (int unsigned l = 0; l < LANES; l++) begin
+      lane_e[l] = gf_ok_c && lane_en_i[l] && !(gf_gen3_c && os_block_i[l]);
+      if (lane_e[l]) begin
+        act_l[lane_k[1:0]] = 2'(l);
+        lane_k             = lane_k + 3'd1;
+      end
+    end
+
+    raw_sdp = '0;
+    raw_stp = '0;
+    raw_end = '0;
+    raw_edb = '0;
+    raw_k   = '0;
+    for (int unsigned p = 0; p < NSYM; p++) raw_data[p] = '0;
     for (int unsigned s = 0; s < SYMS; s++) begin
       for (int unsigned l = 0; l < LANES; l++) begin
         automatic int unsigned p = s * LANES + l;
         automatic logic [7:0] b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
         automatic logic k = (s < 2) ? sym_datak_i[2*l + s] : 1'b0;
         automatic logic tok = k || (gf_gen3_c && !os_block_i[l]);
-        automatic logic e = gf_ok_c && lane_en_i[l] && !(gf_gen3_c && os_block_i[l]);
-        gf_en_c[p]   = e;
-        gf_sdp_c[p]  = e && tok && (b == RIVET_SYM_SDP);
-        gf_stp_c[p]  = e && tok && (b == RIVET_SYM_STP);
-        gf_end_c[p]  = e && tok && (b == RIVET_SYM_END);
-        gf_edb_c[p]  = e && tok && (b == RIVET_SYM_EDB);
-        gf_k_c[p]    = e && k;
-        gf_data_c[p] = b;
-        gf_data_pack[8*p +: 8] = b;
+        automatic logic e = lane_e[l];
+        raw_sdp[p]  = e && tok && (b == RIVET_SYM_SDP);
+        raw_stp[p]  = e && tok && (b == RIVET_SYM_STP);
+        raw_end[p]  = e && tok && (b == RIVET_SYM_END);
+        raw_edb[p]  = e && tok && (b == RIVET_SYM_EDB);
+        raw_k[p]    = e && k;
+        raw_data[p] = b;
+      end
+    end
+
+    gf_raw_cnt_c = 6'(SYMS) * {3'd0, lane_k};
+    gf_sdp_c     = '0;
+    gf_stp_c     = '0;
+    gf_end_c     = '0;
+    gf_edb_c     = '0;
+    gf_k_c       = '0;
+    gf_data_pack = '0;
+    for (int unsigned d = 0; d < NSYM; d++) begin
+      if (6'(d) < gf_raw_cnt_c) begin
+        automatic int unsigned src_p;
+        case (lane_k)
+          3'd1:    src_p = d * LANES + int'(act_l[0]);
+          3'd2:    src_p = (d >> 1) * LANES + int'(act_l[d[0]]);
+          3'd3:    src_p = (d / 3) * LANES + int'(act_l[d % 3]);
+          default: src_p = d;
+        endcase
+        if (src_p < NSYM) begin
+          gf_sdp_c[d]          = raw_sdp[src_p];
+          gf_stp_c[d]          = raw_stp[src_p];
+          gf_end_c[d]          = raw_end[src_p];
+          gf_edb_c[d]          = raw_edb[src_p];
+          gf_k_c[d]            = raw_k[src_p];
+          gf_data_pack[8*d +: 8] = raw_data[src_p];
+        end
       end
     end
   end
 
   generate
     if (PIPE_DATA_WIDTH >= 32) begin : g_gf_scan
-      rivet_mac_gf_scan #(
+      rivet_mac_gf_scan_meta #(
         .NSYM      (NSYM),
         .DLLP_BYTES(RIVET_DLLP_WIRE_BYTES)
-      ) u_gf_scan (
-        .st_i   (gf_st_q),
-        .left_i (gf_left_q),
-        .en_i   (gf_en_c),
-        .sdp_i  (gf_sdp_c),
-        .stp_i  (gf_stp_c),
-        .end_i  (gf_end_c),
-        .edb_i  (gf_edb_c),
-        .data_i (gf_data_pack),
-        .st_o   (gf_st_f),
-        .left_o (gf_left_f),
-        .en_o   (gf_en_f),
-        .sdp_o  (gf_sdp_f),
-        .stp_o  (gf_stp_f),
-        .end_o  (gf_end_f),
-        .edb_o  (gf_edb_f)
+      ) u_gf_meta (
+        .st_i         (gf_st_q),
+        .left_i       (gf_left_q),
+        .left_hi_z_i  (gf_left_hi_z_q),
+        .cnt_i        (in_cnt_q),
+        .sdp_i        (in_sdp_q),
+        .stp_i        (in_stp_q),
+        .data_i       (in_data_q),
+        .l_hi_z_i     (in_l_hi_z_q),
+        .st_o         (gf_st_f),
+        .left_o       (gf_left_f),
+        .open_fin_o   (g0_open_fin_c),
+        .h0_o         (g0_h0_c),
+        .end_pos0_v_o (g0_end_pos0_v_c),
+        .end_pos0_o   (g0_end_pos0_c),
+        .dllp_end0_v_o(g0_dllp_end0_v_c),
+        .dllp_end0_o  (g0_dllp_end0_c),
+        .s1_drops_o   (g0_s1_drops_c),
+        .found_o      (g0_found_c),
+        .s_idx_o      (g0_s_idx_c),
+        .end_pos1_v_o (g0_end_pos1_v_c),
+        .end_pos1_o   (g0_end_pos1_c),
+        .dllp_end1_v_o(g0_dllp_end1_v_c),
+        .dllp_end1_o  (g0_dllp_end1_c),
+        .s2_drops_o   (g0_s2_drops_c)
+      );
+
+      rivet_mac_gf_compact #(
+        .NSYM(NSYM)
+      ) u_gf_compact (
+        .cnt_i        (g0_cnt_q),
+        .sdp_i        (g0_sdp_q),
+        .stp_i        (g0_stp_q),
+        .end_i        (g0_end_q),
+        .edb_i        (g0_edb_q),
+        .k_i          (g0_k_q),
+        .data_i       (g0_data_q),
+        .open_fin_i   (g0_open_fin_q),
+        .h0_i         (g0_h0_q),
+        .end_pos0_v_i (g0_end_pos0_v_q),
+        .end_pos0_i   (g0_end_pos0_q),
+        .dllp_end0_v_i(g0_dllp_end0_v_q),
+        .dllp_end0_i  (g0_dllp_end0_q),
+        .s1_drops_i   (g0_s1_drops_q),
+        .found_i      (g0_found_q),
+        .s_idx_i      (g0_s_idx_q),
+        .end_pos1_v_i (g0_end_pos1_v_q),
+        .end_pos1_i   (g0_end_pos1_q),
+        .dllp_end1_v_i(g0_dllp_end1_v_q),
+        .dllp_end1_i  (g0_dllp_end1_q),
+        .s2_drops_i   (g0_s2_drops_q),
+        .cnt_o        (gf_cnt_f),
+        .sdp_o        (gf_sdp_f),
+        .stp_o        (gf_stp_f),
+        .end_o        (gf_end_f),
+        .edb_o        (gf_edb_f),
+        .k_o          (gf_k_f),
+        .data_o       (gf_data_f)
       );
     end else begin : g_gf_passthru
-      assign gf_st_f   = '0;
-      assign gf_left_f = '0;
-      assign gf_en_f   = gf_en_c;
-      assign gf_sdp_f  = gf_sdp_c;
-      assign gf_stp_f  = gf_stp_c;
-      assign gf_end_f  = gf_end_c;
-      assign gf_edb_f  = gf_edb_c;
+      assign gf_st_f          = '0;
+      assign gf_left_f        = '0;
+      assign g0_open_fin_c    = 1'b0;
+      assign g0_h0_c          = '0;
+      assign g0_end_pos0_v_c  = 1'b0;
+      assign g0_end_pos0_c    = '0;
+      assign g0_dllp_end0_v_c = 1'b0;
+      assign g0_dllp_end0_c   = '0;
+      assign g0_s1_drops_c    = '0;
+      assign g0_found_c       = 1'b0;
+      assign g0_s_idx_c       = '0;
+      assign g0_end_pos1_v_c  = 1'b0;
+      assign g0_end_pos1_c    = '0;
+      assign g0_dllp_end1_v_c = 1'b0;
+      assign g0_dllp_end1_c   = '0;
+      assign g0_s2_drops_c    = '0;
+      assign gf_cnt_f         = g0_cnt_q;
+      assign gf_sdp_f         = g0_sdp_q;
+      assign gf_stp_f         = g0_stp_q;
+      assign gf_end_f         = g0_end_q;
+      assign gf_edb_f         = g0_edb_q;
+      assign gf_k_f           = g0_k_q;
+      assign gf_data_f        = g0_data_q;
     end
   endgenerate
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
-      p0_lanes_ok_q <= 1'b0;
-      p0_en_q       <= '0;
-      p0_sdp_q      <= '0;
-      p0_stp_q      <= '0;
-      p0_end_q      <= '0;
-      p0_edb_q      <= '0;
-      p0_k_q        <= '0;
-      gf_st_q       <= '0;
-      gf_left_q     <= '0;
+      in_gen3_q        <= 1'b0;
+      in_ok_q          <= 1'b0;
+      in_cnt_q         <= '0;
+      in_sdp_q         <= '0;
+      in_stp_q         <= '0;
+      in_end_q         <= '0;
+      in_edb_q         <= '0;
+      in_k_q           <= '0;
+      in_data_q        <= '0;
+      in_l_hi_z_q      <= '0;
+      gf_st_q          <= '0;
+      gf_left_q        <= '0;
+      gf_left_hi_z_q   <= 1'b1;
+      g0_gen3_q        <= 1'b0;
+      g0_ok_q          <= 1'b0;
+      g0_cnt_q         <= '0;
+      g0_sdp_q         <= '0;
+      g0_stp_q         <= '0;
+      g0_end_q         <= '0;
+      g0_edb_q         <= '0;
+      g0_k_q           <= '0;
+      g0_data_q        <= '0;
+      g0_open_fin_q    <= 1'b0;
+      g0_h0_q          <= '0;
+      g0_end_pos0_v_q  <= 1'b0;
+      g0_end_pos0_q    <= '0;
+      g0_dllp_end0_v_q <= 1'b0;
+      g0_dllp_end0_q   <= '0;
+      g0_s1_drops_q    <= '0;
+      g0_found_q       <= 1'b0;
+      g0_s_idx_q       <= '0;
+      g0_end_pos1_v_q  <= 1'b0;
+      g0_end_pos1_q    <= '0;
+      g0_dllp_end1_v_q <= 1'b0;
+      g0_dllp_end1_q   <= '0;
+      g0_s2_drops_q    <= '0;
+      p0_lanes_ok_q    <= 1'b0;
+      p0_cnt_q         <= '0;
+      p0_sdp_q         <= '0;
+      p0_stp_q         <= '0;
+      p0_end_q         <= '0;
+      p0_edb_q         <= '0;
+      p0_k_q           <= '0;
+      p0_nz_q          <= '0;
       for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= '0;
     end else begin
-      p0_lanes_ok_q <= gf_ok_c;
-      p0_k_q        <= gf_k_c;
-      for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= gf_data_c[p];
-      if (gf_gen3_c) begin
-        gf_st_q   <= gf_st_f;
-        gf_left_q <= gf_left_f;
-        p0_en_q   <= gf_en_f;
-        p0_sdp_q  <= gf_sdp_f;
-        p0_stp_q  <= gf_stp_f;
-        p0_end_q  <= gf_end_f;
-        p0_edb_q  <= gf_edb_f;
+      // Stage IN: register dense raw symbols + pre-decoded TLP length hints.
+      in_gen3_q <= gf_gen3_c;
+      in_ok_q   <= gf_ok_c;
+      in_cnt_q  <= gf_raw_cnt_c;
+      in_sdp_q  <= gf_sdp_c;
+      in_stp_q  <= gf_stp_c;
+      in_end_q  <= gf_end_c;
+      in_edb_q  <= gf_edb_c;
+      in_k_q    <= gf_k_c;
+      in_data_q <= gf_data_pack;
+      for (int unsigned d = 0; d < 32; d++) begin
+        automatic logic [7:0] b0 = ((d + 1) < NSYM) ? gf_data_pack[8*(d + 1) +: 8] : 8'h00;
+        automatic logic [7:0] b1 = ((d + 2) < NSYM) ? gf_data_pack[8*(d + 2) +: 8] : 8'h00;
+        in_l_hi_z_q[d] <= (b1 == 8'h00) && (b0[7:5] == 3'b000);
+      end
+
+      // Stage G0: advance framing state and latch compact metadata.
+      g0_gen3_q <= in_gen3_q;
+      g0_ok_q   <= in_ok_q;
+      g0_cnt_q  <= in_cnt_q;
+      g0_sdp_q  <= in_sdp_q;
+      g0_stp_q  <= in_stp_q;
+      g0_end_q  <= in_end_q;
+      g0_edb_q  <= in_edb_q;
+      g0_k_q    <= in_k_q;
+      g0_data_q <= in_data_q;
+      if (in_gen3_q) begin
+        gf_st_q          <= gf_st_f;
+        gf_left_q        <= gf_left_f;
+        gf_left_hi_z_q   <= (gf_left_f[15:6] == 10'd0);
+        g0_open_fin_q    <= g0_open_fin_c;
+        g0_h0_q          <= g0_h0_c;
+        g0_end_pos0_v_q  <= g0_end_pos0_v_c;
+        g0_end_pos0_q    <= g0_end_pos0_c;
+        g0_dllp_end0_v_q <= g0_dllp_end0_v_c;
+        g0_dllp_end0_q   <= g0_dllp_end0_c;
+        g0_s1_drops_q    <= g0_s1_drops_c;
+        g0_found_q       <= g0_found_c;
+        g0_s_idx_q       <= g0_s_idx_c;
+        g0_end_pos1_v_q  <= g0_end_pos1_v_c;
+        g0_end_pos1_q    <= g0_end_pos1_c;
+        g0_dllp_end1_v_q <= g0_dllp_end1_v_c;
+        g0_dllp_end1_q   <= g0_dllp_end1_c;
+        g0_s2_drops_q    <= g0_s2_drops_c;
       end else begin
-        gf_st_q   <= '0;
-        gf_left_q <= '0;
-        p0_en_q   <= gf_en_c;
-        p0_sdp_q  <= gf_sdp_c;
-        p0_stp_q  <= gf_stp_c;
-        p0_end_q  <= gf_end_c;
-        p0_edb_q  <= gf_edb_c;
+        gf_st_q          <= '0;
+        gf_left_q        <= '0;
+        gf_left_hi_z_q   <= 1'b1;
+        g0_open_fin_q    <= 1'b0;
+        g0_h0_q          <= '0;
+        g0_end_pos0_v_q  <= 1'b0;
+        g0_end_pos0_q    <= '0;
+        g0_dllp_end0_v_q <= 1'b0;
+        g0_dllp_end0_q   <= '0;
+        g0_s1_drops_q    <= '0;
+        g0_found_q       <= 1'b0;
+        g0_s_idx_q       <= '0;
+        g0_end_pos1_v_q  <= 1'b0;
+        g0_end_pos1_q    <= '0;
+        g0_dllp_end1_v_q <= 1'b0;
+        g0_dllp_end1_q   <= '0;
+        g0_s2_drops_q    <= '0;
+      end
+
+      // Stage G1: register filtered & compacted P0 stream.
+      p0_lanes_ok_q <= g0_ok_q;
+      if (g0_gen3_q) begin
+        p0_cnt_q <= gf_cnt_f;
+        p0_sdp_q <= gf_sdp_f;
+        p0_stp_q <= gf_stp_f;
+        p0_end_q <= gf_end_f;
+        p0_edb_q <= gf_edb_f;
+        p0_k_q   <= gf_k_f;
+        for (int unsigned p = 0; p < NSYM; p++) begin
+          p0_data_q[p] <= gf_data_f[8*p +: 8];
+          p0_nz_q[p]   <= (gf_data_f[8*p +: 8] != 8'h00);
+        end
+      end else begin
+        p0_cnt_q <= g0_cnt_q;
+        p0_sdp_q <= g0_sdp_q;
+        p0_stp_q <= g0_stp_q;
+        p0_end_q <= g0_end_q;
+        p0_edb_q <= g0_edb_q;
+        p0_k_q   <= g0_k_q;
+        for (int unsigned p = 0; p < NSYM; p++) begin
+          p0_data_q[p] <= g0_data_q[8*p +: 8];
+          p0_nz_q[p]   <= (g0_data_q[8*p +: 8] != 8'h00);
+        end
       end
     end
   end
@@ -746,6 +1020,17 @@ module rivet_mac_os_rx #(
   logic                    dllp_park_err_q, dllp_park_err_d;
   logic                    dllp_park_ld;
 
+  // Stage P1 pipeline between P0 framing decode and TLP RAM store/used_q.
+  logic                    st_valid_q, st_valid_d;
+  logic                    st_start_q, st_start_d;
+  logic                    st_done_q, st_done_d;
+  logic                    st_err_q, st_err_d;
+  logic [5:0]              st_n_q, st_n_d;
+  logic [255:0]            st_data_q, st_data_d;
+  logic                    st_open_q, st_open_d;
+  logic [12:0]             rx_tlp_cnt_q, rx_tlp_cnt_d;
+  logic                    used_hi_q;
+
   logic [TLP_AW-1:0] tlp_raddr1, tlp_raddr2, tlp_raddr3;
 
   assign tlp_raddr1 = rd_addr_q + TLP_AW'(1);
@@ -804,49 +1089,39 @@ module rivet_mac_os_rx #(
       inout  int unsigned        nport,
       output logic               overflow
   );
-    int unsigned bi;
-    int unsigned nleft;
-    logic [63:0] word;
-    logic [7:0]  bb [64];
-    logic [7:0]  ab [8];
-    logic [5:0]  ix;
-    logic [2:0]  ak;
+    logic [5:0] n6;
+    logic [2:0] nwords;
+    logic [2:0] avail_p;
+    logic [2:0] take_w;
+    logic [55:0] tail_w;
     acc      = '0;
     acc_n    = '0;
     overflow = 1'b0;
-    bi       = 0;
-    nleft    = nbytes;
-    for (int unsigned i = 0; i < 64; i++)
-      bb[i] = '0;
-    for (int unsigned i = 0; i < 40; i++)
-      bb[i] = raw_b_bytes[8*i +: 8];
+    n6       = 6'(nbytes);
+    nwords   = n6[5:3];
+    avail_p  = (nport >= 4) ? 3'd0 : 3'(4 - nport);
+    take_w   = (nwords > avail_p) ? avail_p : nwords;
     for (int unsigned step = 0; step < 4; step++) begin
-      if ((nleft >= 8) && (nport < 4)) begin
-        word = '0;
-        for (int unsigned k = 0; k < 8; k++) begin
-          ix = 6'(bi + k);
-          word[8*k +: 8] = bb[ix];
-        end
-        rx_push_word(nport, word, slot);
-        slot  = slot + TLP_AW'(1);
-        bi    = bi + 8;
-        nleft = nleft - 8;
+      if (3'(step) < take_w) begin
+        rx_push_word(nport, raw_b_bytes[64*step +: 64], slot);
+        slot = slot + TLP_AW'(1);
       end
     end
-    if (nleft >= 8) begin
+    if (nwords > avail_p) begin
       overflow = 1'b1;
     end else begin
-      acc_n = 3'(nleft);
-      for (int unsigned k = 0; k < 8; k++)
-        ab[3'(k)] = '0;
+      acc_n = n6[2:0];
+      case (nwords)
+        3'd0:    tail_w = raw_b_bytes[55:0];
+        3'd1:    tail_w = raw_b_bytes[119:64];
+        3'd2:    tail_w = raw_b_bytes[183:128];
+        3'd3:    tail_w = raw_b_bytes[247:192];
+        default: tail_w = raw_b_bytes[311:256];
+      endcase
       for (int unsigned k = 0; k < 7; k++) begin
-        if (k < nleft) begin
-          ak = 3'(k);
-          ix = 6'(bi + k);
-          ab[ak] = bb[ix];
-        end
+        if (3'(k) < acc_n)
+          acc[8*k +: 8] = tail_w[8*k +: 8];
       end
-      acc = {ab[6], ab[5], ab[4], ab[3], ab[2], ab[1], ab[0]};
     end
   endtask
 
@@ -884,33 +1159,28 @@ module rivet_mac_os_rx #(
     return b3[ix];
   endfunction
 
-  // acc is 7 bytes and cap is 32. Their sum stays inside the 40-byte frame.
-  // A byte array keeps the index inside that frame for Vivado.
+  // Destination-byte-first merge of 0..7 acc bytes + 0..32 cap bytes into
+  // a 40-byte frame. acc_n is only 3 bits so each byte is an 8:1 mux.
   function automatic logic [319:0] pack_acc_cap(
       input logic [55:0] acc,
       input logic [2:0]  acc_n,
       input logic [7:0]  cap [0:31],
       input logic [5:0]  cap_n
   );
-    logic [7:0]   rb [64];
-    logic [5:0]   ix;
+    logic [7:0]   ab [8];
     logic [319:0] raw;
-    for (int unsigned i = 0; i < 64; i++)
-      rb[i] = '0;
-    for (int unsigned i = 0; i < 7; i++) begin
-      if (3'(i) < acc_n)
-        rb[3'(i)] = acc[8*3'(i) +: 8];
-    end
-    ix = '0;
-    for (int unsigned i = 0; i < 32; i++) begin
-      if (6'(i) < cap_n) begin
-        ix = {3'b0, acc_n} + 6'(i);
-        rb[ix] = cap[5'(i)];
+    for (int unsigned i = 0; i < 7; i++) ab[i] = acc[8*i +: 8];
+    ab[7] = 8'h00;
+    raw = '0;
+    for (int unsigned k = 0; k < 40; k++) begin
+      automatic logic [5:0] diff;
+      diff = 6'(k) - {3'd0, acc_n};
+      if ((k < 7) && (3'(k) < acc_n)) begin
+        raw[8*k +: 8] = ab[3'(k)];
+      end else if ((6'(k) >= {3'd0, acc_n}) && (diff < cap_n)) begin
+        raw[8*k +: 8] = cap[diff[4:0]];
       end
     end
-    raw = '0;
-    for (int unsigned i = 0; i < 40; i++)
-      raw[8*i +: 8] = rb[i];
     return raw;
   endfunction
 
@@ -1001,6 +1271,14 @@ module rivet_mac_os_rx #(
     dllp_park_data_d = dllp_park_data_q;
     dllp_park_err_d  = dllp_park_err_q;
     dllp_park_ld     = 1'b0;
+    st_valid_d       = 1'b0;
+    st_start_d       = 1'b0;
+    st_done_d        = 1'b0;
+    st_err_d         = 1'b0;
+    st_n_d           = 6'd0;
+    st_data_d        = '0;
+    st_open_d        = st_open_q;
+    rx_tlp_cnt_d     = rx_tlp_cnt_q;
 
     tlp_ram_we       = 1'b0;
     tlp_ram_waddr    = tlp_wr_slot_q;
@@ -1029,61 +1307,129 @@ module rivet_mac_os_rx #(
     end
 
     if (p0_lanes_ok_q || (rx_pkt_q == RX_HOLD)) begin
+      // 32-symbol padded views of dense P0 stream (0..p0_cnt_q-1 have no holes;
+      // token flags are already 0 at indices >= p0_cnt_q).
+      automatic logic [31:0] p0_sdp_w = '0;
+      automatic logic [31:0] p0_stp_w = '0;
+      automatic logic [31:0] p0_end_w = '0;
+      automatic logic [31:0] p0_edb_w = '0;
+      automatic logic [63:0] p0_k_w   = '0;
+      automatic logic [31:0] p0_nz_w  = '0;
+      automatic logic [7:0]  p0_data_w [0:63];
+      for (int unsigned i = 0; i < 64; i++) p0_data_w[i] = 8'h00;
+      for (int unsigned i = 0; i < NSYM; i++) begin
+        p0_sdp_w[i]  = p0_sdp_q[i];
+        p0_stp_w[i]  = p0_stp_q[i];
+        p0_end_w[i]  = p0_end_q[i];
+        p0_edb_w[i]  = p0_edb_q[i];
+        p0_k_w[i]    = p0_k_q[i];
+        p0_nz_w[i]   = p0_nz_q[i];
+        p0_data_w[i] = p0_data_q[i];
+      end
+
       unique case (rx_pkt_q)
         RX_IDLE: begin
           if (p0_lanes_ok_q) begin
-            automatic logic        saw_sdp = 1'b0;
-            automatic logic        saw_stp = 1'b0;
-            automatic logic [3:0]  c       = 4'd0;
-            automatic logic [63:0] b       = '0;
-            automatic logic [5:0]  cap_n   = 6'd0;
+            automatic logic        saw_sdp   = 1'b0;
+            automatic logic        saw_stp   = 1'b0;
+            automatic logic [3:0]  c         = 4'd0;
+            automatic logic [63:0] b         = '0;
+            automatic logic [5:0]  cap_n     = 6'd0;
             automatic logic [7:0]  cap_b [0:31];
             automatic logic        err       = 1'b0;
             automatic logic        done      = 1'b0;
             automatic logic        nullified = 1'b0;
+            automatic logic [31:0] start_m   = p0_sdp_w | p0_stp_w;
+            automatic logic [31:0] after_start;
+            automatic logic [5:0]  start_p;
+            automatic logic        start_v;
+            automatic logic [4:0]  start_idx;
+            automatic logic [5:0]  base;
 
-            for (int unsigned i = 0; i < 32; i++) cap_b[i] = '0;
+            for (int unsigned i = 0; i < 32; i++) cap_b[i] = 8'h00;
+            // Parallel prefix OR: after_start[p] == 1 iff p > first_one(start_m),
+            // avoiding waiting for prio32(start_m) before masking term_m/tail_m.
+            begin
+              automatic logic [31:0] po;
+              po = {start_m[30:0], 1'b0};
+              po = po | {po[30:0], 1'b0};
+              po = po | {po[29:0], 2'b0};
+              po = po | {po[27:0], 4'b0};
+              po = po | {po[23:0], 8'b0};
+              after_start = po | {po[15:0], 16'b0};
+            end
 
-            for (int unsigned p = 0; p < NSYM; p++) begin
-              if (p0_en_q[p] && !done) begin
-                if (!saw_sdp && !saw_stp) begin
-                  if (p0_sdp_q[p])      saw_sdp = 1'b1;
-                  else if (p0_stp_q[p]) saw_stp = 1'b1;
-                end else if (saw_sdp) begin
-                  if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
-                    if (p0_k_q[p]) begin
-                      err  = 1'b1;
-                      done = 1'b1;
-                    end else begin
-                      b[8*c +: 8] = p0_data_q[p];
-                      c = c + 4'd1;
-                    end
-                  end else begin
-                    if (p0_end_q[p]) begin
-                      done = 1'b1;
-                    end else if (p0_edb_q[p]) begin
-                      nullified = 1'b1;
-                      done      = 1'b1;
-                    end else if (!p0_k_q[p] && (p0_data_q[p] == 8'h00)) begin
-                    end else begin
-                      err  = 1'b1;
-                      done = 1'b1;
-                    end
+            start_p   = prio32(start_m);
+            start_v   = start_p[5];
+            start_idx = start_p[4:0];
+            saw_sdp   = start_v && p0_sdp_w[start_idx];
+            saw_stp   = start_v && !p0_sdp_w[start_idx] && p0_stp_w[start_idx];
+            base      = {1'b0, start_idx} + 6'd1;
+
+            if (saw_sdp) begin
+              automatic logic [5:0]  after_n = (p0_cnt_q > base) ? (p0_cnt_q - base) : 6'd0;
+              automatic logic [2:0]  blim    = (after_n < 6'(RIVET_DLLP_WIRE_BYTES)) ?
+                                               after_n[2:0] : 3'(RIVET_DLLP_WIRE_BYTES);
+              automatic logic [5:0]  kb_m    = '0;
+              automatic logic [7:0]  sb [6];
+              // Direct 5-bit indexing by start_idx avoids waiting for base adder.
+              for (int unsigned j = 0; j < 6; j++) begin
+                automatic logic [7:0]  d_col [0:31];
+                automatic logic [31:0] k_col;
+                for (int unsigned p = 0; p < 32; p++) begin
+                  d_col[p] = p0_data_w[p + j + 1];
+                  k_col[p] = p0_k_w[p + j + 1];
+                end
+                sb[j]   = d_col[start_idx];
+                kb_m[j] = (3'(j) < blim) && k_col[start_idx];
+              end
+              for (int unsigned j = 0; j < 6; j++) begin
+                automatic logic [5:0] pref_m = (6'd1 << (j + 1)) - 6'd1;
+                if ((3'(j) < blim) && ((kb_m & pref_m) == 6'd0))
+                  b[8*j +: 8] = sb[j];
+              end
+              if (kb_m != 6'd0) begin
+                automatic logic [5:0] kp = prio32({26'd0, kb_m});
+                c    = {1'b0, kp[2:0]};
+                err  = 1'b1;
+                done = 1'b1;
+              end else begin
+                c = {1'b0, blim};
+                if (after_n > 6'(RIVET_DLLP_WIRE_BYTES)) begin
+                  automatic logic [31:0] tail_m = '0;
+                  automatic logic [5:0]  tp;
+                  for (int unsigned p = 7; p < 32; p++) begin
+                    tail_m[p] = after_start[p - 6] && (6'(p) < p0_cnt_q) &&
+                                (p0_end_w[p] || p0_edb_w[p] || p0_k_w[p] || p0_nz_w[p]);
                   end
-                end else begin
-                  if (p0_end_q[p]) begin
-                    done = 1'b1;
-                  end else if (p0_edb_q[p]) begin
-                    nullified = 1'b1;
+                  tp = prio32(tail_m);
+                  if (tp[5]) begin
                     done      = 1'b1;
-                  end else if (p0_k_q[p]) begin
-                    err  = 1'b1;
-                    done = 1'b1;
-                  end else if (cap_n < 6'd32) begin
-                    cap_b[cap_n] = p0_data_q[p];
-                    cap_n = cap_n + 6'd1;
+                    nullified = !p0_end_w[tp[4:0]] && p0_edb_w[tp[4:0]];
+                    err       = !p0_end_w[tp[4:0]] && !p0_edb_w[tp[4:0]];
                   end
                 end
+              end
+            end else if (saw_stp) begin
+              automatic logic [31:0] term_m = '0;
+              automatic logic [5:0]  tp;
+              for (int unsigned p = 1; p < 32; p++) begin
+                term_m[p] = after_start[p] && (p0_end_w[p] || p0_edb_w[p] || p0_k_w[p]);
+              end
+              tp = prio32(term_m);
+              if (tp[5]) begin
+                done      = 1'b1;
+                nullified = !p0_end_w[tp[4:0]] && p0_edb_w[tp[4:0]];
+                err       = !p0_end_w[tp[4:0]] && !p0_edb_w[tp[4:0]] && p0_k_w[tp[4:0]];
+                cap_n     = {1'b0, tp[4:0]} - base;
+              end else begin
+                cap_n     = (p0_cnt_q > base) ? (p0_cnt_q - base) : 6'd0;
+              end
+              for (int unsigned i = 0; i < 32; i++) begin
+                automatic logic [7:0] d_col [0:31];
+                for (int unsigned p = 0; p < 32; p++)
+                  d_col[p] = p0_data_w[p + i + 1];
+                cap_b[i] = d_col[start_idx];
               end
             end
 
@@ -1092,69 +1438,27 @@ module rivet_mac_os_rx #(
               rx_cnt_d     = c;
               rx_err_pkt_d = err;
               if (done) begin
-                // Slot free and nothing parked: emit now. Otherwise park and
-                // stay in IDLE so a TLP that follows is still framed.
-                if ((!dll_beat_valid_q || dll_rx_ready_i) && !dllp_park_q) begin
-                  dll_beat_d.data     = b;
-                  dll_beat_d.keep     = 8'hFF;
-                  dll_beat_d.sop      = 1'b1;
-                  dll_beat_d.eop      = 1'b1;
-                  dll_beat_d.err      = err | nullified;
-                  dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
-                  dll_beat_valid_d    = 1'b1;
-                end else begin
-                  dllp_park_d      = 1'b1;
-                  dllp_park_data_d = b;
-                  dllp_park_err_d  = err | nullified;
-                  dllp_park_ld     = 1'b1;
-                end
-                rx_pkt_d = RX_IDLE;
-                rx_cnt_d = 4'd0;
+                // Always stage completed DLLPs through dllp_park_q so P0
+                // capture stays decoupled from dll_beat_q and TLP playback.
+                dllp_park_d      = 1'b1;
+                dllp_park_data_d = b;
+                dllp_park_err_d  = err | nullified;
+                dllp_park_ld     = 1'b1;
+                rx_pkt_d         = RX_IDLE;
+                rx_cnt_d         = 4'd0;
               end else begin
                 rx_pkt_d = RX_BODY;
               end
             end else if (saw_stp) begin
-              // A tail write still owns port 0. Full words go to the RAM.
-              // Fewer than eight bytes stay in the accumulator.
-              automatic logic [TLP_AW-1:0] slot;
-              automatic logic [TLP_AW-1:0] base;
-              automatic logic [319:0]      raw_b;
-              automatic logic [55:0]       acc;
-              automatic logic [2:0]        acc_n;
-              automatic int unsigned       nport;
-              automatic logic              overflow;
-              nport  = tlp_tail_pend_q ? 1 : 0;
-              base   = tlp_tail_pend_q ? (tlp_wr_slot_q + TLP_AW'(1)) : tlp_wr_slot_q;
-              slot   = base;
-              raw_b = '0;
+              st_valid_d   = 1'b1;
+              st_start_d   = 1'b1;
+              st_done_d    = done;
+              st_err_d     = err | nullified;
+              st_n_d       = cap_n;
               for (int unsigned i = 0; i < 32; i++)
-                if (6'(i) < cap_n)
-                  raw_b[8*i +: 8] = cap_b[i];
-              rx_store(raw_b, int'(cap_n), slot, acc, acc_n, nport, overflow);
-              tlp_base_d    = base;
-              tlp_wr_slot_d = slot;
-              tlp_len_d     = 13'(cap_n);
-              tlp_err_d     = err | nullified | overflow |
-                              (done && (cap_n == 6'd0)) | (used_q > 13'd3600);
-              if (done) begin
-                if (!tlp_err_d && (acc_n != 3'd0)) begin
-                  tlp_acc_d       = acc;
-                  tlp_acc_cnt_d   = acc_n;
-                  tlp_tail_pend_d = 1'b1;
-                end else begin
-                  tlp_acc_d     = '0;
-                  tlp_acc_cnt_d = 3'd0;
-                end
-                frame_push_d      = 1'b1;
-                frame_push_base_d = base;
-                frame_push_len_d  = 13'(cap_n);
-                frame_push_err_d  = tlp_err_d;
-                rx_pkt_d          = RX_IDLE;
-              end else begin
-                tlp_acc_d     = acc;
-                tlp_acc_cnt_d = acc_n;
-                rx_pkt_d      = RX_TLP;
-              end
+                st_data_d[8*i +: 8] = cap_b[i];
+              rx_tlp_cnt_d = done ? 13'd0 : 13'(cap_n);
+              rx_pkt_d     = done ? RX_IDLE : RX_TLP;
             end
           end
         end
@@ -1166,29 +1470,45 @@ module rivet_mac_os_rx #(
             automatic logic        err       = rx_err_pkt_q;
             automatic logic        done      = 1'b0;
             automatic logic        nullified = 1'b0;
+            automatic logic [2:0]  rem_d     = (rx_cnt_q < 4'(RIVET_DLLP_WIRE_BYTES)) ?
+                                               3'(4'(RIVET_DLLP_WIRE_BYTES) - rx_cnt_q) : 3'd0;
+            automatic logic [2:0]  blim      = (p0_cnt_q < {3'd0, rem_d}) ? p0_cnt_q[2:0] : rem_d;
+            automatic logic [5:0]  kb_m      = '0;
+            automatic logic [2:0]  take_b;
 
-            for (int unsigned p = 0; p < NSYM; p++) begin
-              if (p0_en_q[p] && !done) begin
-                if (c < 4'(RIVET_DLLP_WIRE_BYTES)) begin
-                  if (p0_k_q[p]) begin
-                    err  = 1'b1;
-                    done = 1'b1;
-                  end else begin
-                    b[8*c +: 8] = p0_data_q[p];
-                    c = c + 4'd1;
-                  end
-                end else begin
-                  if (p0_end_q[p]) begin
-                    done = 1'b1;
-                  end else if (p0_edb_q[p]) begin
-                    nullified = 1'b1;
-                    done      = 1'b1;
-                  end else if (!p0_k_q[p] && (p0_data_q[p] == 8'h00)) begin
-                  end else begin
-                    err  = 1'b1;
-                    done = 1'b1;
-                  end
-                end
+            for (int unsigned j = 0; j < 6; j++)
+              kb_m[j] = (3'(j) < blim) && p0_k_w[j];
+
+            if (kb_m != 6'd0) begin
+              automatic logic [5:0] kp = prio32({26'd0, kb_m});
+              take_b = kp[2:0];
+              err    = 1'b1;
+              done   = 1'b1;
+            end else begin
+              take_b = blim;
+            end
+
+            for (int unsigned k = 0; k < 6; k++) begin
+              if ((4'(k) >= rx_cnt_q) && ((4'(k) - rx_cnt_q) < {1'b0, take_b})) begin
+                automatic logic [3:0] diff = 4'(k) - rx_cnt_q;
+                b[8*k +: 8] = p0_data_w[{3'd0, diff[2:0]}];
+              end
+            end
+            c = rx_cnt_q + {1'b0, take_b};
+
+            if (!done && (p0_cnt_q > {3'd0, rem_d})) begin
+              automatic logic [31:0] tail_m = '0;
+              automatic logic [5:0]  tp;
+              for (int unsigned p = 0; p < 32; p++) begin
+                tail_m[p] = (6'(p) >= {3'd0, rem_d}) && (6'(p) < p0_cnt_q) &&
+                            (p0_end_w[p] || p0_edb_w[p] || p0_k_w[p] || p0_nz_w[p]);
+              end
+              tp = prio32(tail_m);
+              if (tp[5]) begin
+                done      = 1'b1;
+                nullified = !p0_end_w[tp[4:0]] && p0_edb_w[tp[4:0]];
+                if (!p0_end_w[tp[4:0]] && !p0_edb_w[tp[4:0]])
+                  err = 1'b1;
               end
             end
 
@@ -1197,22 +1517,12 @@ module rivet_mac_os_rx #(
             rx_err_pkt_d = err;
 
             if (done) begin
-              if ((!dll_beat_valid_q || dll_rx_ready_i) && !dllp_park_q) begin
-                dll_beat_d.data     = b;
-                dll_beat_d.keep     = 8'hFF;
-                dll_beat_d.sop      = 1'b1;
-                dll_beat_d.eop      = 1'b1;
-                dll_beat_d.err      = err | nullified;
-                dll_beat_d.pkt_type = RIVET_MAC_PKT_DLLP;
-                dll_beat_valid_d    = 1'b1;
-              end else begin
-                dllp_park_d      = 1'b1;
-                dllp_park_data_d = b;
-                dllp_park_err_d  = err | nullified;
-                dllp_park_ld     = 1'b1;
-              end
-              rx_pkt_d = RX_IDLE;
-              rx_cnt_d = 4'd0;
+              dllp_park_d      = 1'b1;
+              dllp_park_data_d = b;
+              dllp_park_err_d  = err | nullified;
+              dllp_park_ld     = 1'b1;
+              rx_pkt_d         = RX_IDLE;
+              rx_cnt_d         = 4'd0;
             end
           end
         end
@@ -1233,89 +1543,40 @@ module rivet_mac_os_rx #(
 
         RX_TLP: begin
           if (p0_lanes_ok_q) begin
-            automatic logic [7:0]   cap_b [0:31];
             automatic logic [5:0]   cap_n     = 6'd0;
-            automatic logic [319:0] raw_b;
-            automatic logic [13:0]  new_len;
+            automatic logic [13:0]  new_cnt;
             automatic logic         len_ovf;
-            automatic logic         err       = tlp_err_q;
+            automatic logic         err       = 1'b0;
             automatic logic         done      = 1'b0;
             automatic logic         nullified = 1'b0;
+            automatic logic [31:0]  term_m    = '0;
+            automatic logic [5:0]   tp;
 
-            for (int unsigned i = 0; i < 32; i++) cap_b[i] = '0;
-
-            for (int unsigned p = 0; p < NSYM; p++) begin
-              if (p0_en_q[p] && !done) begin
-                if (p0_end_q[p]) begin
-                  done = 1'b1;
-                end else if (p0_edb_q[p]) begin
-                  nullified = 1'b1;
-                  done      = 1'b1;
-                end else if (p0_k_q[p]) begin
-                  err  = 1'b1;
-                  done = 1'b1;
-                end else if (cap_n < 6'd32) begin
-                  cap_b[cap_n] = p0_data_q[p];
-                  cap_n = cap_n + 6'd1;
-                end
-              end
+            for (int unsigned p = 0; p < 32; p++)
+              term_m[p] = p0_end_w[p] || p0_edb_w[p] || p0_k_w[p];
+            tp = prio32(term_m);
+            if (tp[5]) begin
+              done      = 1'b1;
+              nullified = !p0_end_w[tp[4:0]] && p0_edb_w[tp[4:0]];
+              if (!p0_end_w[tp[4:0]] && !p0_edb_w[tp[4:0]] && p0_k_w[tp[4:0]])
+                err = 1'b1;
+              cap_n     = {1'b0, tp[4:0]};
+            end else begin
+              cap_n     = p0_cnt_q;
             end
 
-            new_len = {1'b0, tlp_len_q} + 14'(cap_n);
-            len_ovf = (new_len > 14'(TLP_FRAME_MAX)) || (used_q > 13'd3600);
-            if (len_ovf) begin
-              err  = 1'b1;
-              done = 1'b1;
-            end
+            new_cnt = {1'b0, rx_tlp_cnt_q} + 14'(cap_n);
+            len_ovf = (new_cnt > 14'(TLP_FRAME_MAX)) || used_hi_q;
 
-            raw_b = pack_acc_cap(tlp_acc_q, tlp_acc_cnt_q, cap_b, cap_n);
-
-            tlp_len_d = len_ovf ? 13'(TLP_FRAME_MAX) : new_len[12:0];
-            tlp_err_d = err | nullified | (done && (new_len == 14'd0));
-
-            begin
-              automatic logic [TLP_AW-1:0] slot;
-              automatic logic [55:0]       acc;
-              automatic logic [2:0]        acc_n;
-              automatic int unsigned       nport;
-              automatic logic              overflow;
-              automatic int unsigned       nbytes;
-              nport  = 0;
-              slot   = tlp_wr_slot_q;
-              nbytes = int'(tlp_acc_cnt_q) + int'(cap_n);
-              rx_store(raw_b, nbytes, slot, acc, acc_n, nport, overflow);
-              tlp_wr_slot_d = slot;
-              if (overflow)
-                tlp_err_d = 1'b1;
-              if (done) begin
-                if (!tlp_err_d && (acc_n != 3'd0)) begin
-                  tlp_acc_d       = acc;
-                  tlp_acc_cnt_d   = acc_n;
-                  tlp_tail_pend_d = 1'b1;
-                end else begin
-                  tlp_acc_d     = '0;
-                  tlp_acc_cnt_d = 3'd0;
-                end
-                // A frame already in live playback just needs its final
-                // length. Pushing it again would play the bytes twice.
-                if (RX_CUT && live_q && !live_closed_q) begin
-                  live_closed_d = 1'b1;
-                  live_len_d    = tlp_len_d;
-                  if (tlp_err_d)
-                    rd_err_d = 1'b1;
-                end else begin
-                  frame_push_d      = 1'b1;
-                  frame_push_base_d = tlp_base_q;
-                  frame_push_len_d  = tlp_len_d;
-                  frame_push_err_d  = tlp_err_d;
-                end
-                rx_pkt_d          = RX_IDLE;
-              end else begin
-                tlp_acc_d     = acc;
-                tlp_acc_cnt_d = acc_n;
-                rx_pkt_d      = RX_TLP;
-              end
-            end
+            st_valid_d   = 1'b1;
+            st_start_d   = 1'b0;
+            st_done_d    = done | len_ovf;
+            st_err_d     = err | nullified | len_ovf;
+            st_n_d       = cap_n;
+            for (int unsigned i = 0; i < 32; i++)
+              st_data_d[8*i +: 8] = p0_data_w[i];
+            rx_tlp_cnt_d = (done || len_ovf) ? 13'd0 : new_cnt[12:0];
+            rx_pkt_d     = (done || len_ovf) ? RX_IDLE : RX_TLP;
           end
         end
 
@@ -1325,8 +1586,110 @@ module rivet_mac_os_rx #(
       endcase
     end
 
-    // Parked DLLP goes out ahead of TLP playback. Capture already ran above.
-    if (dllp_park_q && !dll_beat_valid_d) begin
+    // Stage P1: pack captured TLP chunk, write full words to BRAM, and push
+    // finished frames. Pipelined 1 cycle after P0 framing decode.
+    if (st_valid_q) begin
+      if (st_start_q) begin
+        automatic logic [TLP_AW-1:0] slot;
+        automatic logic [TLP_AW-1:0] base_s;
+        automatic logic [319:0]      raw_b;
+        automatic logic [55:0]       acc;
+        automatic logic [2:0]        acc_n;
+        automatic int unsigned       nport;
+        automatic logic              overflow;
+        nport  = tlp_tail_pend_q ? 1 : 0;
+        base_s = tlp_tail_pend_q ? (tlp_wr_slot_q + TLP_AW'(1)) : tlp_wr_slot_q;
+        slot   = base_s;
+        raw_b  = '0;
+        for (int unsigned i = 0; i < 32; i++)
+          if (6'(i) < st_n_q)
+            raw_b[8*i +: 8] = st_data_q[8*i +: 8];
+        rx_store(raw_b, int'(st_n_q), slot, acc, acc_n, nport, overflow);
+        tlp_base_d    = base_s;
+        tlp_wr_slot_d = slot;
+        tlp_len_d     = 13'(st_n_q);
+        tlp_err_d     = st_err_q | overflow |
+                        (st_done_q && (st_n_q == 6'd0)) | used_hi_q;
+        if (st_done_q) begin
+          if (!tlp_err_d && (acc_n != 3'd0)) begin
+            tlp_acc_d       = acc;
+            tlp_acc_cnt_d   = acc_n;
+            tlp_tail_pend_d = 1'b1;
+          end else begin
+            tlp_acc_d     = '0;
+            tlp_acc_cnt_d = 3'd0;
+          end
+          frame_push_d      = 1'b1;
+          frame_push_base_d = base_s;
+          frame_push_len_d  = 13'(st_n_q);
+          frame_push_err_d  = tlp_err_d;
+          st_open_d         = 1'b0;
+        end else begin
+          tlp_acc_d     = acc;
+          tlp_acc_cnt_d = acc_n;
+          st_open_d     = 1'b1;
+        end
+      end else begin
+        automatic logic [7:0]        cap_b [0:31];
+        automatic logic [319:0]      raw_b;
+        automatic logic [13:0]       new_len;
+        automatic logic              len_ovf;
+        automatic logic              done_c;
+        automatic logic [TLP_AW-1:0] slot;
+        automatic logic [55:0]       acc;
+        automatic logic [2:0]        acc_n;
+        automatic int unsigned       nport;
+        automatic logic              overflow;
+        automatic int unsigned       nbytes;
+        for (int unsigned i = 0; i < 32; i++)
+          cap_b[i] = st_data_q[8*i +: 8];
+        new_len   = {1'b0, tlp_len_q} + 14'(st_n_q);
+        len_ovf   = (new_len > 14'(TLP_FRAME_MAX)) || used_hi_q;
+        done_c    = st_done_q | len_ovf;
+        raw_b     = pack_acc_cap(tlp_acc_q, tlp_acc_cnt_q, cap_b, st_n_q);
+        tlp_len_d = len_ovf ? 13'(TLP_FRAME_MAX) : new_len[12:0];
+        tlp_err_d = tlp_err_q | st_err_q | len_ovf |
+                    (done_c && (new_len == 14'd0));
+        nport  = 0;
+        slot   = tlp_wr_slot_q;
+        nbytes = int'(tlp_acc_cnt_q) + int'(st_n_q);
+        rx_store(raw_b, nbytes, slot, acc, acc_n, nport, overflow);
+        tlp_wr_slot_d = slot;
+        if (overflow)
+          tlp_err_d = 1'b1;
+        if (done_c) begin
+          if (!tlp_err_d && (acc_n != 3'd0)) begin
+            tlp_acc_d       = acc;
+            tlp_acc_cnt_d   = acc_n;
+            tlp_tail_pend_d = 1'b1;
+          end else begin
+            tlp_acc_d     = '0;
+            tlp_acc_cnt_d = 3'd0;
+          end
+          if (RX_CUT && live_q && !live_closed_q) begin
+            live_closed_d = 1'b1;
+            live_len_d    = tlp_len_d;
+            if (tlp_err_d)
+              rd_err_d = 1'b1;
+          end else begin
+            frame_push_d      = 1'b1;
+            frame_push_base_d = tlp_base_q;
+            frame_push_len_d  = tlp_len_d;
+            frame_push_err_d  = tlp_err_d;
+          end
+          st_open_d = 1'b0;
+        end else begin
+          tlp_acc_d     = acc;
+          tlp_acc_cnt_d = acc_n;
+          st_open_d     = 1'b1;
+        end
+      end
+    end
+
+    // Parked DLLP goes out ahead of TLP playback. Capture never writes
+    // dll_beat_d when dllp_park_q is set or rd_ph_q != 0, so playback only
+    // checks registered slot occupancy (no combinational path from capture).
+    if (dllp_park_q && !(dll_beat_valid_q && !dll_rx_ready_i)) begin
       dll_beat_d            = '0;
       dll_beat_d.data       = dllp_park_data_q;
       dll_beat_d.keep       = 8'hFF;
@@ -1352,7 +1715,7 @@ module rivet_mac_os_rx #(
       end
     end else if (rd_ph_q == 2'd1) begin
       if (rd_err_q) begin
-        if (!dll_beat_valid_d) begin
+        if (!(dll_beat_valid_q && !dll_rx_ready_i) && !dllp_park_q) begin
           dll_beat_d            = '0;
           dll_beat_d.pkt_type   = RIVET_MAC_PKT_TLP;
           dll_beat_d.sop        = 1'b1;
@@ -1379,7 +1742,7 @@ module rivet_mac_os_rx #(
         rd_addr_d    = rd_addr_q + 11'(RX_PLAY_W);
         rd_ph_d      = 2'd2;
       end
-    end else if (live_q && !dll_beat_valid_d) begin
+    end else if (live_q && !(dll_beat_valid_q && !dll_rx_ready_i) && !dllp_park_q) begin
       if (rd_err_q) begin
         dll_beat_d            = '0;
         dll_beat_d.pkt_type   = RIVET_MAC_PKT_TLP;
@@ -1428,7 +1791,7 @@ module rivet_mac_os_rx #(
             rd_ph_d       = 2'd0;
             rd_rem_d      = 13'd0;
           end else if (!live_words_ready(rd_addr_q, tlp_wr_slot_q, live_base_q,
-                                         live_closed_d, live_len_d)) begin
+                                         live_closed_q, live_len_q)) begin
             rd_ph_d = 2'd1;
           end else begin
             rd_addr_d    = rd_addr_q + 11'(rd_words);
@@ -1441,7 +1804,7 @@ module rivet_mac_os_rx #(
           rd_ph_d       = 2'd0;
         end
       end
-    end else if (!dll_beat_valid_d) begin
+    end else if (!(dll_beat_valid_q && !dll_rx_ready_i) && !dllp_park_q) begin
       if (rd_rem_q != 13'd0) begin
         automatic logic [5:0] n;
         automatic logic [5:0] nmax;
@@ -1484,7 +1847,7 @@ module rivet_mac_os_rx #(
     // Start cut-through only while capture is still open. The end-of-packet
     // cycle pushes the frame instead, so a short TLP is unchanged.
     if (RX_CUT && !live_d && (rd_ph_q == 2'd0) && (rd_ph_d == 2'd0) &&
-        (q_count_q == 5'd0) && (rx_pkt_q == RX_TLP) && (rx_pkt_d == RX_TLP) &&
+        (q_count_q == 5'd0) && st_open_q && !(st_valid_q && st_done_q) &&
         !tlp_err_q &&
         ((tlp_wr_slot_q - tlp_base_q) >= TLP_AW'(RX_PLAY_W))) begin
       live_d        = 1'b1;
@@ -1532,8 +1895,19 @@ module rivet_mac_os_rx #(
       dllp_park_q      <= 1'b0;
       dllp_park_data_q <= '0;
       dllp_park_err_q  <= 1'b0;
+      st_valid_q       <= 1'b0;
+      st_start_q       <= 1'b0;
+      st_done_q        <= 1'b0;
+      st_err_q         <= 1'b0;
+      st_n_q           <= '0;
+      st_data_q        <= '0;
+      st_open_q        <= 1'b0;
+      rx_tlp_cnt_q     <= '0;
+      used_hi_q        <= 1'b0;
     end else begin
-      logic [12:0] used_next;
+      logic [2:0]  wr_cnt;
+      logic [12:0] sub_cnt;
+      logic [13:0] used_sum;
       rx_pkt_q         <= rx_pkt_d;
       rx_body_q        <= rx_body_d;
       rx_cnt_q         <= rx_cnt_d;
@@ -1560,6 +1934,15 @@ module rivet_mac_os_rx #(
       dllp_park_q      <= dllp_park_d;
       dllp_park_data_q <= dllp_park_data_d;
       dllp_park_err_q  <= dllp_park_err_d;
+      st_valid_q       <= st_valid_d;
+      st_start_q       <= st_start_d;
+      st_done_q        <= st_done_d;
+      st_err_q         <= st_err_d;
+      st_n_q           <= st_n_d;
+      st_data_q        <= st_data_d;
+      st_open_q        <= st_open_d;
+      rx_tlp_cnt_q     <= rx_tlp_cnt_d;
+      used_hi_q        <= (used_q > 13'd3600);
       if (frame_push_d && (q_count_q < 5'(TLP_Q))) begin
         q_base[q_wptr_q[3:0]] <= frame_push_base_d;
         q_len[q_wptr_q[3:0]]  <= frame_push_len_d;
@@ -1573,28 +1956,11 @@ module rivet_mac_os_rx #(
         2'b01:   q_count_q <= q_count_q - 5'd1;
         default: q_count_q <= q_count_q;
       endcase
-      used_next = used_q;
-      if (tlp_ram_we)
-        used_next = used_next + 12'd1;
-      if (tlp_ram_we2)
-        used_next = used_next + 12'd1;
-      if (tlp_ram_we3)
-        used_next = used_next + 12'd1;
-      if (tlp_ram_we4)
-        used_next = used_next + 12'd1;
-      if (rd_words != 3'd0) begin
-        if (13'(rd_words) >= used_next)
-          used_next = 13'd0;
-        else
-          used_next = used_next - 13'(rd_words);
-      end
-      if (rd_drop != 12'd0) begin
-        if (rd_drop >= used_next)
-          used_next = 12'd0;
-        else
-          used_next = used_next - rd_drop;
-      end
-      used_q <= used_next;
+      wr_cnt   = {2'd0, tlp_ram_we} + {2'd0, tlp_ram_we2} +
+                 {2'd0, tlp_ram_we3} + {2'd0, tlp_ram_we4};
+      sub_cnt  = (rd_drop != 12'd0) ? {1'b0, rd_drop} : {10'd0, rd_words};
+      used_sum = {1'b0, used_q} + {11'd0, wr_cnt};
+      used_q  <= ({1'b0, sub_cnt} >= used_sum) ? 13'd0 : (used_sum[12:0] - sub_cnt);
     end
   end
 
@@ -1603,497 +1969,561 @@ module rivet_mac_os_rx #(
 
 endmodule : rivet_mac_os_rx
 
-// Gen3/Gen4 framing filter. One symbol used to depend on the previous
-// symbol, which is 32 carry steps at Gen4 x4. Each pair of symbols is
-// evaluated for every framing class, and a tree of those classes keeps
-// the beat-to-beat countdown on a short path.
+// Stage G0 of Gen3/Gen4 framing filter: advances (st_i, left_i) and produces
+// compact metadata for Stage G1. Pre-decoded l_hi_z_i and registered
+// left_hi_z_i eliminate 16-bit comparison carry chains from the critical path.
+module rivet_mac_gf_scan_meta #(
+  parameter int unsigned NSYM       = 32,
+  parameter int unsigned DLLP_BYTES = 6
+) (
+  input  logic [2:0]          st_i,
+  input  logic [15:0]         left_i,
+  input  logic                left_hi_z_i,
+  input  logic [5:0]          cnt_i,
+  input  logic [NSYM-1:0]     sdp_i,
+  input  logic [NSYM-1:0]     stp_i,
+  input  logic [8*NSYM-1:0]   data_i,
+  input  logic [31:0]         l_hi_z_i,
+  output logic [2:0]          st_o,
+  output logic [15:0]         left_o,
+  output logic                open_fin_o,
+  output logic [5:0]          h0_o,
+  output logic                end_pos0_v_o,
+  output logic [5:0]          end_pos0_o,
+  output logic                dllp_end0_v_o,
+  output logic [5:0]          dllp_end0_o,
+  output logic [1:0]          s1_drops_o,
+  output logic                found_o,
+  output logic [4:0]          s_idx_o,
+  output logic                end_pos1_v_o,
+  output logic [5:0]          end_pos1_o,
+  output logic                dllp_end1_v_o,
+  output logic [5:0]          dllp_end1_o,
+  output logic [1:0]          s2_drops_o
+);
+
+  function automatic logic [5:0] prio32(input logic [31:0] m);
+    logic [7:0]  g_v;
+    logic [1:0]  g_i [8];
+    logic [1:0]  h_v;
+    logic [3:0]  h_i [2];
+    logic        v;
+    logic [4:0]  idx;
+    for (int unsigned g = 0; g < 8; g++) begin
+      g_v[g] = |m[4*g +: 4];
+      if      (m[4*g + 0]) g_i[g] = 2'd0;
+      else if (m[4*g + 1]) g_i[g] = 2'd1;
+      else if (m[4*g + 2]) g_i[g] = 2'd2;
+      else                 g_i[g] = 2'd3;
+    end
+    for (int unsigned h = 0; h < 2; h++) begin
+      h_v[h] = |g_v[4*h +: 4];
+      if      (g_v[4*h + 0]) h_i[h] = {2'd0, g_i[4*h + 0]};
+      else if (g_v[4*h + 1]) h_i[h] = {2'd1, g_i[4*h + 1]};
+      else if (g_v[4*h + 2]) h_i[h] = {2'd2, g_i[4*h + 2]};
+      else                   h_i[h] = {2'd3, g_i[4*h + 3]};
+    end
+    v   = h_v[0] || h_v[1];
+    idx = h_v[0] ? {1'b0, h_i[0]} : {1'b1, h_i[1]};
+    return {v, idx};
+  endfunction
+
+  always_comb begin
+    logic [31:0] sdp_w, stp_w;
+    logic [7:0]  data_b [0:63];
+
+    // Precomputed per-position Step-2 decisions (zero dependence on st_i/left_i).
+    logic [31:0] stp_fin_at;
+    logic [31:0] dllp_fin_at;
+    logic [5:0]  end1_at [0:31];
+
+    // Step 1: resolve any open packet carried in (st_i, left_i).
+    logic        open_fin;
+    logic [5:0]  h0;
+    logic        end_pos0_v, dllp_end0_v;
+    logic [5:0]  end_pos0, dllp_end0;
+    logic [1:0]  s1_drops;
+    logic [2:0]  mid_st;
+    logic [15:0] mid_left;
+    logic        left_lt_cnt;
+
+    // Step 2: hunt from h0 for the first STP or SDP in the beat.
+    logic [31:0] cand;
+    logic [5:0]  sp;
+    logic        found;
+    logic [4:0]  s_idx;
+    logic        is_stp;
+    logic [5:0]  rem, rem_pay;
+    logic [7:0]  b0, b1;
+    logic [15:0] l_new;
+    logic        end_pos1_v, dllp_end1_v;
+    logic [5:0]  end_pos1, dllp_end1;
+    logic [1:0]  s2_drops;
+
+    sdp_w = '0;
+    stp_w = '0;
+    sdp_w[NSYM-1:0] = sdp_i;
+    stp_w[NSYM-1:0] = stp_i;
+    for (int unsigned i = 0; i < 64; i++)
+      data_b[i] = (i < NSYM) ? data_i[8*i +: 8] : 8'h00;
+
+    for (int unsigned d = 0; d < 32; d++) begin
+      automatic logic [5:0] rem_d = (cnt_i > (6'(d) + 6'd1)) ? (cnt_i - 6'd1 - 6'(d)) : 6'd0;
+      automatic logic [5:0] rp_d  = (rem_d >= 6'd2) ? (rem_d - 6'd2) : 6'd0;
+      stp_fin_at[d]  = (rem_d >= 6'd2) && l_hi_z_i[d] &&
+                       ({1'b0, data_b[d + 1][4:0]} < rp_d);
+      end1_at[d]     = 6'(d) + 6'd3 + {1'b0, data_b[d + 1][4:0]};
+      dllp_fin_at[d] = (rem_d > 6'(DLLP_BYTES));
+    end
+
+    left_lt_cnt = left_hi_z_i && (left_i[5:0] < cnt_i);
+
+    open_fin    = 1'b0;
+    h0          = 6'd0;
+    end_pos0_v  = 1'b0;
+    end_pos0    = 6'd0;
+    dllp_end0_v = 1'b0;
+    dllp_end0   = 6'd0;
+    s1_drops    = 2'd0;
+    mid_st      = st_i;
+    mid_left    = left_i;
+
+    unique case (st_i)
+      3'd0: begin
+        open_fin = 1'b1;
+        h0       = 6'd0;
+        mid_st   = 3'd0;
+        mid_left = 16'd0;
+      end
+      3'd1: begin
+        if (cnt_i == 6'd0) begin
+          open_fin = 1'b0;
+          mid_st   = 3'd1;
+          mid_left = left_i;
+        end else if (cnt_i == 6'd1) begin
+          s1_drops = 2'd1;
+          open_fin = 1'b0;
+          mid_st   = 3'd2;
+          mid_left = {8'd0, data_b[0]};
+        end else begin
+          automatic logic [15:0] l1 = {data_b[1], data_b[0]};
+          automatic logic [5:0]  e1 = 6'd2 + {1'b0, data_b[0][4:0]};
+          automatic logic        e1_fin = (data_b[1] == 8'h00) &&
+                                          (data_b[0][7:5] == 3'b000) &&
+                                          (e1 < cnt_i);
+          s1_drops = 2'd2;
+          if (e1_fin) begin
+            open_fin   = 1'b1;
+            end_pos0_v = 1'b1;
+            end_pos0   = e1;
+            h0         = e1 + 6'd1;
+            mid_st     = 3'd0;
+            mid_left   = 16'd0;
+          end else begin
+            open_fin = 1'b0;
+            mid_st   = 3'd3;
+            mid_left = l1 - (16'(cnt_i) - 16'd2);
+          end
+        end
+      end
+      3'd2: begin
+        if (cnt_i == 6'd0) begin
+          open_fin = 1'b0;
+          mid_st   = 3'd2;
+          mid_left = left_i;
+        end else begin
+          automatic logic [15:0] l2 = {data_b[0], left_i[7:0]};
+          automatic logic [5:0]  e2 = 6'd1 + {1'b0, left_i[4:0]};
+          automatic logic        e2_fin = (data_b[0] == 8'h00) &&
+                                          (left_i[7:5] == 3'b000) &&
+                                          (e2 < cnt_i);
+          s1_drops = 2'd1;
+          if (e2_fin) begin
+            open_fin   = 1'b1;
+            end_pos0_v = 1'b1;
+            end_pos0   = e2;
+            h0         = e2 + 6'd1;
+            mid_st     = 3'd0;
+            mid_left   = 16'd0;
+          end else begin
+            open_fin = 1'b0;
+            mid_st   = 3'd3;
+            mid_left = l2 - (16'(cnt_i) - 16'd1);
+          end
+        end
+      end
+      3'd3: begin
+        if (left_lt_cnt) begin
+          open_fin   = 1'b1;
+          end_pos0_v = 1'b1;
+          end_pos0   = left_i[5:0];
+          h0         = left_i[5:0] + 6'd1;
+          mid_st     = 3'd0;
+          mid_left   = 16'd0;
+        end else begin
+          open_fin = 1'b0;
+          mid_st   = 3'd3;
+          mid_left = left_i - 16'(cnt_i);
+        end
+      end
+      3'd4: begin
+        if (left_lt_cnt) begin
+          open_fin    = 1'b1;
+          dllp_end0_v = 1'b1;
+          dllp_end0   = left_i[5:0];
+          h0          = left_i[5:0] + 6'd1;
+          mid_st      = 3'd0;
+          mid_left    = 16'd0;
+        end else begin
+          open_fin = 1'b0;
+          mid_st   = 3'd4;
+          mid_left = left_i - 16'(cnt_i);
+        end
+      end
+      default: begin
+        open_fin = 1'b1;
+        h0       = 6'd0;
+        mid_st   = 3'd0;
+        mid_left = 16'd0;
+      end
+    endcase
+
+    cand = '0;
+    for (int unsigned d = 0; d < 32; d++)
+      cand[d] = open_fin && (6'(d) >= h0) && (6'(d) < cnt_i) && (stp_w[d] || sdp_w[d]);
+    sp    = prio32(cand);
+    found = sp[5];
+    s_idx = sp[4:0];
+
+    is_stp      = stp_w[s_idx];
+    rem         = (cnt_i > ({1'b0, s_idx} + 6'd1)) ? (cnt_i - 6'd1 - {1'b0, s_idx}) : 6'd0;
+    rem_pay     = (rem >= 6'd2) ? (rem - 6'd2) : 6'd0;
+    b0          = data_b[{1'b0, s_idx} + 6'd1];
+    b1          = data_b[{1'b0, s_idx} + 6'd2];
+    l_new       = {b1, b0};
+    end_pos1_v  = 1'b0;
+    end_pos1    = 6'd0;
+    dllp_end1_v = 1'b0;
+    dllp_end1   = 6'd0;
+    s2_drops    = 2'd0;
+    st_o        = mid_st;
+    left_o      = mid_left;
+
+    if (open_fin && found) begin
+      if (is_stp) begin
+        if (rem == 6'd0) begin
+          s2_drops = 2'd0;
+          st_o     = 3'd1;
+          left_o   = 16'd0;
+        end else if (rem == 6'd1) begin
+          s2_drops = 2'd1;
+          st_o     = 3'd2;
+          left_o   = {8'd0, b0};
+        end else begin
+          s2_drops = 2'd2;
+          if (stp_fin_at[s_idx]) begin
+            end_pos1_v = 1'b1;
+            end_pos1   = end1_at[s_idx];
+            st_o       = 3'd0;
+            left_o     = 16'd0;
+          end else begin
+            st_o   = 3'd3;
+            left_o = l_new - 16'(rem_pay);
+          end
+        end
+      end else begin
+        s2_drops = 2'd0;
+        if (dllp_fin_at[s_idx]) begin
+          dllp_end1_v = 1'b1;
+          dllp_end1   = {1'b0, s_idx} + 6'd1 + 6'(DLLP_BYTES);
+          st_o        = 3'd0;
+          left_o      = 16'd0;
+        end else begin
+          st_o   = 3'd4;
+          left_o = 16'(DLLP_BYTES) - 16'(rem);
+        end
+      end
+    end
+
+    open_fin_o    = open_fin;
+    h0_o          = h0;
+    end_pos0_v_o  = end_pos0_v;
+    end_pos0_o    = end_pos0;
+    dllp_end0_v_o = dllp_end0_v;
+    dllp_end0_o   = dllp_end0;
+    s1_drops_o    = s1_drops;
+    found_o       = found;
+    s_idx_o       = s_idx;
+    end_pos1_v_o  = end_pos1_v;
+    end_pos1_o    = end_pos1;
+    dllp_end1_v_o = dllp_end1_v;
+    dllp_end1_o   = dllp_end1;
+    s2_drops_o    = s2_drops;
+  end
+endmodule : rivet_mac_gf_scan_meta
+
+// Stage G1 of Gen3/Gen4 framing filter: masks payload token flags and compacts
+// out the 0..4 stripped TLP length bytes with a 5:1 mux.
+module rivet_mac_gf_compact #(
+  parameter int unsigned NSYM = 32
+) (
+  input  logic [5:0]          cnt_i,
+  input  logic [NSYM-1:0]     sdp_i,
+  input  logic [NSYM-1:0]     stp_i,
+  input  logic [NSYM-1:0]     end_i,
+  input  logic [NSYM-1:0]     edb_i,
+  input  logic [NSYM-1:0]     k_i,
+  input  logic [8*NSYM-1:0]   data_i,
+  input  logic                open_fin_i,
+  input  logic [5:0]          h0_i,
+  input  logic                end_pos0_v_i,
+  input  logic [5:0]          end_pos0_i,
+  input  logic                dllp_end0_v_i,
+  input  logic [5:0]          dllp_end0_i,
+  input  logic [1:0]          s1_drops_i,
+  input  logic                found_i,
+  input  logic [4:0]          s_idx_i,
+  input  logic                end_pos1_v_i,
+  input  logic [5:0]          end_pos1_i,
+  input  logic                dllp_end1_v_i,
+  input  logic [5:0]          dllp_end1_i,
+  input  logic [1:0]          s2_drops_i,
+  output logic [5:0]          cnt_o,
+  output logic [NSYM-1:0]     sdp_o,
+  output logic [NSYM-1:0]     stp_o,
+  output logic [NSYM-1:0]     end_o,
+  output logic [NSYM-1:0]     edb_o,
+  output logic [NSYM-1:0]     k_o,
+  output logic [8*NSYM-1:0]   data_o
+);
+
+  always_comb begin
+    logic [31:0] sdp_w, stp_w, end_w, edb_w, k_w;
+    logic [7:0]  data_b [0:35];
+    logic [35:0] f_sdp, f_stp, f_end, f_edb, f_k;
+    logic [7:0]  f_data [0:35];
+    logic [5:0]  q_stp;
+
+    sdp_w = '0;
+    stp_w = '0;
+    end_w = '0;
+    edb_w = '0;
+    k_w   = '0;
+    sdp_w[NSYM-1:0] = sdp_i;
+    stp_w[NSYM-1:0] = stp_i;
+    end_w[NSYM-1:0] = end_i;
+    edb_w[NSYM-1:0] = edb_i;
+    k_w[NSYM-1:0]   = k_i;
+    for (int unsigned i = 0; i < 36; i++)
+      data_b[i] = (i < NSYM) ? data_i[8*i +: 8] : 8'h00;
+
+    f_sdp = '0;
+    f_stp = '0;
+    f_end = '0;
+    f_edb = '0;
+    f_k   = '0;
+    for (int unsigned d = 0; d < 36; d++)
+      f_data[d] = data_b[d];
+
+    for (int unsigned d = 0; d < 32; d++) begin
+      if (6'(d) < cnt_i) begin
+        f_k[d] = k_w[d];
+        if (!open_fin_i || (6'(d) < h0_i)) begin
+          if (end_pos0_v_i && (6'(d) == end_pos0_i)) begin
+            f_end[d] = 1'b1;
+          end else if (dllp_end0_v_i && (6'(d) == dllp_end0_i)) begin
+            f_end[d] = end_w[d];
+            f_edb[d] = edb_w[d];
+          end
+        end else if (!found_i || (6'(d) <= {1'b0, s_idx_i})) begin
+          f_sdp[d] = sdp_w[d];
+          f_stp[d] = stp_w[d];
+          f_end[d] = end_w[d];
+          f_edb[d] = edb_w[d];
+        end else begin
+          if (end_pos1_v_i && (6'(d) == end_pos1_i)) begin
+            f_end[d] = 1'b1;
+          end else if (dllp_end1_v_i && (6'(d) == dllp_end1_i)) begin
+            f_end[d] = end_w[d];
+            f_edb[d] = edb_w[d];
+          end else if ((end_pos1_v_i && (6'(d) > end_pos1_i)) ||
+                       (dllp_end1_v_i && (6'(d) > dllp_end1_i))) begin
+            f_sdp[d] = sdp_w[d];
+            f_stp[d] = stp_w[d];
+            f_end[d] = end_w[d];
+            f_edb[d] = edb_w[d];
+          end
+        end
+      end
+    end
+
+    q_stp  = {1'b0, s_idx_i} - {4'd0, s1_drops_i};
+    cnt_o  = cnt_i - {4'd0, s1_drops_i} - {4'd0, s2_drops_i};
+    sdp_o  = '0;
+    stp_o  = '0;
+    end_o  = '0;
+    edb_o  = '0;
+    k_o    = '0;
+    data_o = '0;
+
+    for (int unsigned q = 0; q < NSYM; q++) begin
+      if (6'(q) < cnt_o) begin
+        automatic logic [2:0] sh;
+        sh = {1'b0, s1_drops_i} +
+             ((open_fin_i && found_i && (s2_drops_i != 2'd0) && (6'(q) > q_stp)) ?
+              {1'b0, s2_drops_i} : 3'd0);
+        unique case (sh)
+          3'd0: begin
+            sdp_o[q]          = f_sdp[q];
+            stp_o[q]          = f_stp[q];
+            end_o[q]          = f_end[q];
+            edb_o[q]          = f_edb[q];
+            k_o[q]            = f_k[q];
+            data_o[8*q +: 8]  = f_data[q];
+          end
+          3'd1: begin
+            sdp_o[q]          = f_sdp[q + 1];
+            stp_o[q]          = f_stp[q + 1];
+            end_o[q]          = f_end[q + 1];
+            edb_o[q]          = f_edb[q + 1];
+            k_o[q]            = f_k[q + 1];
+            data_o[8*q +: 8]  = f_data[q + 1];
+          end
+          3'd2: begin
+            sdp_o[q]          = f_sdp[q + 2];
+            stp_o[q]          = f_stp[q + 2];
+            end_o[q]          = f_end[q + 2];
+            edb_o[q]          = f_edb[q + 2];
+            k_o[q]            = f_k[q + 2];
+            data_o[8*q +: 8]  = f_data[q + 2];
+          end
+          3'd3: begin
+            sdp_o[q]          = f_sdp[q + 3];
+            stp_o[q]          = f_stp[q + 3];
+            end_o[q]          = f_end[q + 3];
+            edb_o[q]          = f_edb[q + 3];
+            k_o[q]            = f_k[q + 3];
+            data_o[8*q +: 8]  = f_data[q + 3];
+          end
+          default: begin
+            sdp_o[q]          = f_sdp[q + 4];
+            stp_o[q]          = f_stp[q + 4];
+            end_o[q]          = f_end[q + 4];
+            edb_o[q]          = f_edb[q + 4];
+            k_o[q]            = f_k[q + 4];
+            data_o[8*q +: 8]  = f_data[q + 4];
+          end
+        endcase
+      end
+    end
+  end
+endmodule : rivet_mac_gf_compact
+
+// Combinational wrapper pairing G0 meta + G1 compact for standalone unit tests.
 module rivet_mac_gf_scan #(
   parameter int unsigned NSYM       = 32,
   parameter int unsigned DLLP_BYTES = 6
 ) (
   input  logic [2:0]          st_i,
   input  logic [15:0]         left_i,
-  input  logic [NSYM-1:0]     en_i,
+  input  logic [5:0]          cnt_i,
   input  logic [NSYM-1:0]     sdp_i,
   input  logic [NSYM-1:0]     stp_i,
   input  logic [NSYM-1:0]     end_i,
   input  logic [NSYM-1:0]     edb_i,
+  input  logic [NSYM-1:0]     k_i,
   input  logic [8*NSYM-1:0]   data_i,
   output logic [2:0]          st_o,
   output logic [15:0]         left_o,
-  output logic [NSYM-1:0]     en_o,
+  output logic [5:0]          cnt_o,
   output logic [NSYM-1:0]     sdp_o,
   output logic [NSYM-1:0]     stp_o,
   output logic [NSYM-1:0]     end_o,
-  output logic [NSYM-1:0]     edb_o
+  output logic [NSYM-1:0]     edb_o,
+  output logic [NSYM-1:0]     k_o,
+  output logic [8*NSYM-1:0]   data_o
 );
-  localparam int unsigned W   = 32;
-  localparam int unsigned FW  = 5;
-  localparam int unsigned FB  = 21;
-  localparam int unsigned RES = FB + W * FW;
-  localparam int unsigned CMAX = 69;
 
-  logic [W-1:0] en_w, sdp_w, stp_w, end_w, edb_w;
-  logic [8*W-1:0] data_w;
-
-  always_comb begin
-    en_w   = '0;
-    sdp_w  = '0;
-    stp_w  = '0;
-    end_w  = '0;
-    edb_w  = '0;
-    data_w = '0;
-    en_w[NSYM-1:0]   = en_i;
-    sdp_w[NSYM-1:0]  = sdp_i;
-    stp_w[NSYM-1:0]  = stp_i;
-    end_w[NSYM-1:0]  = end_i;
-    edb_w[NSYM-1:0]  = edb_i;
-    data_w[8*NSYM-1:0] = data_i;
-  end
-
-  function automatic int ncls(input int L);
-    ncls = 2 * L + 5;
-  endfunction
-
-  function automatic int cls_index(
-    input logic [2:0]  st,
-    input logic [15:0] left,
-    input logic        wide,
-    input int          len
-  );
-    if (st == 3'd3) begin
-      if (wide || (left >= 16'(len))) cls_index = len;
-      else cls_index = int'(left);
-    end else if (st == 3'd4) begin
-      if (wide || (left >= 16'(len))) cls_index = 2 * len + 1;
-      else cls_index = len + 1 + int'(left);
-    end else if (st == 3'd0) begin
-      cls_index = 2 * len + 2;
-    end else if (st == 3'd1) begin
-      cls_index = 2 * len + 3;
-    end else begin
-      cls_index = 2 * len + 4;
-    end
-  endfunction
-
-  function automatic logic [23:0] step_sym(
-    input logic [2:0]  st_in,
-    input logic [15:0] left_in,
-    input logic        en_in,
-    input logic        stp_in,
-    input logic        sdp_in,
-    input logic        end_in,
-    input logic        edb_in,
-    input logic [7:0]  data_b
-  );
-    logic [2:0]  st;
-    logic [15:0] left;
-    logic        en, stp, sdp, endb, edb;
-    begin
-      st   = st_in;
-      left = left_in;
-      en   = en_in;
-      stp  = stp_in;
-      sdp  = sdp_in;
-      endb = end_in;
-      edb  = edb_in;
-      if (en_in) begin
-        if (st == 3'd0) begin
-          if (stp) begin
-            st = 3'd1;
-          end else if (sdp) begin
-            st   = 3'd4;
-            left = 16'(DLLP_BYTES);
-          end
-        end else if (st == 3'd1) begin
-          left = {8'd0, data_b};
-          en   = 1'b0;
-          stp  = 1'b0;
-          sdp  = 1'b0;
-          endb = 1'b0;
-          edb  = 1'b0;
-          st   = 3'd2;
-        end else if (st == 3'd2) begin
-          left = {data_b, left[7:0]};
-          en   = 1'b0;
-          stp  = 1'b0;
-          sdp  = 1'b0;
-          endb = 1'b0;
-          edb  = 1'b0;
-          st   = 3'd3;
-        end else if (st == 3'd4) begin
-          stp = 1'b0;
-          sdp = 1'b0;
-          if (left == 16'd0) begin
-            st = 3'd0;
-          end else begin
-            endb = 1'b0;
-            edb  = 1'b0;
-            left = left - 16'd1;
-          end
-        end else if (left == 16'd0) begin
-          endb = 1'b1;
-          edb  = 1'b0;
-          stp  = 1'b0;
-          sdp  = 1'b0;
-          st   = 3'd0;
-        end else begin
-          endb = 1'b0;
-          edb  = 1'b0;
-          stp  = 1'b0;
-          sdp  = 1'b0;
-          left = left - 16'd1;
-        end
-      end
-      step_sym = {st, left, edb, endb, sdp, stp, en};
-    end
-  endfunction
-
-  function automatic logic [RES-1:0] sim2(
-    input int          c,
-    input int unsigned base
-  );
-    logic [2:0]  st;
-    logic [15:0] left;
-    logic        pure_in;
-    logic [23:0] r0, r1;
-    logic [RES-1:0] res;
-    logic [4:0] f0, f1;
-    int unsigned p0, p1;
-    begin
-      res = '0;
-      pure_in = 1'b0;
-      st = 3'd0;
-      left = '0;
-      if (c <= 2) begin
-        st = 3'd3;
-        pure_in = (c == 2);
-        left = pure_in ? 16'd8 : 16'(c);
-      end else if (c <= 5) begin
-        st = 3'd4;
-        pure_in = (c == 5);
-        left = pure_in ? 16'd8 : 16'(c - 3);
-      end else if (c == 6) begin
-        st = 3'd0;
-      end else if (c == 7) begin
-        st = 3'd1;
-      end else begin
-        st = 3'd2;
-      end
-      p0 = base;
-      p1 = base + 1;
-      r0 = step_sym(st, left, en_w[p0], stp_w[p0], sdp_w[p0], end_w[p0], edb_w[p0],
-                    data_w[8*p0 +: 8]);
-      r1 = step_sym(r0[23:21], r0[20:5], en_w[p1], stp_w[p1], sdp_w[p1], end_w[p1],
-                    edb_w[p1], data_w[8*p1 +: 8]);
-      f0 = r0[4:0];
-      f1 = r1[4:0];
-      res[0] = pure_in && ((r1[23:21] == st) && ((st == 3'd3) || (st == 3'd4)));
-      if (res[0]) begin
-        res[3:1]  = st;
-        res[19:4] = 16'd8 - r1[20:5];
-      end else begin
-        res[3:1]  = r1[23:21];
-        res[19:4] = r1[20:5];
-      end
-      res[FB + p0*FW +: FW] = f0;
-      res[FB + p1*FW +: FW] = f1;
-      sim2 = res;
-    end
-  endfunction
-
-  function automatic logic res_pure(input logic [RES-1:0] r);
-    res_pure = r[0];
-  endfunction
-  function automatic logic [2:0] res_st(input logic [RES-1:0] r);
-    res_st = r[3:1];
-  endfunction
-  function automatic logic [15:0] res_left(input logic [RES-1:0] r);
-    res_left = r[19:4];
-  endfunction
-
-  function automatic logic [4:0] sym5(input int unsigned p);
-    sym5 = p[4:0];
-  endfunction
-
-  // Two symbols, entered in st 2 with the real length-low byte.
-  function automatic logic [RES-1:0] enter2(
-    input int unsigned base,
-    input logic [15:0] lo
-  );
-    logic [4:0] p0, p1;
-    logic [23:0] r0, r1;
-    logic [RES-1:0] res;
-    begin
-      p0 = sym5(base);
-      p1 = sym5(base + 1);
-      r0 = step_sym(3'd2, lo, en_w[p0], stp_w[p0], sdp_w[p0], end_w[p0], edb_w[p0],
-                    data_w[8*int'(p0) +: 8]);
-      r1 = step_sym(r0[23:21], r0[20:5], en_w[p1], stp_w[p1], sdp_w[p1], end_w[p1],
-                    edb_w[p1], data_w[8*int'(p1) +: 8]);
-      res = '0;
-      res[3:1]  = r1[23:21];
-      res[19:4] = r1[20:5];
-      res[FB + int'(p0)*FW +: FW] = r0[4:0];
-      res[FB + int'(p1)*FW +: FW] = r1[4:0];
-      enter2 = res;
-    end
-  endfunction
-
-  function automatic logic [RES-1:0] merge_ab(
-    input logic [RES-1:0] a,
-    input logic [RES-1:0] b
-  );
-    logic [RES-1:0] res;
-    begin
-      res = '0;
-      if (res_pure(b)) begin
-        res[3:1]  = res_st(a);
-        res[19:4] = res_left(a) - res_left(b);
-      end else begin
-        res[3:1]  = res_st(b);
-        res[19:4] = res_left(b);
-      end
-      res[FB +: W*FW] = a[FB +: W*FW] | b[FB +: W*FW];
-      merge_ab = res;
-    end
-  endfunction
-
-  logic [RES-1:0] leaf [0:15][0:CMAX-1];
-  logic [RES-1:0] n4   [0:7][0:CMAX-1];
-  logic [RES-1:0] n8   [0:3][0:CMAX-1];
-  logic [RES-1:0] n16  [0:1][0:CMAX-1];
-  logic [RES-1:0] n32  [0:CMAX-1];
-
-  function automatic logic [RES-1:0] enter4(
-    input int unsigned base,
-    input logic [15:0] lo
-  );
-    logic [RES-1:0] a;
-    logic [4:0] sp;
-    logic [3:0] li;
-    begin
-      a  = enter2(base, lo);
-      sp = sym5(base + 2);
-      li = sp[4:1];
-      if (res_st(a) == 3'd2)
-        enter4 = merge_ab(a, enter2(base + 2, res_left(a)));
-      else
-        enter4 = merge_ab(a, leaf[li][cls_index(res_st(a), res_left(a), 1'b0, 2)]);
-    end
-  endfunction
-
-  function automatic logic [RES-1:0] enter8(
-    input int unsigned base,
-    input logic [15:0] lo
-  );
-    logic [RES-1:0] a;
-    logic [4:0] sp;
-    logic [2:0] ni;
-    begin
-      a  = enter4(base, lo);
-      sp = sym5(base + 4);
-      ni = sp[4:2];
-      if (res_st(a) == 3'd2)
-        enter8 = merge_ab(a, enter4(base + 4, res_left(a)));
-      else
-        enter8 = merge_ab(a, n4[ni][cls_index(res_st(a), res_left(a), 1'b0, 4)]);
-    end
-  endfunction
-
-  function automatic logic [RES-1:0] enter16(
-    input int unsigned base,
-    input logic [15:0] lo
-  );
-    logic [RES-1:0] a;
-    logic [4:0] sp;
-    logic [1:0] ni;
-    begin
-      a  = enter8(base, lo);
-      sp = sym5(base + 8);
-      ni = sp[4:3];
-      if (res_st(a) == 3'd2)
-        enter16 = merge_ab(a, enter8(base + 8, res_left(a)));
-      else
-        enter16 = merge_ab(a, n8[ni][cls_index(res_st(a), res_left(a), 1'b0, 8)]);
-    end
-  endfunction
-
-  function automatic logic [RES-1:0] enter32(input logic [15:0] lo);
-    logic [RES-1:0] a;
-    begin
-      a = enter16(0, lo);
-      if (res_st(a) == 3'd2)
-        enter32 = merge_ab(a, enter16(16, res_left(a)));
-      else
-        enter32 = merge_ab(a, n16[1][cls_index(res_st(a), res_left(a), 1'b0, 16)]);
-    end
-  endfunction
-
-  // Each level has its own function so a table is never read and written
-  // in the same process. The st2 arm only steps the next-smaller block.
-`define GF_COMPOSE(FN, LCONST, ENTER_FN) \
-  function automatic logic [RES-1:0] FN( \
-    input int c, \
-    input int unsigned base, \
-    input logic [RES-1:0] child_a [0:CMAX-1], \
-    input logic [RES-1:0] child_b [0:CMAX-1] \
-  ); \
-    int Lc; \
-    logic [2:0] st; \
-    logic [15:0] left, remain, left_after; \
-    logic pure_in; \
-    logic [RES-1:0] a_res, b_res, res; \
-    int a_cls, b_cls; \
-    begin \
-      Lc = LCONST / 2; \
-      pure_in = 1'b0; \
-      st = 3'd0; \
-      left = '0; \
-      if (c <= LCONST) begin \
-        st = 3'd3; \
-        pure_in = (c == LCONST); \
-        left = pure_in ? 16'd0 : 16'(c); \
-      end else if (c <= (2 * LCONST + 1)) begin \
-        st = 3'd4; \
-        pure_in = (c == (2 * LCONST + 1)); \
-        left = pure_in ? 16'd0 : 16'(c - (LCONST + 1)); \
-      end else if (c == (2 * LCONST + 2)) begin \
-        st = 3'd0; \
-      end else if (c == (2 * LCONST + 3)) begin \
-        st = 3'd1; \
-      end else begin \
-        st = 3'd2; \
-      end \
-      if (pure_in || (((st == 3'd3) || (st == 3'd4)) && (left >= 16'(Lc)))) \
-        a_cls = cls_index(st, 16'd0, 1'b1, Lc); \
-      else \
-        a_cls = cls_index(st, left, 1'b0, Lc); \
-      a_res = child_a[a_cls]; \
-      if (res_pure(a_res) && ((res_st(a_res) == 3'd3) || (res_st(a_res) == 3'd4))) begin \
-        if (pure_in) begin \
-          b_cls = cls_index(st, 16'd0, 1'b1, Lc); \
-          b_res = child_b[b_cls]; \
-          res = '0; \
-          res[0] = res_pure(b_res); \
-          res[3:1] = st; \
-          res[19:4] = res_left(a_res) + res_left(b_res); \
-        end else begin \
-          remain = left - res_left(a_res); \
-          if (remain >= 16'(Lc)) \
-            b_cls = cls_index(res_st(a_res), 16'd0, 1'b1, Lc); \
-          else \
-            b_cls = cls_index(res_st(a_res), remain, 1'b0, Lc); \
-          b_res = child_b[b_cls]; \
-          res = '0; \
-          if (res_pure(b_res)) begin \
-            left_after = remain - res_left(b_res); \
-            res[0] = (left_after >= 16'(LCONST)); \
-            res[3:1] = res_st(a_res); \
-            res[19:4] = res[0] ? (res_left(a_res) + res_left(b_res)) : left_after; \
-          end else begin \
-            res[0] = 1'b0; \
-            res[3:1] = res_st(b_res); \
-            res[19:4] = res_left(b_res); \
-          end \
-        end \
-      end else if (res_st(a_res) == 3'd2) begin \
-        b_res = ENTER_FN(base + Lc, res_left(a_res)); \
-        res = '0; \
-        res[3:1]  = res_st(b_res); \
-        res[19:4] = res_left(b_res); \
-      end else begin \
-        b_cls = cls_index(res_st(a_res), res_left(a_res), 1'b0, Lc); \
-        b_res = child_b[b_cls]; \
-        res = '0; \
-        if (res_pure(b_res)) begin \
-          res[0] = 1'b0; \
-          res[3:1] = res_st(a_res); \
-          res[19:4] = res_left(a_res) - res_left(b_res); \
-        end else begin \
-          res[0] = 1'b0; \
-          res[3:1] = res_st(b_res); \
-          res[19:4] = res_left(b_res); \
-        end \
-      end \
-      res[FB +: W*FW] = a_res[FB +: W*FW] | b_res[FB +: W*FW]; \
-      FN = res; \
-    end \
-  endfunction
-
-`GF_COMPOSE(compose4, 4, enter2)
-`GF_COMPOSE(compose8, 8, enter4)
-`GF_COMPOSE(compose16, 16, enter8)
-`GF_COMPOSE(compose32, 32, enter16)
-`undef GF_COMPOSE
-
-  generate
-    for (genvar b = 0; b < 16; b++) begin : g_leaf
-      for (genvar c = 0; c < 9; c++) begin : g_cls
-        assign leaf[b][c] = sim2(c, b * 2);
-      end
-      for (genvar c = 9; c < CMAX; c++) begin : g_pad
-        assign leaf[b][c] = '0;
-      end
-    end
-  endgenerate
+  logic [31:0] l_hi_z_w;
+  logic        open_fin_w;
+  logic [5:0]  h0_w;
+  logic        end_pos0_v_w, dllp_end0_v_w;
+  logic [5:0]  end_pos0_w, dllp_end0_w;
+  logic [1:0]  s1_drops_w;
+  logic        found_w;
+  logic [4:0]  s_idx_w;
+  logic        end_pos1_v_w, dllp_end1_v_w;
+  logic [5:0]  end_pos1_w, dllp_end1_w;
+  logic [1:0]  s2_drops_w;
 
   always_comb begin
-    for (int b = 0; b < 8; b++) begin
-      for (int c = 0; c < 13; c++)
-        n4[b][c] = compose4(c, b * 4, leaf[2*b], leaf[2*b+1]);
-      for (int c = 13; c < CMAX; c++)
-        n4[b][c] = '0;
+    for (int unsigned d = 0; d < 32; d++) begin
+      automatic logic [7:0] b0 = ((d + 1) < NSYM) ? data_i[8*(d + 1) +: 8] : 8'h00;
+      automatic logic [7:0] b1 = ((d + 2) < NSYM) ? data_i[8*(d + 2) +: 8] : 8'h00;
+      l_hi_z_w[d] = (b1 == 8'h00) && (b0[7:5] == 3'b000);
     end
   end
 
-  always_comb begin
-    for (int b = 0; b < 4; b++) begin
-      for (int c = 0; c < 21; c++)
-        n8[b][c] = compose8(c, b * 8, n4[2*b], n4[2*b+1]);
-      for (int c = 21; c < CMAX; c++)
-        n8[b][c] = '0;
-    end
-  end
+  rivet_mac_gf_scan_meta #(
+    .NSYM      (NSYM),
+    .DLLP_BYTES(DLLP_BYTES)
+  ) u_meta (
+    .st_i         (st_i),
+    .left_i       (left_i),
+    .left_hi_z_i  (left_i[15:6] == 10'd0),
+    .cnt_i        (cnt_i),
+    .sdp_i        (sdp_i),
+    .stp_i        (stp_i),
+    .data_i       (data_i),
+    .l_hi_z_i     (l_hi_z_w),
+    .st_o         (st_o),
+    .left_o       (left_o),
+    .open_fin_o   (open_fin_w),
+    .h0_o         (h0_w),
+    .end_pos0_v_o (end_pos0_v_w),
+    .end_pos0_o   (end_pos0_w),
+    .dllp_end0_v_o(dllp_end0_v_w),
+    .dllp_end0_o  (dllp_end0_w),
+    .s1_drops_o   (s1_drops_w),
+    .found_o      (found_w),
+    .s_idx_o      (s_idx_w),
+    .end_pos1_v_o (end_pos1_v_w),
+    .end_pos1_o   (end_pos1_w),
+    .dllp_end1_v_o(dllp_end1_v_w),
+    .dllp_end1_o  (dllp_end1_w),
+    .s2_drops_o   (s2_drops_w)
+  );
 
-  always_comb begin
-    for (int b = 0; b < 2; b++) begin
-      for (int c = 0; c < 37; c++)
-        n16[b][c] = compose16(c, b * 16, n8[2*b], n8[2*b+1]);
-      for (int c = 37; c < CMAX; c++)
-        n16[b][c] = '0;
-    end
-  end
-
-  always_comb begin
-    for (int c = 0; c < 69; c++)
-      n32[c] = compose32(c, 0, n16[0], n16[1]);
-  end
-
-  logic [RES-1:0] picked;
-  logic           in_pure;
-  int             in_cls;
-
-  always_comb begin
-    in_pure = ((st_i == 3'd3) || (st_i == 3'd4)) && (left_i >= 16'(W));
-    in_cls  = cls_index(st_i, left_i, in_pure, W);
-    if (st_i == 3'd2)
-      picked = enter32(left_i);
-    else
-      picked = n32[in_cls];
-    if (res_pure(picked)) begin
-      st_o   = st_i;
-      left_o = left_i - res_left(picked);
-    end else begin
-      st_o   = res_st(picked);
-      left_o = res_left(picked);
-    end
-    for (int unsigned p = 0; p < NSYM; p++) begin
-      en_o[p]  = picked[FB + p*FW];
-      stp_o[p] = picked[FB + p*FW + 1];
-      sdp_o[p] = picked[FB + p*FW + 2];
-      end_o[p] = picked[FB + p*FW + 3];
-      edb_o[p] = picked[FB + p*FW + 4];
-    end
-  end
+  rivet_mac_gf_compact #(
+    .NSYM(NSYM)
+  ) u_compact (
+    .cnt_i        (cnt_i),
+    .sdp_i        (sdp_i),
+    .stp_i        (stp_i),
+    .end_i        (end_i),
+    .edb_i        (edb_i),
+    .k_i          (k_i),
+    .data_i       (data_i),
+    .open_fin_i   (open_fin_w),
+    .h0_i         (h0_w),
+    .end_pos0_v_i (end_pos0_v_w),
+    .end_pos0_i   (end_pos0_w),
+    .dllp_end0_v_i(dllp_end0_v_w),
+    .dllp_end0_i  (dllp_end0_w),
+    .s1_drops_i   (s1_drops_w),
+    .found_i      (found_w),
+    .s_idx_i      (s_idx_w),
+    .end_pos1_v_i (end_pos1_v_w),
+    .end_pos1_i   (end_pos1_w),
+    .dllp_end1_v_i(dllp_end1_v_w),
+    .dllp_end1_i  (dllp_end1_w),
+    .s2_drops_i   (s2_drops_w),
+    .cnt_o        (cnt_o),
+    .sdp_o        (sdp_o),
+    .stp_o        (stp_o),
+    .end_o        (end_o),
+    .edb_o        (edb_o),
+    .k_o          (k_o),
+    .data_o       (data_o)
+  );
 endmodule : rivet_mac_gf_scan
