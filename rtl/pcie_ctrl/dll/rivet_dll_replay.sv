@@ -73,6 +73,9 @@ module rivet_dll_replay #(
   localparam int unsigned RAM_AW = $clog2(RAM_WORDS);
   logic [RAM_AW-1:0] word_waddr [4];
   logic [RAM_AW-1:0] word_raddr [4];
+  logic [3:0]        wr_we_q;
+  logic [RAM_AW-1:0] wr_waddr_q [4];
+  logic [63:0]       wr_wdata_q [4];
 
   logic [11:0]      ack_seq_eff;
   logic             ack_live;
@@ -111,10 +114,9 @@ module rivet_dll_replay #(
   rivet_ram_lane4 #(.DEPTH(RAM_WORDS)) u_word (
     .clk_i   (clk_i),
     .rst_ni  (rst_ni),
-    .we_i    ({cap_fire && cap_ex_valid_i, cap_fire && cap_ex_valid_i,
-               cap_fire && cap_hi_valid_i, cap_fire}),
-    .waddr_i (word_waddr),
-    .wdata_i ('{cap_data_i, cap_hi_data_i, cap_ex0_i, cap_ex1_i}),
+    .we_i    (wr_we_q),
+    .waddr_i (wr_waddr_q),
+    .wdata_i (wr_wdata_q),
     .re_i    (1'b1),
     .raddr_i (word_raddr),
     .rdata_o (word_rdata)
@@ -122,6 +124,11 @@ module rivet_dll_replay #(
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
+      wr_we_q         <= 4'b0;
+      for (int unsigned i = 0; i < 4; i++) begin
+        wr_waddr_q[i] <= '0;
+        wr_wdata_q[i] <= '0;
+      end
       wr_q            <= '0;
       wr_word_q       <= '0;
       rd_q            <= '0;
@@ -140,6 +147,7 @@ module rivet_dll_replay #(
         len_q[i]   <= '0;
       end
     end else if (clear_i) begin
+      wr_we_q         <= 4'b0;
       wr_q            <= '0;
       wr_word_q       <= '0;
       rd_q            <= '0;
@@ -158,6 +166,10 @@ module rivet_dll_replay #(
       logic [11:0]      ack_seq_d;
       logic             purge_d;
       logic [15:0]      count_d;
+      wr_we_q    <= {cap_fire && cap_ex_valid_i, cap_fire && cap_ex_valid_i,
+                     cap_fire && cap_hi_valid_i, cap_fire};
+      wr_waddr_q <= word_waddr;
+      wr_wdata_q <= '{cap_data_i, cap_hi_data_i, cap_ex0_i, cap_ex1_i};
       replay_done_q <= 1'b0;
       ack_hold_d = ack_hold_q;
       ack_seq_d  = ack_seq_q;

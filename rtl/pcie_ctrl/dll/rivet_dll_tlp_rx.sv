@@ -451,6 +451,8 @@ module rivet_dll_tlp_rx #(
         end
         if (finish && !play_open_q)
           play_st_q <= PLAY_IDLE;
+      end else if (tl_v_q && tl_ready_i) begin
+        tl_v_q <= 1'b0;
       end
 
       if (((play_st_q == PLAY_IDLE) || finish) && (play_st_q != PLAY_PREP)) begin

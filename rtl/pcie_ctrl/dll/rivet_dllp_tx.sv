@@ -55,7 +55,7 @@ module rivet_dllp_tx (
   logic pending_q;
   rivet_dll_mac_tx_beat_t beat_q;
 
-  assign req_ready_o  = !pending_q || (beat_valid_o && beat_ready_i);
+  assign req_ready_o  = !pending_q;
   assign beat_valid_o = pending_q;
   assign beat_o       = beat_q;
 

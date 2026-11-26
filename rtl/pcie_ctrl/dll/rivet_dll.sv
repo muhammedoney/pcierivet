@@ -590,7 +590,7 @@ module rivet_dll #(
   assign mux_tx_v    = present_dllp || tlp_v;
   assign mux_tx_beat = present_dllp ? dllp_beat : tlp_beat;
   assign dllp_r      = mux_tx_r && present_dllp;
-  assign tlp_r       = mux_tx_r && !present_dllp && tlp_v;
+  assign tlp_r       = mux_tx_r && !(dllp_v && !tlp_in_pkt_q && dllp_hold_ack_q);
 
   // -------------------------------------------------------------------------
   // 2-entry skid buffer on dll_tx (u_dll -> u_mac)

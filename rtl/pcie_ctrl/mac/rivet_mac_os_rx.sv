@@ -346,7 +346,7 @@ module rivet_mac_os_rx #(
   logic             deskew_q;
   logic             ts_all_lanes;
 
-  assign ts_all_lanes = ((hit_any_ts | ~lane_en_i) == {LANES{1'b1}}) && (lane_en_i != '0);
+  assign ts_all_lanes = ((hit_any_ts | ~lane_en_rx_q) == {LANES{1'b1}}) && (lane_en_rx_q != '0);
 
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -401,7 +401,7 @@ module rivet_mac_os_rx #(
             lane_num_seen_q <= 1'b1;
           end
           // Every lane of a Link carries the same Link number and rate ID.
-          if (lane_en_i[l]) begin
+          if (lane_en_rx_q[l]) begin
             link_num_q <= cap_link_num[l];
             n_fts_q    <= cap_n_fts[l];
             rate_id_q  <= cap_rate_id[l];
@@ -440,7 +440,7 @@ module rivet_mac_os_rx #(
     idle_sym_any_o = 1'b0;
 
     for (int unsigned l = 0; l < LANES; l++) begin
-      if (lane_en_i[l]) begin
+      if (lane_en_rx_q[l]) begin
         ts1_pad_all_o  &= (c_ts1_pad_q[l]  >= TH_TS);
         ts2_pad_all_o  &= (c_ts2_pad_q[l]  >= TH_TS);
         ts1_link_all_o &= (c_ts1_link_q[l] >= TH_NUM);
@@ -458,7 +458,7 @@ module rivet_mac_os_rx #(
       end
     end
 
-    if (lane_en_i == '0) begin
+    if (lane_en_rx_q == '0) begin
       ts1_pad_all_o  = 1'b0;
       ts2_pad_all_o  = 1'b0;
       ts1_link_all_o = 1'b0;
@@ -486,7 +486,7 @@ module rivet_mac_os_rx #(
     rx_lane_num_changed_o = 1'b0;
     if (lane_num_seen_q) begin
       for (int unsigned l = 0; l < LANES; l++) begin
-        if (lane_en_i[l] && (lane_num_q[l] != lane_num_ref_q[l])) rx_lane_num_changed_o = 1'b1;
+        if (lane_en_rx_q[l] && (lane_num_q[l] != lane_num_ref_q[l])) rx_lane_num_changed_o = 1'b1;
       end
     end
   end
@@ -505,7 +505,7 @@ module rivet_mac_os_rx #(
   always_comb begin
     rx_err_o = 1'b0;
     for (int unsigned l = 0; l < LANES; l++) begin
-      if (lane_en_i[l]) begin
+      if (lane_en_rx_q[l]) begin
         case (rxstatus_i[3*l +: 3])
           RIVET_RXSTATUS_DECODE_ERR,
           RIVET_RXSTATUS_EB_OVERFLOW,
@@ -560,6 +560,20 @@ module rivet_mac_os_rx #(
   logic [NSYM-1:0]  p0_k_q;
   logic [NSYM-1:0]  p0_nz_q;
   logic [7:0]       p0_data_q [0:NSYM-1];
+  // Stage P0a: pre-decoded first start token (SDP/STP) & after-start mask so
+  // RX_IDLE does not chain prio32(start_m) into prio32(tail_m) / 32:1 muxes.
+  logic             p0a_lanes_ok_q;
+  logic [5:0]       p0a_cnt_q;
+  logic [NSYM-1:0]  p0a_end_q;
+  logic [NSYM-1:0]  p0a_edb_q;
+  logic [NSYM-1:0]  p0a_k_q;
+  logic [NSYM-1:0]  p0a_nz_q;
+  logic [7:0]       p0a_data_q [0:NSYM-1];
+  logic             p0a_saw_sdp_q;
+  logic             p0a_saw_stp_q;
+  logic [4:0]       p0a_start_idx_q;
+  logic [5:0]       p0a_base_q;
+  logic [31:0]      p0a_after_start_q;
   // Gen3 TLP: STP, then a 2-byte length, then that many DLL bytes. The length
   // is stripped here and the following idle byte is presented as END so the
   // Gen2 gearbox can run. Gen3 DLLP: SDP, then 6 payload bytes, then END.
@@ -662,16 +676,19 @@ module rivet_mac_os_rx #(
     logic [LANES-1:0] lane_e;
     logic [2:0]       lane_k;
     logic [1:0]       act_l [4];
+    logic [5:0]       lane_cnt_c;
     logic [NSYM-1:0]  raw_sdp, raw_stp, raw_end, raw_edb, raw_k;
     logic [7:0]       raw_data [0:NSYM-1];
 
     gf_gen3_c = gf_gen3_rx_q;
     gf_ok_c   = (PKT_RX_OK || gf_gen3_c) && sym_valid_i[0] && lane_en_rx_q[0];
 
+    // Keep gf_ok_c (sym_valid_i[0]) out of lane_e/lane_k/gf_data_pack so the
+    // descrambler valid bit does not feed the crossbar or in_l_hi6_1_q.
     lane_k = 3'd0;
     for (int unsigned i = 0; i < 4; i++) act_l[i] = 2'd0;
     for (int unsigned l = 0; l < LANES; l++) begin
-      lane_e[l] = gf_ok_c && lane_en_rx_q[l] && !(gf_gen3_c && os_block_i[l]);
+      lane_e[l] = lane_en_rx_q[l] && !(gf_gen3_c && os_block_i[l]);
       if (lane_e[l]) begin
         act_l[lane_k[1:0]] = 2'(l);
         lane_k             = lane_k + 3'd1;
@@ -700,7 +717,8 @@ module rivet_mac_os_rx #(
       end
     end
 
-    gf_raw_cnt_c = 6'(SYMS) * {3'd0, lane_k};
+    lane_cnt_c   = 6'(SYMS) * {3'd0, lane_k};
+    gf_raw_cnt_c = gf_ok_c ? lane_cnt_c : 6'd0;
     gf_sdp_c     = '0;
     gf_stp_c     = '0;
     gf_end_c     = '0;
@@ -708,7 +726,7 @@ module rivet_mac_os_rx #(
     gf_k_c       = '0;
     gf_data_pack = '0;
     for (int unsigned d = 0; d < NSYM; d++) begin
-      if (6'(d) < gf_raw_cnt_c) begin
+      if (6'(d) < lane_cnt_c) begin
         automatic int unsigned src_p;
         case (lane_k)
           3'd1:    src_p = d * LANES + int'(act_l[0]);
@@ -717,11 +735,11 @@ module rivet_mac_os_rx #(
           default: src_p = d;
         endcase
         if (src_p < NSYM) begin
-          gf_sdp_c[d]          = raw_sdp[src_p];
-          gf_stp_c[d]          = raw_stp[src_p];
-          gf_end_c[d]          = raw_end[src_p];
-          gf_edb_c[d]          = raw_edb[src_p];
-          gf_k_c[d]            = raw_k[src_p];
+          gf_sdp_c[d]            = gf_ok_c && raw_sdp[src_p];
+          gf_stp_c[d]            = gf_ok_c && raw_stp[src_p];
+          gf_end_c[d]            = gf_ok_c && raw_end[src_p];
+          gf_edb_c[d]            = gf_ok_c && raw_edb[src_p];
+          gf_k_c[d]              = gf_ok_c && raw_k[src_p];
           gf_data_pack[8*d +: 8] = raw_data[src_p];
         end
       end
@@ -875,6 +893,18 @@ module rivet_mac_os_rx #(
       p0_k_q           <= '0;
       p0_nz_q          <= '0;
       for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= '0;
+      p0a_lanes_ok_q    <= 1'b0;
+      p0a_cnt_q         <= '0;
+      p0a_end_q         <= '0;
+      p0a_edb_q         <= '0;
+      p0a_k_q           <= '0;
+      p0a_nz_q          <= '0;
+      for (int unsigned p = 0; p < NSYM; p++) p0a_data_q[p] <= '0;
+      p0a_saw_sdp_q     <= 1'b0;
+      p0a_saw_stp_q     <= 1'b0;
+      p0a_start_idx_q   <= '0;
+      p0a_base_q        <= '0;
+      p0a_after_start_q <= '0;
     end else begin
       // Local copies of LTSSM control for packet-RX Stage IN.
       gf_gen3_rx_q <= ((PIPE_DATA_WIDTH == 32) && (rate_i == RIVET_PIPE_RATE_GEN3)) ||
@@ -973,6 +1003,38 @@ module rivet_mac_os_rx #(
           p0_data_q[p] <= g0_data_q[8*p +: 8];
           p0_nz_q[p]   <= (g0_data_q[8*p +: 8] != 8'h00);
         end
+      end
+
+      // Stage P0a: pre-decode first SDP/STP index & after-start mask.
+      p0a_lanes_ok_q <= p0_lanes_ok_q;
+      p0a_cnt_q      <= p0_cnt_q;
+      p0a_end_q      <= p0_end_q;
+      p0a_edb_q      <= p0_edb_q;
+      p0a_k_q        <= p0_k_q;
+      p0a_nz_q       <= p0_nz_q;
+      for (int unsigned p = 0; p < NSYM; p++) p0a_data_q[p] <= p0_data_q[p];
+      begin
+        automatic logic [31:0] sdp_w = '0;
+        automatic logic [31:0] stp_w = '0;
+        automatic logic [31:0] sm;
+        automatic logic [31:0] po;
+        automatic logic [5:0]  sp;
+        for (int unsigned i = 0; i < NSYM; i++) begin
+          sdp_w[i] = p0_sdp_q[i];
+          stp_w[i] = p0_stp_q[i];
+        end
+        sm = sdp_w | stp_w;
+        po = {sm[30:0], 1'b0};
+        po = po | {po[30:0], 1'b0};
+        po = po | {po[29:0], 2'b0};
+        po = po | {po[27:0], 4'b0};
+        po = po | {po[23:0], 8'b0};
+        p0a_after_start_q <= po | {po[15:0], 16'b0};
+        sp = prio32(sm);
+        p0a_start_idx_q <= sp[4:0];
+        p0a_base_q      <= {1'b0, sp[4:0]} + 6'd1;
+        p0a_saw_sdp_q   <= sp[5] && sdp_w[sp[4:0]];
+        p0a_saw_stp_q   <= sp[5] && !sdp_w[sp[4:0]] && stp_w[sp[4:0]];
       end
     end
   end
@@ -1330,11 +1392,9 @@ module rivet_mac_os_rx #(
       tlp_acc_cnt_d = 3'd0;
     end
 
-    if (p0_lanes_ok_q || (rx_pkt_q == RX_HOLD)) begin
-      // 32-symbol padded views of dense P0 stream (0..p0_cnt_q-1 have no holes;
-      // token flags are already 0 at indices >= p0_cnt_q).
-      automatic logic [31:0] p0_sdp_w = '0;
-      automatic logic [31:0] p0_stp_w = '0;
+    if (p0a_lanes_ok_q || (rx_pkt_q == RX_HOLD)) begin
+      // 32-symbol padded views of dense P0a stream (0..p0a_cnt_q-1 have no holes;
+      // token flags are already 0 at indices >= p0a_cnt_q).
       automatic logic [31:0] p0_end_w = '0;
       automatic logic [31:0] p0_edb_w = '0;
       automatic logic [63:0] p0_k_w   = '0;
@@ -1342,61 +1402,38 @@ module rivet_mac_os_rx #(
       automatic logic [7:0]  p0_data_w [0:63];
       for (int unsigned i = 0; i < 64; i++) p0_data_w[i] = 8'h00;
       for (int unsigned i = 0; i < NSYM; i++) begin
-        p0_sdp_w[i]  = p0_sdp_q[i];
-        p0_stp_w[i]  = p0_stp_q[i];
-        p0_end_w[i]  = p0_end_q[i];
-        p0_edb_w[i]  = p0_edb_q[i];
-        p0_k_w[i]    = p0_k_q[i];
-        p0_nz_w[i]   = p0_nz_q[i];
-        p0_data_w[i] = p0_data_q[i];
+        p0_end_w[i]  = p0a_end_q[i];
+        p0_edb_w[i]  = p0a_edb_q[i];
+        p0_k_w[i]    = p0a_k_q[i];
+        p0_nz_w[i]   = p0a_nz_q[i];
+        p0_data_w[i] = p0a_data_q[i];
       end
 
       unique case (rx_pkt_q)
         RX_IDLE: begin
-          if (p0_lanes_ok_q) begin
-            automatic logic        saw_sdp   = 1'b0;
-            automatic logic        saw_stp   = 1'b0;
-            automatic logic [3:0]  c         = 4'd0;
-            automatic logic [63:0] b         = '0;
-            automatic logic [5:0]  cap_n     = 6'd0;
+          if (p0a_lanes_ok_q) begin
+            automatic logic        saw_sdp     = p0a_saw_sdp_q;
+            automatic logic        saw_stp     = p0a_saw_stp_q;
+            automatic logic [3:0]  c           = 4'd0;
+            automatic logic [63:0] b           = '0;
+            automatic logic [5:0]  cap_n       = 6'd0;
             automatic logic [7:0]  cap_b [0:31];
-            automatic logic        err       = 1'b0;
-            automatic logic        done      = 1'b0;
-            automatic logic        nullified = 1'b0;
-            automatic logic [31:0] start_m   = p0_sdp_w | p0_stp_w;
-            automatic logic [31:0] after_start;
-            automatic logic [5:0]  start_p;
-            automatic logic        start_v;
-            automatic logic [4:0]  start_idx;
-            automatic logic [5:0]  base;
+            automatic logic        err         = 1'b0;
+            automatic logic        done        = 1'b0;
+            automatic logic        nullified   = 1'b0;
+            automatic logic [31:0] after_start = p0a_after_start_q;
+            automatic logic [4:0]  start_idx   = p0a_start_idx_q;
+            automatic logic [5:0]  base        = p0a_base_q;
 
             for (int unsigned i = 0; i < 32; i++) cap_b[i] = 8'h00;
-            // Parallel prefix OR: after_start[p] == 1 iff p > first_one(start_m),
-            // avoiding waiting for prio32(start_m) before masking term_m/tail_m.
-            begin
-              automatic logic [31:0] po;
-              po = {start_m[30:0], 1'b0};
-              po = po | {po[30:0], 1'b0};
-              po = po | {po[29:0], 2'b0};
-              po = po | {po[27:0], 4'b0};
-              po = po | {po[23:0], 8'b0};
-              after_start = po | {po[15:0], 16'b0};
-            end
-
-            start_p   = prio32(start_m);
-            start_v   = start_p[5];
-            start_idx = start_p[4:0];
-            saw_sdp   = start_v && p0_sdp_w[start_idx];
-            saw_stp   = start_v && !p0_sdp_w[start_idx] && p0_stp_w[start_idx];
-            base      = {1'b0, start_idx} + 6'd1;
 
             if (saw_sdp) begin
-              automatic logic [5:0]  after_n = (p0_cnt_q > base) ? (p0_cnt_q - base) : 6'd0;
+              automatic logic [5:0]  after_n = (p0a_cnt_q > base) ? (p0a_cnt_q - base) : 6'd0;
               automatic logic [2:0]  blim    = (after_n < 6'(RIVET_DLLP_WIRE_BYTES)) ?
                                                after_n[2:0] : 3'(RIVET_DLLP_WIRE_BYTES);
               automatic logic [5:0]  kb_m    = '0;
               automatic logic [7:0]  sb [6];
-              // Direct 5-bit indexing by start_idx avoids waiting for base adder.
+              // Direct 5-bit indexing by registered start_idx.
               for (int unsigned j = 0; j < 6; j++) begin
                 automatic logic [7:0]  d_col [0:31];
                 automatic logic [31:0] k_col;
@@ -1423,7 +1460,7 @@ module rivet_mac_os_rx #(
                   automatic logic [31:0] tail_m = '0;
                   automatic logic [5:0]  tp;
                   for (int unsigned p = 7; p < 32; p++) begin
-                    tail_m[p] = after_start[p - 6] && (6'(p) < p0_cnt_q) &&
+                    tail_m[p] = after_start[p - 6] && (6'(p) < p0a_cnt_q) &&
                                 (p0_end_w[p] || p0_edb_w[p] || p0_k_w[p] || p0_nz_w[p]);
                   end
                   tp = prio32(tail_m);
@@ -1447,7 +1484,7 @@ module rivet_mac_os_rx #(
                 err       = !p0_end_w[tp[4:0]] && !p0_edb_w[tp[4:0]] && p0_k_w[tp[4:0]];
                 cap_n     = {1'b0, tp[4:0]} - base;
               end else begin
-                cap_n     = (p0_cnt_q > base) ? (p0_cnt_q - base) : 6'd0;
+                cap_n     = (p0a_cnt_q > base) ? (p0a_cnt_q - base) : 6'd0;
               end
               for (int unsigned i = 0; i < 32; i++) begin
                 automatic logic [7:0] d_col [0:31];
@@ -1488,7 +1525,7 @@ module rivet_mac_os_rx #(
         end
 
         RX_BODY: begin
-          if (p0_lanes_ok_q) begin
+          if (p0a_lanes_ok_q) begin
             automatic logic [3:0]  c         = rx_cnt_q;
             automatic logic [63:0] b         = rx_body_q;
             automatic logic        err       = rx_err_pkt_q;
@@ -1496,7 +1533,7 @@ module rivet_mac_os_rx #(
             automatic logic        nullified = 1'b0;
             automatic logic [2:0]  rem_d     = (rx_cnt_q < 4'(RIVET_DLLP_WIRE_BYTES)) ?
                                                3'(4'(RIVET_DLLP_WIRE_BYTES) - rx_cnt_q) : 3'd0;
-            automatic logic [2:0]  blim      = (p0_cnt_q < {3'd0, rem_d}) ? p0_cnt_q[2:0] : rem_d;
+            automatic logic [2:0]  blim      = (p0a_cnt_q < {3'd0, rem_d}) ? p0a_cnt_q[2:0] : rem_d;
             automatic logic [5:0]  kb_m      = '0;
             automatic logic [2:0]  take_b;
 
@@ -1520,11 +1557,11 @@ module rivet_mac_os_rx #(
             end
             c = rx_cnt_q + {1'b0, take_b};
 
-            if (!done && (p0_cnt_q > {3'd0, rem_d})) begin
+            if (!done && (p0a_cnt_q > {3'd0, rem_d})) begin
               automatic logic [31:0] tail_m = '0;
               automatic logic [5:0]  tp;
               for (int unsigned p = 0; p < 32; p++) begin
-                tail_m[p] = (6'(p) >= {3'd0, rem_d}) && (6'(p) < p0_cnt_q) &&
+                tail_m[p] = (6'(p) >= {3'd0, rem_d}) && (6'(p) < p0a_cnt_q) &&
                             (p0_end_w[p] || p0_edb_w[p] || p0_k_w[p] || p0_nz_w[p]);
               end
               tp = prio32(tail_m);
@@ -1566,7 +1603,7 @@ module rivet_mac_os_rx #(
         end
 
         RX_TLP: begin
-          if (p0_lanes_ok_q) begin
+          if (p0a_lanes_ok_q) begin
             automatic logic [5:0]   cap_n     = 6'd0;
             automatic logic [13:0]  new_cnt;
             automatic logic         len_ovf;
@@ -1586,7 +1623,7 @@ module rivet_mac_os_rx #(
                 err = 1'b1;
               cap_n     = {1'b0, tp[4:0]};
             end else begin
-              cap_n     = p0_cnt_q;
+              cap_n     = p0a_cnt_q;
             end
 
             new_cnt = {1'b0, rx_tlp_cnt_q} + 14'(cap_n);

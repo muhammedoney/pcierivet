@@ -76,6 +76,8 @@ module rivet_dll_tlp_tx #(
   logic [3:0]   cap_n_q;
   logic         cap_pend_q, cap_last_q;
   logic [63:0]  cap_word_q;
+  logic [11:0]  cap_seq_q;
+  logic [15:0]  cap_len_q;
   logic         pref_q, emit_sop_q, replay_q;
   logic         start_rp;
 
@@ -92,8 +94,8 @@ module rivet_dll_tlp_tx #(
   assign cap_valid_o   = cap_pend_q;
   assign cap_data_o    = cap_word_q;
   assign cap_last_o    = cap_last_q;
-  assign cap_seq_o     = cseq0_q;
-  assign cap_len_o     = clen0_q;
+  assign cap_seq_o     = cap_seq_q;
+  assign cap_len_o     = cap_len_q;
   assign tl_word_idx_o = 16'd0;
 
   assign start_rp = (state_q == ST_IDLE) && pref_q && replay_en_i &&
@@ -255,6 +257,8 @@ module rivet_dll_tlp_tx #(
       cap_pend_q   <= 1'b0;
       cap_last_q   <= 1'b0;
       cap_word_q   <= '0;
+      cap_seq_q    <= '0;
+      cap_len_q    <= '0;
       pref_q       <= 1'b0;
       emit_sop_q   <= 1'b0;
       replay_q     <= 1'b0;
@@ -274,6 +278,8 @@ module rivet_dll_tlp_tx #(
       logic         cap_pend;
       logic         cap_last;
       logic [63:0]  cap_word;
+      logic [11:0]  cap_seq;
+      logic [15:0]  cap_len;
       logic [11:0]  cseq0, cseq1;
       logic [15:0]  clen0, clen1;
       logic [1:0]   cnum;
@@ -293,6 +299,8 @@ module rivet_dll_tlp_tx #(
       cap_pend = cap_pend_q;
       cap_last = cap_last_q;
       cap_word = cap_word_q;
+      cap_seq  = cap_seq_q;
+      cap_len  = cap_len_q;
       cseq0    = cseq0_q;
       cseq1    = cseq1_q;
       clen0    = clen0_q;
@@ -354,6 +362,8 @@ module rivet_dll_tlp_tx #(
             cap_pend = 1'b1;
             cap_word = pk.word;
             cap_last = pk.word_last;
+            cap_seq  = cseq0;
+            cap_len  = clen0;
           end
           acc = acc >> (32'(live_n) * 8);
           an  = an - {2'b0, live_n};
@@ -450,6 +460,8 @@ module rivet_dll_tlp_tx #(
         cap_pend_q <= cap_pend;
         cap_last_q <= cap_last;
         cap_word_q <= cap_word;
+        cap_seq_q  <= cap_seq;
+        cap_len_q  <= cap_len;
         cseq0_q    <= cseq0;
         cseq1_q    <= cseq1;
         clen0_q    <= clen0;

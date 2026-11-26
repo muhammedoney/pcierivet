@@ -98,12 +98,12 @@ module rivet_dll_tl_pack #(
 
       assign live_v     = s_tvalid_i && (nbytes != 8'd0);
       assign s_tready_o = !held_q || m_ready_i;
-      assign m_valid_o  = held_q || live_v;
-      assign m_len_o    = held_q ? len_q : 16'(nbytes);
-      assign m_last_o   = held_q ? last_q : s_tlast_i;
-      assign rd_data_o  = held_q ? data_q : beat_packed;
+      assign m_valid_o  = held_q;
+      assign m_len_o    = len_q;
+      assign m_last_o   = last_q;
+      assign rd_data_o  = data_q;
       assign s_fire     = live_v && s_tready_o;
-      assign m_fire     = m_valid_o && m_ready_i;
+      assign m_fire     = held_q && m_ready_i;
 
       always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -111,7 +111,7 @@ module rivet_dll_tl_pack #(
           data_q <= '0;
           len_q  <= '0;
           last_q <= 1'b0;
-        end else if (s_fire && (!m_fire || held_q)) begin
+        end else if (s_fire) begin
 `ifndef SYNTHESIS
           if (!s_tlast_i && (nbytes != 8'(KEEP_W)))
             $error("rivet_dll_tl_pack: non-last beat has %0d bytes (expected %0d)",
@@ -121,7 +121,7 @@ module rivet_dll_tl_pack #(
           data_q <= beat_packed;
           len_q  <= 16'(nbytes);
           last_q <= s_tlast_i;
-        end else if (m_fire && held_q) begin
+        end else if (m_fire) begin
           held_q <= 1'b0;
         end
       end

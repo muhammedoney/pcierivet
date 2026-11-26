@@ -61,6 +61,7 @@ module rivet_tl_rq_g4 #(
   logic [7:0]   tag_q, hdr0_q;
   logic [5:0]   seq_q;
   logic [3:0]   tag_av_q;
+  logic         tag_free_q;
   logic [511:0] res_q;
   logic [6:0]   res_n_q;
   logic         pkt_q;
@@ -298,6 +299,7 @@ module rivet_tl_rq_g4 #(
       hdr0_q     <= '0;
       seq_q      <= '0;
       tag_av_q   <= 4'd8;
+      tag_free_q <= 1'b0;
       res_q      <= '0;
       res_n_q    <= '0;
       pkt_q      <= 1'b0;
@@ -344,21 +346,23 @@ module rivet_tl_rq_g4 #(
       cap_tag  = '0;
       do_cap   = 1'b0;
 
-      if (tx_accept_o) begin
+      if (tx_accept_o)
         seq_q <= seq_q + 6'd1;
-        if (!acc_wr_q && (tag_av_q != 4'd0))
+      begin
+        automatic logic tag_dec = tx_accept_o && !acc_wr_q;
+        automatic logic tag_inc = tag_free_q;
+        if (tag_dec && !tag_inc && (tag_av_q != 4'd0))
           tag_av_q <= tag_av_q - 4'd1;
-      end else if (tag_free_i && (tag_av_q < 4'd8)) begin
-        tag_av_q <= tag_av_q + 4'd1;
+        else if (tag_inc && !tag_dec && (tag_av_q < 4'd8))
+          tag_av_q <= tag_av_q + 4'd1;
       end
+      tag_free_q <= tag_free_i;
 
-      // Drain a full beat before accepting more, so the residue stays <= 64.
+      // Single registered pre-peel from res_q: emits 32B when full or drains
+      // a short finished packet (<= 32B). Never chains behind push_bytes.
       if (slot_free && (rn >= 7'd32))
         peel(res, rn, rlast, pkt, 1'b0, emitted, ed, ek, el);
-      else if (slot_free && rlast && !accept && (rn != 7'd0))
-        peel(res, rn, rlast, pkt, 1'b1, emitted, ed, ek, el);
-
-      if (accept && rlast && slot_free && !emitted && (rn != 7'd0))
+      else if (slot_free && rlast && (rn != 7'd0))
         peel(res, rn, rlast, pkt, 1'b1, emitted, ed, ek, el);
 
       // Snapshot before a new descriptor can replace the holds.
@@ -381,21 +385,24 @@ module rivet_tl_rq_g4 #(
           logic [7:0]   b0t;
           logic [127:0] hdr;
           logic [5:0]   hlen;
-          // Bytes 0..15 finish the open TLP. Peel that tail before the
-          // descriptor in bytes 16..31 becomes the next packet.
-          push_bytes(res, rn, s_axis_rq_tdata, 6'd0, 6'd16);
-          rlast = 1'b1;
-          if (slot_free && !emitted && (rn >= 7'd32))
-            peel(res, rn, rlast, pkt, 1'b0, emitted, ed, ek, el);
-          if (slot_free && !emitted && rlast && (rn != 7'd0))
-            peel(res, rn, rlast, pkt, 1'b1, emitted, ed, ek, el);
-          if (emitted && el && !do_cap) begin
-            cap_hdr = hdr_hold;
-            cap_wr  = wr_hold;
-            cap_len = len_hold;
-            cap_tag = tag_hold;
-            do_cap  = 1'b1;
-          end
+          logic [511:0] tail_res;
+          logic [6:0]   tail_n;
+          // s_axis_rq_tready guarantees slot_free && res_n_q <= 16 on split_beat,
+          // so pre-peel did not fire and res_q[127:0] + s_axis_rq_tdata[127:0]
+          // fits directly into one output beat in parallel with loading the new header.
+          tail_res = res;
+          tail_n   = rn;
+          push_bytes(tail_res, tail_n, s_axis_rq_tdata, 6'd0, 6'd16);
+          emitted = 1'b1;
+          ed      = tail_res[255:0];
+          ek      = keep32(tail_n[5:0]);
+          el      = 1'b1;
+          cap_hdr = hdr_hold;
+          cap_wr  = wr_hold;
+          cap_len = len_hold;
+          cap_tag = tag_hold;
+          do_cap  = 1'b1;
+
           b0      = s_axis_rq_tdata[191:128];
           b1      = s_axis_rq_tdata[255:192];
           addr    = {b0[31:2], 2'b00};
@@ -426,9 +433,10 @@ module rivet_tl_rq_g4 #(
           len_q   <= len;
           tag_q   <= tag;
           hdr0_q  <= b0t;
-          push_bytes(res, rn, {128'h0, hdr}, 6'd0, hlen);
-          pkt   = 1'b1;
-          rlast = 1'b0;
+          res      = {384'h0, hdr};
+          rn       = {1'b0, hlen};
+          pkt      = 1'b1;
+          rlast    = 1'b0;
         end else if (!pkt) begin
           logic [63:0]  b0, b1;
           logic [31:0]  addr, addr_hi;
@@ -461,7 +469,7 @@ module rivet_tl_rq_g4 #(
             hdr   = build_hdr(b0t, len, tag, fbe, lbe, addr, addr_hi, is64);
             hlen  = is64 ? 6'd16 : 6'd12;
           end
-          pay_n   = hi_pay_bytes(s_axis_rq_tkeep);
+          pay_n    = is_wr ? hi_pay_bytes(s_axis_rq_tkeep) : 6'd0;
           hdr_hold = b0t;
           wr_hold  = is_wr;
           len_hold = len;
@@ -470,9 +478,13 @@ module rivet_tl_rq_g4 #(
           len_q   <= len;
           tag_q   <= tag;
           hdr0_q  <= b0t;
-          push_bytes(res, rn, {128'h0, hdr}, 6'd0, hlen);
-          if (is_wr && (pay_n != 6'd0))
-            push_bytes(res, rn, s_axis_rq_tdata, 6'd16, pay_n);
+          // Residue is always empty when !pkt; pack header + optional hi payload
+          // directly without calling push_bytes twice.
+          if (hlen == 6'd16)
+            res = {256'h0, is_wr ? s_axis_rq_tdata[255:128] : 128'h0, hdr};
+          else
+            res = {288'h0, is_wr ? s_axis_rq_tdata[255:128] : 128'h0, hdr[95:0]};
+          rn  = {1'b0, hlen} + {1'b0, pay_n};
           pkt = 1'b1;
           if (!is_wr || s_axis_rq_tlast)
             rlast = 1'b1;
@@ -480,17 +492,6 @@ module rivet_tl_rq_g4 #(
           push_bytes(res, rn, s_axis_rq_tdata, 6'd0, keep_nbytes8(s_axis_rq_tkeep));
           if (s_axis_rq_tlast)
             rlast = 1'b1;
-        end
-        if (slot_free && !emitted && (rn >= 7'd32))
-          peel(res, rn, rlast, pkt, 1'b0, emitted, ed, ek, el);
-        if (slot_free && !emitted && rlast && (rn != 7'd0))
-          peel(res, rn, rlast, pkt, 1'b1, emitted, ed, ek, el);
-        if (emitted && el && !do_cap) begin
-          cap_hdr = hdr_hold;
-          cap_wr  = wr_hold;
-          cap_len = len_hold;
-          cap_tag = tag_hold;
-          do_cap  = 1'b1;
         end
       end
 

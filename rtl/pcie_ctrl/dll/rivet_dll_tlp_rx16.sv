@@ -74,6 +74,10 @@ module rivet_dll_tlp_rx16 #(
   logic [11:0]       seq_q;
   logic              cap_ovf_q;
   logic [31:0]       cap_crc_q;
+  logic              crc_p0_v_q;
+  logic              crc_p0_sop_q;
+  logic [5:0]        crc_p0_n_q;
+  logic [255:0]      crc_p0_data_q;
   logic              crc_p1_v_q;
   logic              crc_p1_sop_q;
   logic [5:0]        crc_p1_n_q;
@@ -94,7 +98,7 @@ module rivet_dll_tlp_rx16 #(
   logic [63:0]       rd_d_q;
   logic [IDX_W-1:0]  rd_addr_q;
 
-  logic [511:0]      acc_q;
+  logic [255:0]      acc_q;
   logic [5:0]        acc_n_q;
   logic [IDX_W-1:0]  word_idx_q;
   logic              fresh_q;
@@ -105,7 +109,6 @@ module rivet_dll_tlp_rx16 #(
   logic              more_after;
   logic              rd_issue;
   logic [5:0]        take_n;
-  logic [5:0]        take_skip;
   logic [13:0]       left_after_c;
   logic              left_after_z_c;
   logic              words_ok;
@@ -174,14 +177,12 @@ module rivet_dll_tlp_rx16 #(
 
   logic        take_beat;
   logic [7:0]  nbytes;
-  logic [31:0] crc_p1_d_c;
   logic [12:0] len_next;
 
   assign nbytes    = keep_popcount(beat_i.keep);
   assign take_beat = beat_valid_i && beat_ready_o &&
                      (beat_i.pkt_type == RIVET_MAC_PKT_TLP) && !beat_i.err;
   assign len_next  = beat_i.sop ? {5'd0, nbytes} : (cap_len_q + {5'd0, nbytes});
-  assign crc_p1_d_c = rivet_crc32_data32(beat_i.data, nbytes[5:0]);
 
   assign ram_we    = take_beat && !cap_ovf_q &&
                      (wr_idx_q != IDX_W'(10'h3FF) || beat_i.sop);
@@ -236,7 +237,6 @@ module rivet_dll_tlp_rx16 #(
     // payload in the current beat never exceeds OUT_B - 2 on word 0 or OUT_B
     // on later words; no frame_len - word_off subtraction is needed.
     avail          = (word_idx_q == '0) ? 6'(OUT_B - 2) : 6'(OUT_B);
-    take_skip      = (word_idx_q == '0) ? 6'd2 : 6'd0;
     left_after_z_c = (pld_left_q <= 14'(avail));
     take_n         = left_after_z_c ? pld_left_q[5:0] : avail;
     // 64 does not fit in 6 bits, so a 6-bit compare against 64 is a
@@ -283,6 +283,10 @@ module rivet_dll_tlp_rx16 #(
       seq_q          <= '0;
       cap_ovf_q      <= 1'b0;
       cap_crc_q      <= 32'hFFFF_FFFF;
+      crc_p0_v_q     <= 1'b0;
+      crc_p0_sop_q   <= 1'b0;
+      crc_p0_n_q     <= '0;
+      crc_p0_data_q  <= '0;
       crc_p1_v_q     <= 1'b0;
       crc_p1_sop_q   <= 1'b0;
       crc_p1_n_q     <= '0;
@@ -374,6 +378,14 @@ module rivet_dll_tlp_rx16 #(
             crc_p1_sop_q ? 32'hFFFF_FFFF : cap_crc_q, crc_p1_n_q) ^ crc_p1_d_q;
       end
 
+      // Stage 1 of pipelined LCRC-32: compute data-only CRC from registered beat.
+      crc_p1_v_q <= crc_p0_v_q;
+      if (crc_p0_v_q) begin
+        crc_p1_sop_q <= crc_p0_sop_q;
+        crc_p1_n_q   <= crc_p0_n_q;
+        crc_p1_d_q   <= rivet_crc32_data32(crc_p0_data_q, crc_p0_n_q);
+      end
+
       begin
         logic [2:0] nwords;
         nwords = 3'd1;
@@ -383,7 +395,7 @@ module rivet_dll_tlp_rx16 #(
           nwords = 3'd3;
         if (nbytes > 8'd24)
           nwords = 3'd4;
-      crc_p1_v_q <= take_beat;
+      crc_p0_v_q <= take_beat;
       if (take_beat) begin
 `ifndef SYNTHESIS
         if (!beat_i.sop && (cap_len_q[2:0] != 3'b000))
@@ -392,13 +404,13 @@ module rivet_dll_tlp_rx16 #(
           $error("rivet_dll_tlp_rx16: keep %04h is not a low prefix of %0d bytes",
                  beat_i.keep, nbytes);
 `endif
-        cap_len_q    <= len_next;
-        crc_p1_sop_q <= beat_i.sop;
-        crc_p1_n_q   <= nbytes[5:0];
-        crc_p1_d_q   <= crc_p1_d_c;
-        wr_idx_q     <= beat_i.sop
-                          ? IDX_W'(nwords)
-                          : (wr_idx_q + IDX_W'(nwords));
+        cap_len_q     <= len_next;
+        crc_p0_sop_q  <= beat_i.sop;
+        crc_p0_n_q    <= nbytes[5:0];
+        crc_p0_data_q <= beat_i.data[255:0];
+        wr_idx_q      <= beat_i.sop
+                           ? IDX_W'(nwords)
+                           : (wr_idx_q + IDX_W'(nwords));
         if (beat_i.sop) begin
           cap_seq_q <= {beat_i.data[3:0], beat_i.data[15:8]};
           cap_st_q  <= CAP_RUN;
@@ -414,8 +426,8 @@ module rivet_dll_tlp_rx16 #(
         if (play_open_q || launch_live)
           cap_bank_q <= ~cap_bank_q;
       end else if (cap_st_q == CAP_DEC) begin
-        if (crc_p1_v_q || (ack_n == 2'd2)) begin
-          // Wait for Stage-2 LCRC fold or a free slot in the ACK/NAK queue.
+        if (crc_p0_v_q || crc_p1_v_q || (ack_n_q == 2'd2)) begin
+          // Wait for pipelined LCRC fold or a free slot in the ACK/NAK queue.
         end else begin
           logic        lcrc_ok;
           logic        seq_ok;
@@ -489,7 +501,9 @@ module rivet_dll_tlp_rx16 #(
         rd_addr_q  <= IDX_W'(NWORD);
         play_st_q  <= PLAY_RUN;
       end else if (play_st_q == PLAY_RUN) begin
-        logic [511:0] acc_t;
+        logic [255:0] merged_lo;
+        logic [255:0] merged_hi;
+        logic [255:0] acc_next;
         logic [5:0]   n_t;
         logic [13:0]  left_t;
         logic         left_t_z;
@@ -497,46 +511,50 @@ module rivet_dll_tlp_rx16 #(
         logic [5:0]   room;
         logic [255:0] srcw;
         logic [31:0]  keep_full;
-        acc_t    = acc_q;
-        n_t      = acc_n_q;
-        left_t   = play_consume ? left_after_c : pld_left_q;
-        left_t_z = play_consume ? left_after_z_c : (pld_left_q == 14'd0);
-        emit_n   = 6'd0;
-        room     = 6'(OUT_B);
-        srcw     = {rd_d_q, rd_c_q, rd_hi_q, rd_lo_q};
+        merged_lo = acc_q;
+        merged_hi = '0;
+        n_t       = acc_n_q;
+        left_t    = play_consume ? left_after_c : pld_left_q;
+        left_t_z  = play_consume ? left_after_z_c : (pld_left_q == 14'd0);
+        emit_n    = 6'd0;
+        room      = 6'(OUT_B);
+        srcw      = {rd_d_q, rd_c_q, rd_hi_q, rd_lo_q};
         if (play_consume) begin
-          // Pre-shift by take_skip (0 or 2) with a 2:1 mux, then select
-          // each destination byte in parallel instead of a 32-deep cascade.
-          logic [255:0] srcw_s;
-          logic [7:0]   sb [32];
-          srcw_s = (take_skip != 6'd0) ? {16'h0, srcw[255:16]} : srcw;
-          for (int unsigned i = 0; i < 32; i++)
-            sb[5'(i)] = srcw_s[8*5'(i) +: 8];
-          for (int unsigned k = 0; k < 64; k++) begin
-            automatic logic [6:0] diff;
-            diff = 7'(k) - {1'b0, acc_n_q};
-            if ((7'(k) >= {1'b0, acc_n_q}) && (diff < {1'b0, take_n}))
-              acc_t[8*6'(k) +: 8] = sb[diff[4:0]];
+          // Constant 2-case alignment: word 0 drops the 2-byte Seq# (acc_n_q==0),
+          // and every subsequent word appends onto the OUT_B-2 residue bytes.
+`ifndef SYNTHESIS
+          if ((word_idx_q == '0) ? (acc_n_q != 6'd0) : (acc_n_q != 6'(OUT_B - 2)))
+            $error("rivet_dll_tlp_rx16: unexpected acc_n_q=%0d at word_idx=%0d",
+                   acc_n_q, word_idx_q);
+`endif
+          merged_lo = '0;
+          merged_hi = '0;
+          if (word_idx_q == '0) begin
+            merged_lo[OUT_B*8-17:0] = srcw[OUT_B*8-1:16];
+          end else begin
+            merged_lo[OUT_B*8-1:0]  = {srcw[15:0], acc_q[OUT_B*8-17:0]};
+            merged_hi[OUT_B*8-17:0] = srcw[OUT_B*8-1:16];
           end
           n_t = acc_n_q + take_n;
         end
+        acc_next = merged_lo;
         if (!play_stall && can_send &&
             ((n_t >= room) || (left_t_z && (n_t != 6'd0)))) begin
-          emit_n = (n_t >= room) ? room : n_t;
+          emit_n    = (n_t >= room) ? room : n_t;
           keep_full = keep_prefix(emit_n);
-          tl_data_q <= acc_t[DATA_W-1:0];
+          for (int unsigned b = 0; b < (DATA_W / 8); b++)
+            tl_data_q[8*b +: 8] <= keep_full[b] ? merged_lo[8*b +: 8] : 8'h00;
           tl_keep_q <= keep_full[DATA_W/8-1:0];
           tl_v_q    <= 1'b1;
           tl_last_q <= left_t_z && (emit_n == n_t) && !play_open_q;
           tl_sent_q <= 1'b1;
           emitted    = 1'b1;
-          // Full beat always shifts by constant OUT_B; short final beat drains n_t to 0.
-          acc_t = (n_t >= room) ? (acc_t >> (OUT_B * 8)) : 512'h0;
-          n_t   = n_t - emit_n;
+          acc_next  = (n_t >= room) ? merged_hi : 256'h0;
+          n_t       = n_t - emit_n;
           if (left_t_z && (n_t == 6'd0))
             finish = 1'b1;
         end
-        acc_q      <= acc_t;
+        acc_q      <= acc_next;
         acc_n_q    <= n_t;
         pld_left_q <= left_t;
         if (play_stall || more_after)
@@ -668,26 +686,28 @@ module rivet_ram_lane4 #(
         widx = '0;
         ridx = '0;
         wdat = '0;
-        if (we_i[0] && (waddr_i[0][1:0] == b[1:0])) begin
-          we   = 1'b1;
-          widx = waddr_i[0][AW-1:2];
-          wdat = wdata_i[0];
-        end
-        if (we_i[1] && (waddr_i[1][1:0] == b[1:0])) begin
-          we   = 1'b1;
-          widx = waddr_i[1][AW-1:2];
-          wdat = wdata_i[1];
-        end
-        if (we_i[2] && (waddr_i[2][1:0] == b[1:0])) begin
-          we   = 1'b1;
-          widx = waddr_i[2][AW-1:2];
-          wdat = wdata_i[2];
-        end
-        if (we_i[3] && (waddr_i[3][1:0] == b[1:0])) begin
-          we   = 1'b1;
-          widx = waddr_i[3][AW-1:2];
-          wdat = wdata_i[3];
-        end
+        unique case (waddr_i[0][1:0])
+          b[1:0]: begin
+            we   = we_i[0];
+            widx = waddr_i[0][AW-1:2];
+            wdat = wdata_i[0];
+          end
+          (b[1:0] - 2'd1): begin
+            we   = we_i[1];
+            widx = waddr_i[1][AW-1:2];
+            wdat = wdata_i[1];
+          end
+          (b[1:0] - 2'd2): begin
+            we   = we_i[2];
+            widx = waddr_i[2][AW-1:2];
+            wdat = wdata_i[2];
+          end
+          default: begin
+            we   = we_i[3];
+            widx = waddr_i[3][AW-1:2];
+            wdat = wdata_i[3];
+          end
+        endcase
         if (re_i && (raddr_i[0][1:0] == b[1:0])) begin
           re   = 1'b1;
           ridx = raddr_i[0][AW-1:2];
