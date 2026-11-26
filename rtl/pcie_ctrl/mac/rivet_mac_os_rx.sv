@@ -567,6 +567,82 @@ module rivet_mac_os_rx #(
   logic [2:0]       gf_st_q;
   logic [15:0]      gf_left_q;
 
+  // Raw token detect is per symbol. The framing filter used to walk all
+  // NSYM symbols in one carry chain (96 LUT levels at Gen4 x4). The scan
+  // module folds that walk into a tree with the same beat-to-beat state.
+  logic              gf_gen3_c;
+  logic              gf_ok_c;
+  logic [NSYM-1:0]   gf_en_c, gf_sdp_c, gf_stp_c, gf_end_c, gf_edb_c, gf_k_c;
+  logic [7:0]        gf_data_c [0:NSYM-1];
+  logic [2:0]        gf_st_f;
+  logic [15:0]       gf_left_f;
+  logic [NSYM-1:0]   gf_en_f, gf_sdp_f, gf_stp_f, gf_end_f, gf_edb_f;
+  logic [8*NSYM-1:0] gf_data_pack;
+
+  always_comb begin
+    gf_gen3_c = ((PIPE_DATA_WIDTH == 32) && (rate_i == RIVET_PIPE_RATE_GEN3)) ||
+                ((PIPE_DATA_WIDTH == 64) && (rate_i == RIVET_PIPE_RATE_GEN4));
+    gf_ok_c = (PKT_RX_OK || gf_gen3_c) && sym_valid_i[0] && lane_en_i[0];
+    gf_en_c = '0;
+    gf_sdp_c = '0;
+    gf_stp_c = '0;
+    gf_end_c = '0;
+    gf_edb_c = '0;
+    gf_k_c = '0;
+    gf_data_pack = '0;
+    for (int unsigned p = 0; p < NSYM; p++) gf_data_c[p] = '0;
+    for (int unsigned s = 0; s < SYMS; s++) begin
+      for (int unsigned l = 0; l < LANES; l++) begin
+        automatic int unsigned p = s * LANES + l;
+        automatic logic [7:0] b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
+        automatic logic k = (s < 2) ? sym_datak_i[2*l + s] : 1'b0;
+        automatic logic tok = k || (gf_gen3_c && !os_block_i[l]);
+        automatic logic e = gf_ok_c && lane_en_i[l] && !(gf_gen3_c && os_block_i[l]);
+        gf_en_c[p]   = e;
+        gf_sdp_c[p]  = e && tok && (b == RIVET_SYM_SDP);
+        gf_stp_c[p]  = e && tok && (b == RIVET_SYM_STP);
+        gf_end_c[p]  = e && tok && (b == RIVET_SYM_END);
+        gf_edb_c[p]  = e && tok && (b == RIVET_SYM_EDB);
+        gf_k_c[p]    = e && k;
+        gf_data_c[p] = b;
+        gf_data_pack[8*p +: 8] = b;
+      end
+    end
+  end
+
+  generate
+    if (PIPE_DATA_WIDTH >= 32) begin : g_gf_scan
+      rivet_mac_gf_scan #(
+        .NSYM      (NSYM),
+        .DLLP_BYTES(RIVET_DLLP_WIRE_BYTES)
+      ) u_gf_scan (
+        .st_i   (gf_st_q),
+        .left_i (gf_left_q),
+        .en_i   (gf_en_c),
+        .sdp_i  (gf_sdp_c),
+        .stp_i  (gf_stp_c),
+        .end_i  (gf_end_c),
+        .edb_i  (gf_edb_c),
+        .data_i (gf_data_pack),
+        .st_o   (gf_st_f),
+        .left_o (gf_left_f),
+        .en_o   (gf_en_f),
+        .sdp_o  (gf_sdp_f),
+        .stp_o  (gf_stp_f),
+        .end_o  (gf_end_f),
+        .edb_o  (gf_edb_f)
+      );
+    end else begin : g_gf_passthru
+      assign gf_st_f   = '0;
+      assign gf_left_f = '0;
+      assign gf_en_f   = gf_en_c;
+      assign gf_sdp_f  = gf_sdp_c;
+      assign gf_stp_f  = gf_stp_c;
+      assign gf_end_f  = gf_end_c;
+      assign gf_edb_f  = gf_edb_c;
+    end
+  endgenerate
+
   always_ff @(posedge pclk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       p0_lanes_ok_q <= 1'b0;
@@ -580,104 +656,26 @@ module rivet_mac_os_rx #(
       gf_left_q     <= '0;
       for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= '0;
     end else begin
-      // A Gen3 32-bit block and a Gen4 64-bit block carry the same tokens
-      // as data bytes, with no K bit, and only inside a data block.
-      automatic logic gen3_pkt = ((PIPE_DATA_WIDTH == 32) &&
-                                  (rate_i == RIVET_PIPE_RATE_GEN3)) ||
-                                 ((PIPE_DATA_WIDTH == 64) &&
-                                  (rate_i == RIVET_PIPE_RATE_GEN4));
-      automatic logic ok = (PKT_RX_OK || gen3_pkt) && sym_valid_i[0] && lane_en_i[0];
-      automatic logic [NSYM-1:0] en_t, sdp_t, stp_t, end_t, edb_t, k_t;
-      automatic logic [7:0] data_t [0:NSYM-1];
-      automatic logic [2:0]  st;
-      automatic logic [15:0] left;
-      en_t = '0; sdp_t = '0; stp_t = '0; end_t = '0; edb_t = '0; k_t = '0;
-      for (int unsigned p = 0; p < NSYM; p++) data_t[p] = '0;
-      p0_lanes_ok_q <= ok;
-      for (int unsigned s = 0; s < SYMS; s++) begin
-        for (int unsigned l = 0; l < LANES; l++) begin
-          automatic int unsigned p = s * LANES + l;
-          automatic logic [7:0]  b = sym_data_i[PIPE_DATA_WIDTH*l + 8*s +: 8];
-          automatic logic        k = (s < 2) ? sym_datak_i[2*l + s] : 1'b0;
-          automatic logic        tok = k || (gen3_pkt && !os_block_i[l]);
-          // Gen3 data blocks carry four symbol times. A cycle that holds
-          // more than eight frame bytes writes a second RAM word below.
-          automatic logic        e = ok && lane_en_i[l] && !(gen3_pkt && os_block_i[l]);
-          en_t[p]   = e;
-          sdp_t[p]  = e && tok && (b == RIVET_SYM_SDP);
-          stp_t[p]  = e && tok && (b == RIVET_SYM_STP);
-          end_t[p]  = e && tok && (b == RIVET_SYM_END);
-          edb_t[p]  = e && tok && (b == RIVET_SYM_EDB);
-          k_t[p]    = e && k;
-          data_t[p] = b;
-        end
-      end
-      st   = gf_st_q;
-      left = gf_left_q;
-      if (gen3_pkt) begin
-        for (int unsigned p = 0; p < NSYM; p++) begin
-          if (en_t[p]) begin
-            if (st == 3'd0) begin
-              if (stp_t[p]) begin
-                st = 3'd1;
-              end else if (sdp_t[p]) begin
-                st   = 3'd4;
-                left = 16'(RIVET_DLLP_WIRE_BYTES);
-              end
-            end else if (st == 3'd1) begin
-              left     = {8'd0, data_t[p]};
-              en_t[p]  = 1'b0;
-              stp_t[p] = 1'b0;
-              sdp_t[p] = 1'b0;
-              end_t[p] = 1'b0;
-              edb_t[p] = 1'b0;
-              st       = 3'd2;
-            end else if (st == 3'd2) begin
-              left     = {data_t[p], left[7:0]};
-              en_t[p]  = 1'b0;
-              stp_t[p] = 1'b0;
-              sdp_t[p] = 1'b0;
-              end_t[p] = 1'b0;
-              edb_t[p] = 1'b0;
-              st       = 3'd3;
-            end else if (st == 3'd4) begin
-              stp_t[p] = 1'b0;
-              sdp_t[p] = 1'b0;
-              if (left == 16'd0) begin
-                st = 3'd0;
-              end else begin
-                end_t[p] = 1'b0;
-                edb_t[p] = 1'b0;
-                left     = left - 16'd1;
-              end
-            end else if (left == 16'd0) begin
-              end_t[p] = 1'b1;
-              edb_t[p] = 1'b0;
-              stp_t[p] = 1'b0;
-              sdp_t[p] = 1'b0;
-              st       = 3'd0;
-            end else begin
-              end_t[p] = 1'b0;
-              edb_t[p] = 1'b0;
-              stp_t[p] = 1'b0;
-              sdp_t[p] = 1'b0;
-              left     = left - 16'd1;
-            end
-          end
-        end
+      p0_lanes_ok_q <= gf_ok_c;
+      p0_k_q        <= gf_k_c;
+      for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= gf_data_c[p];
+      if (gf_gen3_c) begin
+        gf_st_q   <= gf_st_f;
+        gf_left_q <= gf_left_f;
+        p0_en_q   <= gf_en_f;
+        p0_sdp_q  <= gf_sdp_f;
+        p0_stp_q  <= gf_stp_f;
+        p0_end_q  <= gf_end_f;
+        p0_edb_q  <= gf_edb_f;
       end else begin
-        st   = 3'd0;
-        left = 16'd0;
+        gf_st_q   <= '0;
+        gf_left_q <= '0;
+        p0_en_q   <= gf_en_c;
+        p0_sdp_q  <= gf_sdp_c;
+        p0_stp_q  <= gf_stp_c;
+        p0_end_q  <= gf_end_c;
+        p0_edb_q  <= gf_edb_c;
       end
-      gf_st_q   <= st;
-      gf_left_q <= left;
-      p0_en_q   <= en_t;
-      p0_sdp_q  <= sdp_t;
-      p0_stp_q  <= stp_t;
-      p0_end_q  <= end_t;
-      p0_edb_q  <= edb_t;
-      p0_k_q    <= k_t;
-      for (int unsigned p = 0; p < NSYM; p++) p0_data_q[p] <= data_t[p];
     end
   end
 
@@ -1604,3 +1602,498 @@ module rivet_mac_os_rx #(
   assign dll_rx_valid_o = dll_beat_valid_q;
 
 endmodule : rivet_mac_os_rx
+
+// Gen3/Gen4 framing filter. One symbol used to depend on the previous
+// symbol, which is 32 carry steps at Gen4 x4. Each pair of symbols is
+// evaluated for every framing class, and a tree of those classes keeps
+// the beat-to-beat countdown on a short path.
+module rivet_mac_gf_scan #(
+  parameter int unsigned NSYM       = 32,
+  parameter int unsigned DLLP_BYTES = 6
+) (
+  input  logic [2:0]          st_i,
+  input  logic [15:0]         left_i,
+  input  logic [NSYM-1:0]     en_i,
+  input  logic [NSYM-1:0]     sdp_i,
+  input  logic [NSYM-1:0]     stp_i,
+  input  logic [NSYM-1:0]     end_i,
+  input  logic [NSYM-1:0]     edb_i,
+  input  logic [8*NSYM-1:0]   data_i,
+  output logic [2:0]          st_o,
+  output logic [15:0]         left_o,
+  output logic [NSYM-1:0]     en_o,
+  output logic [NSYM-1:0]     sdp_o,
+  output logic [NSYM-1:0]     stp_o,
+  output logic [NSYM-1:0]     end_o,
+  output logic [NSYM-1:0]     edb_o
+);
+  localparam int unsigned W   = 32;
+  localparam int unsigned FW  = 5;
+  localparam int unsigned FB  = 21;
+  localparam int unsigned RES = FB + W * FW;
+  localparam int unsigned CMAX = 69;
+
+  logic [W-1:0] en_w, sdp_w, stp_w, end_w, edb_w;
+  logic [8*W-1:0] data_w;
+
+  always_comb begin
+    en_w   = '0;
+    sdp_w  = '0;
+    stp_w  = '0;
+    end_w  = '0;
+    edb_w  = '0;
+    data_w = '0;
+    en_w[NSYM-1:0]   = en_i;
+    sdp_w[NSYM-1:0]  = sdp_i;
+    stp_w[NSYM-1:0]  = stp_i;
+    end_w[NSYM-1:0]  = end_i;
+    edb_w[NSYM-1:0]  = edb_i;
+    data_w[8*NSYM-1:0] = data_i;
+  end
+
+  function automatic int ncls(input int L);
+    ncls = 2 * L + 5;
+  endfunction
+
+  function automatic int cls_index(
+    input logic [2:0]  st,
+    input logic [15:0] left,
+    input logic        wide,
+    input int          len
+  );
+    if (st == 3'd3) begin
+      if (wide || (left >= 16'(len))) cls_index = len;
+      else cls_index = int'(left);
+    end else if (st == 3'd4) begin
+      if (wide || (left >= 16'(len))) cls_index = 2 * len + 1;
+      else cls_index = len + 1 + int'(left);
+    end else if (st == 3'd0) begin
+      cls_index = 2 * len + 2;
+    end else if (st == 3'd1) begin
+      cls_index = 2 * len + 3;
+    end else begin
+      cls_index = 2 * len + 4;
+    end
+  endfunction
+
+  function automatic logic [23:0] step_sym(
+    input logic [2:0]  st_in,
+    input logic [15:0] left_in,
+    input logic        en_in,
+    input logic        stp_in,
+    input logic        sdp_in,
+    input logic        end_in,
+    input logic        edb_in,
+    input logic [7:0]  data_b
+  );
+    logic [2:0]  st;
+    logic [15:0] left;
+    logic        en, stp, sdp, endb, edb;
+    begin
+      st   = st_in;
+      left = left_in;
+      en   = en_in;
+      stp  = stp_in;
+      sdp  = sdp_in;
+      endb = end_in;
+      edb  = edb_in;
+      if (en_in) begin
+        if (st == 3'd0) begin
+          if (stp) begin
+            st = 3'd1;
+          end else if (sdp) begin
+            st   = 3'd4;
+            left = 16'(DLLP_BYTES);
+          end
+        end else if (st == 3'd1) begin
+          left = {8'd0, data_b};
+          en   = 1'b0;
+          stp  = 1'b0;
+          sdp  = 1'b0;
+          endb = 1'b0;
+          edb  = 1'b0;
+          st   = 3'd2;
+        end else if (st == 3'd2) begin
+          left = {data_b, left[7:0]};
+          en   = 1'b0;
+          stp  = 1'b0;
+          sdp  = 1'b0;
+          endb = 1'b0;
+          edb  = 1'b0;
+          st   = 3'd3;
+        end else if (st == 3'd4) begin
+          stp = 1'b0;
+          sdp = 1'b0;
+          if (left == 16'd0) begin
+            st = 3'd0;
+          end else begin
+            endb = 1'b0;
+            edb  = 1'b0;
+            left = left - 16'd1;
+          end
+        end else if (left == 16'd0) begin
+          endb = 1'b1;
+          edb  = 1'b0;
+          stp  = 1'b0;
+          sdp  = 1'b0;
+          st   = 3'd0;
+        end else begin
+          endb = 1'b0;
+          edb  = 1'b0;
+          stp  = 1'b0;
+          sdp  = 1'b0;
+          left = left - 16'd1;
+        end
+      end
+      step_sym = {st, left, edb, endb, sdp, stp, en};
+    end
+  endfunction
+
+  function automatic logic [RES-1:0] sim2(
+    input int          c,
+    input int unsigned base
+  );
+    logic [2:0]  st;
+    logic [15:0] left;
+    logic        pure_in;
+    logic [23:0] r0, r1;
+    logic [RES-1:0] res;
+    logic [4:0] f0, f1;
+    int unsigned p0, p1;
+    begin
+      res = '0;
+      pure_in = 1'b0;
+      st = 3'd0;
+      left = '0;
+      if (c <= 2) begin
+        st = 3'd3;
+        pure_in = (c == 2);
+        left = pure_in ? 16'd8 : 16'(c);
+      end else if (c <= 5) begin
+        st = 3'd4;
+        pure_in = (c == 5);
+        left = pure_in ? 16'd8 : 16'(c - 3);
+      end else if (c == 6) begin
+        st = 3'd0;
+      end else if (c == 7) begin
+        st = 3'd1;
+      end else begin
+        st = 3'd2;
+      end
+      p0 = base;
+      p1 = base + 1;
+      r0 = step_sym(st, left, en_w[p0], stp_w[p0], sdp_w[p0], end_w[p0], edb_w[p0],
+                    data_w[8*p0 +: 8]);
+      r1 = step_sym(r0[23:21], r0[20:5], en_w[p1], stp_w[p1], sdp_w[p1], end_w[p1],
+                    edb_w[p1], data_w[8*p1 +: 8]);
+      f0 = r0[4:0];
+      f1 = r1[4:0];
+      res[0] = pure_in && ((r1[23:21] == st) && ((st == 3'd3) || (st == 3'd4)));
+      if (res[0]) begin
+        res[3:1]  = st;
+        res[19:4] = 16'd8 - r1[20:5];
+      end else begin
+        res[3:1]  = r1[23:21];
+        res[19:4] = r1[20:5];
+      end
+      res[FB + p0*FW +: FW] = f0;
+      res[FB + p1*FW +: FW] = f1;
+      sim2 = res;
+    end
+  endfunction
+
+  function automatic logic res_pure(input logic [RES-1:0] r);
+    res_pure = r[0];
+  endfunction
+  function automatic logic [2:0] res_st(input logic [RES-1:0] r);
+    res_st = r[3:1];
+  endfunction
+  function automatic logic [15:0] res_left(input logic [RES-1:0] r);
+    res_left = r[19:4];
+  endfunction
+
+  function automatic logic [4:0] sym5(input int unsigned p);
+    sym5 = p[4:0];
+  endfunction
+
+  // Two symbols, entered in st 2 with the real length-low byte.
+  function automatic logic [RES-1:0] enter2(
+    input int unsigned base,
+    input logic [15:0] lo
+  );
+    logic [4:0] p0, p1;
+    logic [23:0] r0, r1;
+    logic [RES-1:0] res;
+    begin
+      p0 = sym5(base);
+      p1 = sym5(base + 1);
+      r0 = step_sym(3'd2, lo, en_w[p0], stp_w[p0], sdp_w[p0], end_w[p0], edb_w[p0],
+                    data_w[8*int'(p0) +: 8]);
+      r1 = step_sym(r0[23:21], r0[20:5], en_w[p1], stp_w[p1], sdp_w[p1], end_w[p1],
+                    edb_w[p1], data_w[8*int'(p1) +: 8]);
+      res = '0;
+      res[3:1]  = r1[23:21];
+      res[19:4] = r1[20:5];
+      res[FB + int'(p0)*FW +: FW] = r0[4:0];
+      res[FB + int'(p1)*FW +: FW] = r1[4:0];
+      enter2 = res;
+    end
+  endfunction
+
+  function automatic logic [RES-1:0] merge_ab(
+    input logic [RES-1:0] a,
+    input logic [RES-1:0] b
+  );
+    logic [RES-1:0] res;
+    begin
+      res = '0;
+      if (res_pure(b)) begin
+        res[3:1]  = res_st(a);
+        res[19:4] = res_left(a) - res_left(b);
+      end else begin
+        res[3:1]  = res_st(b);
+        res[19:4] = res_left(b);
+      end
+      res[FB +: W*FW] = a[FB +: W*FW] | b[FB +: W*FW];
+      merge_ab = res;
+    end
+  endfunction
+
+  logic [RES-1:0] leaf [0:15][0:CMAX-1];
+  logic [RES-1:0] n4   [0:7][0:CMAX-1];
+  logic [RES-1:0] n8   [0:3][0:CMAX-1];
+  logic [RES-1:0] n16  [0:1][0:CMAX-1];
+  logic [RES-1:0] n32  [0:CMAX-1];
+
+  function automatic logic [RES-1:0] enter4(
+    input int unsigned base,
+    input logic [15:0] lo
+  );
+    logic [RES-1:0] a;
+    logic [4:0] sp;
+    logic [3:0] li;
+    begin
+      a  = enter2(base, lo);
+      sp = sym5(base + 2);
+      li = sp[4:1];
+      if (res_st(a) == 3'd2)
+        enter4 = merge_ab(a, enter2(base + 2, res_left(a)));
+      else
+        enter4 = merge_ab(a, leaf[li][cls_index(res_st(a), res_left(a), 1'b0, 2)]);
+    end
+  endfunction
+
+  function automatic logic [RES-1:0] enter8(
+    input int unsigned base,
+    input logic [15:0] lo
+  );
+    logic [RES-1:0] a;
+    logic [4:0] sp;
+    logic [2:0] ni;
+    begin
+      a  = enter4(base, lo);
+      sp = sym5(base + 4);
+      ni = sp[4:2];
+      if (res_st(a) == 3'd2)
+        enter8 = merge_ab(a, enter4(base + 4, res_left(a)));
+      else
+        enter8 = merge_ab(a, n4[ni][cls_index(res_st(a), res_left(a), 1'b0, 4)]);
+    end
+  endfunction
+
+  function automatic logic [RES-1:0] enter16(
+    input int unsigned base,
+    input logic [15:0] lo
+  );
+    logic [RES-1:0] a;
+    logic [4:0] sp;
+    logic [1:0] ni;
+    begin
+      a  = enter8(base, lo);
+      sp = sym5(base + 8);
+      ni = sp[4:3];
+      if (res_st(a) == 3'd2)
+        enter16 = merge_ab(a, enter8(base + 8, res_left(a)));
+      else
+        enter16 = merge_ab(a, n8[ni][cls_index(res_st(a), res_left(a), 1'b0, 8)]);
+    end
+  endfunction
+
+  function automatic logic [RES-1:0] enter32(input logic [15:0] lo);
+    logic [RES-1:0] a;
+    begin
+      a = enter16(0, lo);
+      if (res_st(a) == 3'd2)
+        enter32 = merge_ab(a, enter16(16, res_left(a)));
+      else
+        enter32 = merge_ab(a, n16[1][cls_index(res_st(a), res_left(a), 1'b0, 16)]);
+    end
+  endfunction
+
+  // Each level has its own function so a table is never read and written
+  // in the same process. The st2 arm only steps the next-smaller block.
+`define GF_COMPOSE(FN, LCONST, ENTER_FN) \
+  function automatic logic [RES-1:0] FN( \
+    input int c, \
+    input int unsigned base, \
+    input logic [RES-1:0] child_a [0:CMAX-1], \
+    input logic [RES-1:0] child_b [0:CMAX-1] \
+  ); \
+    int Lc; \
+    logic [2:0] st; \
+    logic [15:0] left, remain, left_after; \
+    logic pure_in; \
+    logic [RES-1:0] a_res, b_res, res; \
+    int a_cls, b_cls; \
+    begin \
+      Lc = LCONST / 2; \
+      pure_in = 1'b0; \
+      st = 3'd0; \
+      left = '0; \
+      if (c <= LCONST) begin \
+        st = 3'd3; \
+        pure_in = (c == LCONST); \
+        left = pure_in ? 16'd0 : 16'(c); \
+      end else if (c <= (2 * LCONST + 1)) begin \
+        st = 3'd4; \
+        pure_in = (c == (2 * LCONST + 1)); \
+        left = pure_in ? 16'd0 : 16'(c - (LCONST + 1)); \
+      end else if (c == (2 * LCONST + 2)) begin \
+        st = 3'd0; \
+      end else if (c == (2 * LCONST + 3)) begin \
+        st = 3'd1; \
+      end else begin \
+        st = 3'd2; \
+      end \
+      if (pure_in || (((st == 3'd3) || (st == 3'd4)) && (left >= 16'(Lc)))) \
+        a_cls = cls_index(st, 16'd0, 1'b1, Lc); \
+      else \
+        a_cls = cls_index(st, left, 1'b0, Lc); \
+      a_res = child_a[a_cls]; \
+      if (res_pure(a_res) && ((res_st(a_res) == 3'd3) || (res_st(a_res) == 3'd4))) begin \
+        if (pure_in) begin \
+          b_cls = cls_index(st, 16'd0, 1'b1, Lc); \
+          b_res = child_b[b_cls]; \
+          res = '0; \
+          res[0] = res_pure(b_res); \
+          res[3:1] = st; \
+          res[19:4] = res_left(a_res) + res_left(b_res); \
+        end else begin \
+          remain = left - res_left(a_res); \
+          if (remain >= 16'(Lc)) \
+            b_cls = cls_index(res_st(a_res), 16'd0, 1'b1, Lc); \
+          else \
+            b_cls = cls_index(res_st(a_res), remain, 1'b0, Lc); \
+          b_res = child_b[b_cls]; \
+          res = '0; \
+          if (res_pure(b_res)) begin \
+            left_after = remain - res_left(b_res); \
+            res[0] = (left_after >= 16'(LCONST)); \
+            res[3:1] = res_st(a_res); \
+            res[19:4] = res[0] ? (res_left(a_res) + res_left(b_res)) : left_after; \
+          end else begin \
+            res[0] = 1'b0; \
+            res[3:1] = res_st(b_res); \
+            res[19:4] = res_left(b_res); \
+          end \
+        end \
+      end else if (res_st(a_res) == 3'd2) begin \
+        b_res = ENTER_FN(base + Lc, res_left(a_res)); \
+        res = '0; \
+        res[3:1]  = res_st(b_res); \
+        res[19:4] = res_left(b_res); \
+      end else begin \
+        b_cls = cls_index(res_st(a_res), res_left(a_res), 1'b0, Lc); \
+        b_res = child_b[b_cls]; \
+        res = '0; \
+        if (res_pure(b_res)) begin \
+          res[0] = 1'b0; \
+          res[3:1] = res_st(a_res); \
+          res[19:4] = res_left(a_res) - res_left(b_res); \
+        end else begin \
+          res[0] = 1'b0; \
+          res[3:1] = res_st(b_res); \
+          res[19:4] = res_left(b_res); \
+        end \
+      end \
+      res[FB +: W*FW] = a_res[FB +: W*FW] | b_res[FB +: W*FW]; \
+      FN = res; \
+    end \
+  endfunction
+
+`GF_COMPOSE(compose4, 4, enter2)
+`GF_COMPOSE(compose8, 8, enter4)
+`GF_COMPOSE(compose16, 16, enter8)
+`GF_COMPOSE(compose32, 32, enter16)
+`undef GF_COMPOSE
+
+  generate
+    for (genvar b = 0; b < 16; b++) begin : g_leaf
+      for (genvar c = 0; c < 9; c++) begin : g_cls
+        assign leaf[b][c] = sim2(c, b * 2);
+      end
+      for (genvar c = 9; c < CMAX; c++) begin : g_pad
+        assign leaf[b][c] = '0;
+      end
+    end
+  endgenerate
+
+  always_comb begin
+    for (int b = 0; b < 8; b++) begin
+      for (int c = 0; c < 13; c++)
+        n4[b][c] = compose4(c, b * 4, leaf[2*b], leaf[2*b+1]);
+      for (int c = 13; c < CMAX; c++)
+        n4[b][c] = '0;
+    end
+  end
+
+  always_comb begin
+    for (int b = 0; b < 4; b++) begin
+      for (int c = 0; c < 21; c++)
+        n8[b][c] = compose8(c, b * 8, n4[2*b], n4[2*b+1]);
+      for (int c = 21; c < CMAX; c++)
+        n8[b][c] = '0;
+    end
+  end
+
+  always_comb begin
+    for (int b = 0; b < 2; b++) begin
+      for (int c = 0; c < 37; c++)
+        n16[b][c] = compose16(c, b * 16, n8[2*b], n8[2*b+1]);
+      for (int c = 37; c < CMAX; c++)
+        n16[b][c] = '0;
+    end
+  end
+
+  always_comb begin
+    for (int c = 0; c < 69; c++)
+      n32[c] = compose32(c, 0, n16[0], n16[1]);
+  end
+
+  logic [RES-1:0] picked;
+  logic           in_pure;
+  int             in_cls;
+
+  always_comb begin
+    in_pure = ((st_i == 3'd3) || (st_i == 3'd4)) && (left_i >= 16'(W));
+    in_cls  = cls_index(st_i, left_i, in_pure, W);
+    if (st_i == 3'd2)
+      picked = enter32(left_i);
+    else
+      picked = n32[in_cls];
+    if (res_pure(picked)) begin
+      st_o   = st_i;
+      left_o = left_i - res_left(picked);
+    end else begin
+      st_o   = res_st(picked);
+      left_o = res_left(picked);
+    end
+    for (int unsigned p = 0; p < NSYM; p++) begin
+      en_o[p]  = picked[FB + p*FW];
+      stp_o[p] = picked[FB + p*FW + 1];
+      sdp_o[p] = picked[FB + p*FW + 2];
+      end_o[p] = picked[FB + p*FW + 3];
+      edb_o[p] = picked[FB + p*FW + 4];
+    end
+  end
+endmodule : rivet_mac_gf_scan
