@@ -62,7 +62,8 @@ module rivet_tl_rc_g4 #(
 
   // Pack leftover bytes then an incoming beat. Counts are 6 bits, so a
   // direct part-select can address past the 64-byte temporary. Byte
-  // arrays keep every index inside the vector.
+  // Destination-byte-first select avoids a 32-deep sequential write
+  // cascade while keeping every index inside its vector.
   function automatic logic [511:0] cat_res(
       input logic [255:0] res,
       input logic [5:0]   res_n,
@@ -70,26 +71,23 @@ module rivet_tl_rc_g4 #(
       input logic [5:0]   nb,
       input logic         use_more
   );
-    logic [7:0]  wb [64];
-    logic [5:0]  di;
+    logic [7:0]   rb [32];
+    logic [7:0]   mb [32];
     logic [511:0] out;
-    for (int unsigned i = 0; i < 64; i++)
-      wb[i] = '0;
     for (int unsigned i = 0; i < 32; i++) begin
-      if (6'(i) < res_n)
-        wb[6'(i)] = res[8*5'(i) +: 8];
-    end
-    if (use_more) begin
-      for (int unsigned i = 0; i < 32; i++) begin
-        if (6'(i) < nb) begin
-          di = res_n + 6'(i);
-          wb[di] = more[8*5'(i) +: 8];
-        end
-      end
+      rb[5'(i)] = res[8*5'(i) +: 8];
+      mb[5'(i)] = more[8*5'(i) +: 8];
     end
     out = '0;
-    for (int unsigned i = 0; i < 64; i++)
-      out[8*6'(i) +: 8] = wb[6'(i)];
+    for (int unsigned k = 0; k < 64; k++) begin
+      automatic logic [6:0] diff;
+      diff = 7'(k) - {1'b0, res_n};
+      if ((k < 32) && (7'(k) < {1'b0, res_n})) begin
+        out[8*6'(k) +: 8] = rb[5'(k)];
+      end else if (use_more && (7'(k) >= {1'b0, res_n}) && (diff < {1'b0, nb})) begin
+        out[8*6'(k) +: 8] = mb[diff[4:0]];
+      end
+    end
     return out;
   endfunction
 
@@ -105,12 +103,17 @@ module rivet_tl_rc_g4 #(
   assign m_axis_rc_tuser  = {42'h0, (st_q == ST_DESC0), 32'h0000_000F};
 
   function automatic logic [5:0] keep_nbytes(input logic [31:0] k);
-    logic [5:0] n;
-    n = '0;
-    for (int unsigned i = 0; i < 32; i++)
-      if (k[i])
-        n = n + 6'd1;
-    return n;
+    logic [2:0] c4 [8];
+    logic [3:0] c8 [4];
+    logic [4:0] c16 [2];
+    for (int unsigned i = 0; i < 8; i++)
+      c4[i] = {2'd0, k[4*i]} + {2'd0, k[4*i + 1]} +
+              {2'd0, k[4*i + 2]} + {2'd0, k[4*i + 3]};
+    for (int unsigned i = 0; i < 4; i++)
+      c8[i] = {1'b0, c4[2*i]} + {1'b0, c4[2*i + 1]};
+    c16[0] = {1'b0, c8[0]} + {1'b0, c8[1]};
+    c16[1] = {1'b0, c8[2]} + {1'b0, c8[3]};
+    return {1'b0, c16[0]} + {1'b0, c16[1]};
   endfunction
 
   function automatic logic [7:0] dw_keep(input logic [5:0] n);

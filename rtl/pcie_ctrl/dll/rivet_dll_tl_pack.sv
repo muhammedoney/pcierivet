@@ -48,22 +48,40 @@ module rivet_dll_tl_pack #(
 
   logic [7:0]        nbytes;
   logic [DATA_W-1:0] beat_packed;
-  // Six bits so a 32-byte beat does not wrap the prefix sum.
-  logic [5:0]        keep_pref [0:KEEP_W];
 
+  // All TL producers emit contiguous low-byte tkeep masks; compute the
+  // byte count with a shallow popcount tree and pass data straight through
+  // (zeroing unused high bytes).
   always_comb begin
-    keep_pref[0] = 6'd0;
-    for (int unsigned i = 0; i < KEEP_W; i++)
-      keep_pref[i + 1] = keep_pref[i] + 6'(s_tkeep_i[i]);
-    nbytes      = 8'(keep_pref[KEEP_W]);
+    logic [31:0] k32;
+    logic [2:0]  c4 [8];
+    logic [3:0]  c8 [4];
+    logic [4:0]  c16 [2];
+    logic [5:0]  cnt;
+    k32 = '0;
+    k32[KEEP_W-1:0] = s_tkeep_i;
+    for (int unsigned i = 0; i < 8; i++)
+      c4[i] = {2'd0, k32[4*i]} + {2'd0, k32[4*i + 1]} +
+              {2'd0, k32[4*i + 2]} + {2'd0, k32[4*i + 3]};
+    for (int unsigned i = 0; i < 4; i++)
+      c8[i] = {1'b0, c4[2*i]} + {1'b0, c4[2*i + 1]};
+    c16[0] = {1'b0, c8[0]} + {1'b0, c8[1]};
+    c16[1] = {1'b0, c8[2]} + {1'b0, c8[3]};
+    cnt    = {1'b0, c16[0]} + {1'b0, c16[1]};
+    nbytes = {2'd0, cnt};
     beat_packed = '0;
     for (int unsigned b = 0; b < KEEP_W; b++) begin
-      for (int unsigned i = 0; i < KEEP_W; i++) begin
-        if (s_tkeep_i[i] && (keep_pref[i] == 6'(b)))
-          beat_packed[8*b +: 8] = s_tdata_i[8*i +: 8];
-      end
+      if (s_tkeep_i[b])
+        beat_packed[8*b +: 8] = s_tdata_i[8*b +: 8];
     end
   end
+
+`ifndef SYNTHESIS
+  always_ff @(posedge clk_i) begin
+    if (rst_ni && s_tvalid_i && ((s_tkeep_i & (s_tkeep_i + KEEP_W'(1))) != '0))
+      $error("rivet_dll_tl_pack: non-contiguous s_tkeep_i 0x%0h", s_tkeep_i);
+  end
+`endif
 
   generate
     if (STREAM) begin : g_stream

@@ -616,13 +616,18 @@ module rivet_mac_os_tx #(
     // Append it after any consume so the next symbol-time is not short.
     if (gen3_pkt && take_tlp_col && (tlp_rd_slot_q == tlp_wr_slot_q) &&
         (beat_n != 8'd0)) begin
+      automatic logic [7:0] mb [32];
       n_c    = 6'(beat_n);
       base_c = emit_cnt_d;
       merged = emit_buf_d;
+      for (int unsigned i = 0; i < 32; i++)
+        mb[5'(i)] = masked_beat[8*5'(i) +: 8];
       if (({1'b0, base_c} + {1'b0, n_c}) <= 7'd64) begin
-        for (int unsigned i = 0; i < 32; i++) begin
-          if (6'(i) < n_c)
-            merged[8*(int'(base_c) + i) +: 8] = masked_beat[8*i +: 8];
+        for (int unsigned k = 0; k < 64; k++) begin
+          automatic logic [6:0] diff;
+          diff = 7'(k) - {1'b0, base_c};
+          if ((7'(k) >= {1'b0, base_c}) && (diff < {1'b0, n_c}))
+            merged[8*6'(k) +: 8] = mb[diff[4:0]];
         end
         emit_buf_d    = merged;
         emit_cnt_d    = base_c + n_c;

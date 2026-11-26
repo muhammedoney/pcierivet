@@ -209,13 +209,18 @@ module rivet_dll_tlp_tx16 #(
       input logic [63:0] src,
       input logic [3:0]  n,
       input logic        last);
+    logic [7:0]   sb [8];
     logic [127:0] wide;
     logic [4:0]   sum;
     pack_r_t r;
+    for (int unsigned i = 0; i < 8; i++)
+      sb[3'(i)] = src[8*3'(i) +: 8];
     wide = {64'h0, acc_in};
-    for (int unsigned i = 0; i < 8; i++) begin
-      if (4'(i) < n)
-        wide[8*(32'(acc_n_in) + i) +: 8] = src[8*i +: 8];
+    for (int unsigned k = 0; k < 16; k++) begin
+      automatic logic [4:0] diff;
+      diff = 5'(k) - {1'b0, acc_n_in};
+      if ((5'(k) >= {1'b0, acc_n_in}) && (diff < {1'b0, n}))
+        wide[8*4'(k) +: 8] = sb[diff[2:0]];
     end
     sum = {1'b0, acc_n_in} + {1'b0, n};
     r = '0;
@@ -236,16 +241,23 @@ module rivet_dll_tlp_tx16 #(
     return r;
   endfunction
 
-  function automatic logic [639:0] append_bytes(
+  // Destination-byte-first append of a pre-assembled chunk (up to 38 B:
+  // optional 2 B seq + up to 32 B payload + optional 4 B LCRC) in one pass.
+  function automatic logic [639:0] append_chunk(
       input logic [639:0] acc_in,
       input logic [6:0]   n0,
-      input logic [255:0] src,
+      input logic [303:0] src,
       input logic [5:0]   n);
+    logic [7:0]   sb [64];
     logic [639:0] a;
+    for (int unsigned i = 0; i < 64; i++)
+      sb[i] = (i < 38) ? src[8*i +: 8] : 8'h00;
     a = acc_in;
-    for (int unsigned i = 0; i < 32; i++) begin
-      if (6'(i) < n)
-        a[8*(32'(n0) + i) +: 8] = src[8*i +: 8];
+    for (int unsigned k = 0; k < 80; k++) begin
+      automatic logic [6:0] diff;
+      diff = 7'(k) - n0;
+      if ((7'(k) >= n0) && (diff < {1'b0, n}))
+        a[8*k +: 8] = sb[diff[5:0]];
     end
     return a;
   endfunction
@@ -484,34 +496,61 @@ module rivet_dll_tlp_tx16 #(
         end
 
         if (tl_valid_i && tl_ready_o) begin
-          logic [5:0]  nb;
-          logic [31:0] lcrc;
+          logic [5:0]   nb;
+          logic [31:0]  lcrc;
+          logic [15:0]  seq_w;
+          logic         add_seq;
+          logic [5:0]   seq_len;
+          logic [5:0]   pay_end;
+          logic [5:0]   chunk_n;
+          logic [255:0] w256;
+          logic [303:0] chunk;
           nb = (tl_len_i >= 16'(BEAT_B)) ? 6'(BEAT_B) : tl_len_i[5:0];
           if (nb != 6'd0) begin
-            if (!pkt) begin
-              logic        at_front;
-              logic [15:0] seq_w;
-              at_front = (an == 6'd0);
-              seq_w = rivet_tlp_seq_bytes(nseq);
+            add_seq = !pkt;
+            seq_w   = rivet_tlp_seq_bytes(nseq);
+            if (add_seq) begin
+              if (an == 7'd0)
+                sop = 1'b1;
               seq   = nseq;
               nseq  = nseq + 12'd1;
               crc   = rivet_crc32_fold(32'hFFFF_FFFF, {48'h0, seq_w}, 4'd2);
-              acc   = append_bytes(acc, an, 256'({240'h0, seq_w}), 6'd2);
-              an    = an + 6'd2;
               pay   = 16'd2;
               pkt   = 1'b1;
-              if (at_front)
-                sop = 1'b1;
             end
-            crc = fold16(crc, 256'(tl_word_i), nb);
-            acc = append_bytes(acc, an, 256'(tl_word_i), nb);
-            an  = an + {1'b0, nb};
-            pay = pay + 16'(nb);
+            w256 = 256'(tl_word_i);
+            crc  = fold16(crc, w256, nb);
+            lcrc = ~crc;
+            pay  = pay + 16'(nb);
+
+            // Pack optional 2 B seq + payload + optional 4 B LCRC into one
+            // contiguous chunk and append to acc in a single parallel step.
+            seq_len = add_seq ? 6'd2 : 6'd0;
+            pay_end = seq_len + nb;
+            chunk_n = pay_end + (tl_last_i ? 6'd4 : 6'd0);
+            chunk   = '0;
+            for (int unsigned j = 0; j < 38; j++) begin
+              if (add_seq && (j < 2)) begin
+                chunk[8*j +: 8] = seq_w[8*j +: 8];
+              end else if ((6'(j) >= seq_len) && ((6'(j) - seq_len) < nb)) begin
+                if (add_seq) begin
+                  if ((j >= 2) && (j < 34))
+                    chunk[8*j +: 8] = w256[8*(j - 2) +: 8];
+                end else begin
+                  if (j < 32)
+                    chunk[8*j +: 8] = w256[8*j +: 8];
+                end
+              end else if (tl_last_i && (6'(j) >= pay_end) && ((6'(j) - pay_end) < 6'd4)) begin
+                automatic logic [5:0] loff;
+                loff = 6'(j) - pay_end;
+                chunk[8*j +: 8] = lcrc[8*loff[1:0] +: 8];
+              end
+            end
+            acc = append_chunk(acc, an, chunk, chunk_n);
+            an  = an + {1'b0, chunk_n};
+
             if (tl_last_i) begin
-              lcrc = ~crc;
-              acc  = append_bytes(acc, an, 256'({224'h0, lcrc}), 6'd4);
-              an   = an + 6'd4;
-              if (eop_n == 6'd0)
+              if (eop_n == 7'd0)
                 eop_n = an;
               else
                 eop2 = an;

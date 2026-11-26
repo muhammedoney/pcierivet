@@ -142,11 +142,19 @@ module rivet_dll_tlp_rx16 #(
                         !bank_blocked;
 
   function automatic logic [7:0] keep_popcount(input logic [31:0] k);
-    logic [7:0] n;
-    n = '0;
-    for (int unsigned i = 0; i < 32; i++)
-      n = n + 8'(k[i]);
-    return n;
+    logic [2:0] c4 [8];
+    logic [3:0] c8 [4];
+    logic [4:0] c16 [2];
+    logic [5:0] cnt;
+    for (int unsigned i = 0; i < 8; i++)
+      c4[i] = {2'd0, k[4*i]} + {2'd0, k[4*i + 1]} +
+              {2'd0, k[4*i + 2]} + {2'd0, k[4*i + 3]};
+    for (int unsigned i = 0; i < 4; i++)
+      c8[i] = {1'b0, c4[2*i]} + {1'b0, c4[2*i + 1]};
+    c16[0] = {1'b0, c8[0]} + {1'b0, c8[1]};
+    c16[1] = {1'b0, c8[2]} + {1'b0, c8[3]};
+    cnt    = {1'b0, c16[0]} + {1'b0, c16[1]};
+    return {2'd0, cnt};
   endfunction
 
   function automatic logic [31:0] keep_prefix(input logic [5:0] n);
@@ -501,7 +509,6 @@ module rivet_dll_tlp_rx16 #(
         logic [5:0]   n_t;
         logic [13:0]  left_t;
         logic [5:0]   emit_n;
-        logic [5:0]   src_b;
         logic [5:0]   room;
         logic [255:0] srcw;
         logic [31:0]  keep_full;
@@ -509,17 +516,23 @@ module rivet_dll_tlp_rx16 #(
         n_t    = acc_n_q;
         left_t = pld_left_q;
         emit_n = 6'd0;
-        src_b  = 6'd0;
         room   = 6'(OUT_B);
         srcw   = {rd_d_q, rd_c_q, rd_hi_q, rd_lo_q};
         if (play_consume) begin
-          for (int unsigned bi = 0; bi < 32; bi++) begin
-            if (6'(bi) < take_n) begin
-              src_b = take_skip + 6'(bi);
-              acc_t[8*(acc_n_q + 6'(bi)) +: 8] = srcw[8*src_b +: 8];
-              n_t = n_t + 6'd1;
-            end
+          // Pre-shift by take_skip (0 or 2) with a 2:1 mux, then select
+          // each destination byte in parallel instead of a 32-deep cascade.
+          logic [255:0] srcw_s;
+          logic [7:0]   sb [32];
+          srcw_s = (take_skip != 6'd0) ? {16'h0, srcw[255:16]} : srcw;
+          for (int unsigned i = 0; i < 32; i++)
+            sb[5'(i)] = srcw_s[8*5'(i) +: 8];
+          for (int unsigned k = 0; k < 64; k++) begin
+            automatic logic [6:0] diff;
+            diff = 7'(k) - {1'b0, acc_n_q};
+            if ((7'(k) >= {1'b0, acc_n_q}) && (diff < {1'b0, take_n}))
+              acc_t[8*6'(k) +: 8] = sb[diff[4:0]];
           end
+          n_t    = acc_n_q + take_n;
           left_t = pld_left_q - 14'(take_n);
         end
         if (!play_stall && can_send &&
@@ -532,7 +545,8 @@ module rivet_dll_tlp_rx16 #(
           tl_last_q <= (left_t == 14'd0) && (emit_n == n_t) && !play_open_q;
           tl_sent_q <= 1'b1;
           emitted    = 1'b1;
-          acc_t = acc_t >> (8 * emit_n);
+          // Full beat always shifts by constant OUT_B; short final beat drains n_t to 0.
+          acc_t = (n_t >= room) ? (acc_t >> (OUT_B * 8)) : 512'h0;
           n_t   = n_t - emit_n;
           if ((left_t == 14'd0) && (n_t == 6'd0))
             finish = 1'b1;
@@ -586,7 +600,8 @@ module rivet_dll_tlp_rx16 #(
         pld_seen_q  <= pld_vis_c;
         play_len_q  <= frame_vis_c;
       end
-      if ((pld_delta != 14'd0) && (play_st_q == PLAY_RUN))
+      if ((pld_delta != 14'd0) &&
+          ((play_st_q == PLAY_RUN) || (play_st_q == PLAY_PREP)))
         pld_left_q <= (play_consume ? (pld_left_q - 14'(take_n)) : pld_left_q) + pld_delta;
       if (close_live) begin
         play_open_q <= 1'b0;
