@@ -29,11 +29,20 @@ open_project $xpr
 set syn  [get_runs synth_1]
 set impl [get_runs impl_1]
 
-if {[catch {set_property strategy Flow_PerfOptimized_high $syn} err]} {
+# Gen4 perf explore stayed in cross-boundary optimization with no progress.
+# Runtime synthesis and the default implementation finish the batch.
+if {$gen4} {
+  set syn_strat Flow_RuntimeOptimized
+  set impl_strat "Vivado Implementation Defaults"
+} else {
+  set syn_strat Flow_PerfOptimized_high
+  set impl_strat Performance_ExplorePostRoutePhysOpt
+}
+if {[catch {set_property strategy $syn_strat $syn} err]} {
   puts "WARN: synth strategy not applied: $err"
 }
 
-if {[catch {set_property strategy Performance_ExplorePostRoutePhysOpt $impl} err]} {
+if {[catch {set_property strategy $impl_strat $impl} err]} {
   puts "WARN: $err"
   puts "WARN: falling back to Performance_Explore"
   set_property strategy Performance_Explore $impl
