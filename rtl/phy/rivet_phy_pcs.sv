@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Soft PIPE PCS. No FPGA primitives in this file.
-// Gen1/Gen2 8b/10b, the elastic buffer, and the command plane are in.
-// The Gen3/Gen4 gearbox follows. phystatus_rst stays high until the
-// PMA reports done. phystatus pulses when a rate or detect command finishes.
+// Gen1/Gen2 8b/10b, the elastic buffer, the command plane, and the
+// 128b/130b gearbox are in. phystatus_rst stays high until the PMA
+// reports done. phystatus pulses when a rate or detect command finishes.
 
 module rivet_phy_pcs
   import rivet_pkg::*;
@@ -89,9 +89,6 @@ module rivet_phy_pcs
 `endif
 
   assign pipe_phystatus_rst = {LANES{~preset_n | ~pma_resetdone}};
-  assign pipe_rxdata_valid  = '0;
-  assign pipe_rxstart_block = '0;
-  assign pipe_rxsync_header = '0;
   assign pipe_rxelecidle    = {LANES{pma_rxelecidle}};
   assign pipe_txeq_fs       = RIVET_PHY_TXEQ_FS;
   assign pipe_txeq_lf       = RIVET_PHY_TXEQ_LF;
@@ -120,6 +117,41 @@ module rivet_phy_pcs
 
   wire gen12 = (pma_rate == RIVET_PIPE_RATE_GEN1) || (pma_rate == RIVET_PIPE_RATE_GEN2);
 
+  logic                          gb_active;
+  logic [63:0]                   gb_txdata;
+  logic [PIPE_DATA_WIDTH-1:0]    gb_rxdata;
+  logic                          gb_rxvalid;
+  logic [1:0]                    gb_rxstart;
+  logic [1:0]                    gb_rxsync;
+
+  if (PIPE_DATA_WIDTH >= 32) begin : g_gb
+    assign gb_active = (pma_rate == RIVET_PIPE_RATE_GEN3) ||
+                       ((pma_rate == RIVET_PIPE_RATE_GEN4) && (PIPE_DATA_WIDTH >= 64));
+    rivet_phy_128b130b #(.PIPE_W(PIPE_DATA_WIDTH)) u_gb (
+      .pclk            (pclk),
+      .preset_n        (preset_n),
+      .enable          (gb_active),
+      .rate            (pma_rate),
+      .txdata          (pipe_txdata[PIPE_DATA_WIDTH-1:0]),
+      .txdata_valid    (pipe_txdata_valid[0]),
+      .txstart_block   (pipe_txstart_block[0]),
+      .txsync_header   (pipe_txsync_header[1:0]),
+      .pma_txdata      (gb_txdata),
+      .pma_rxdata      (pma_rxdata),
+      .rxdata          (gb_rxdata),
+      .rxdata_valid    (gb_rxvalid),
+      .rxstart_block   (gb_rxstart),
+      .rxsync_header   (gb_rxsync)
+    );
+  end else begin : g_no_gb
+    assign gb_active  = 1'b0;
+    assign gb_txdata  = '0;
+    assign gb_rxdata  = '0;
+    assign gb_rxvalid = 1'b0;
+    assign gb_rxstart = '0;
+    assign gb_rxsync  = '0;
+  end
+
   rivet_phy_cmd u_cmd (
     .pclk             (pclk),
     .preset_n         (preset_n),
@@ -146,7 +178,7 @@ module rivet_phy_pcs
                          pipe_txcompliance[0] ? 1'b1 : rd_tx_q, rd0, inv0);
     c1 = rivet_phy_enc10(pipe_txdata[15:8], pipe_txdatak[1], rd0, rd1, inv1);
   end
-  assign pma_txdata  = gen12 ? {{44{1'b0}}, c1, c0} : '0;
+  assign pma_txdata  = gen12 ? {{44{1'b0}}, c1, c0} : (gb_active ? gb_txdata : '0);
   assign pma_txwidth = rivet_phy_pma_width(pipe_rate);
 
   assign comma0 = (rx_c0 == 10'b0011111010) || (rx_c0 == 10'b1100000101);
@@ -186,8 +218,12 @@ module rivet_phy_pcs
     .out_status (eb_status)
   );
 
-  assign pipe_rxdata[PIPE_DATA_WIDTH-1:0] = {{(PIPE_DATA_WIDTH-16){1'b0}}, eb_b1, eb_b0};
-  assign pipe_rxdatak[1:0] = {eb_k1, eb_k0};
+  assign pipe_rxdata[PIPE_DATA_WIDTH-1:0] = gb_active ? gb_rxdata :
+                              {{(PIPE_DATA_WIDTH-16){1'b0}}, eb_b1, eb_b0};
+  assign pipe_rxdatak[1:0] = gb_active ? 2'b00 : {eb_k1, eb_k0};
+  assign pipe_rxdata_valid  = {{(LANES-1){1'b0}}, gb_active ? gb_rxvalid : 1'b0};
+  assign pipe_rxstart_block = {{(2*(LANES-1)){1'b0}}, gb_active ? gb_rxstart : 2'b00};
+  assign pipe_rxsync_header = {{(2*(LANES-1)){1'b0}}, gb_active ? gb_rxsync : 2'b00};
   assign pipe_rxvalid[0] = eb_valid;
   assign pipe_rxstatus[2:0] = cmd_detected ? RIVET_RXSTATUS_RX_DETECTED : eb_status;
 

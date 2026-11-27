@@ -12,6 +12,14 @@ module rivet_phy_pcs_tb;
 `endif
 `ifdef PHY_WIDTH
   localparam int unsigned PIPE_DATA_WIDTH = `PHY_WIDTH;
+`elsif CASE_GEN4
+  localparam int unsigned PIPE_DATA_WIDTH = 64;
+`elsif CASE_EQ
+  localparam int unsigned PIPE_DATA_WIDTH = 64;
+`elsif CASE_X4
+  localparam int unsigned PIPE_DATA_WIDTH = 64;
+`elsif CASE_GEN3
+  localparam int unsigned PIPE_DATA_WIDTH = 32;
 `else
   localparam int unsigned PIPE_DATA_WIDTH = 16;
 `endif
@@ -513,6 +521,138 @@ module rivet_phy_pcs_tb;
       $fatal(1, "a legal compliance symbol reported disparity");
 
     $display("PASS: phy command");
+    $finish;
+  end
+`elsif CASE_GEN3
+  initial begin
+    integer t;
+    integer blk;
+    integer wrd;
+    integer lows;
+    integer cyc;
+    integer low_run;
+    logic saw_start;
+    logic saw_window;
+    logic saw_unlock;
+    logic saw_relock;
+    logic [31:0] got0, got1, got2, got3;
+    logic [7:0] base;
+
+    repeat (4) @(posedge clk);
+    preset_n = 1'b1;
+    pipe_powerdown = 2'b00;
+    pipe_txdetectrx = 1'b0;
+    pipe_txelecidle = '0;
+    pipe_rate = 3'd2;
+
+    saw_start = 1'b0;
+    repeat (64) begin
+      @(posedge clk);
+      if (!pipe_phystatus_rst[0] && pipe_phystatus[0])
+        saw_start = 1'b1;
+    end
+    if (!saw_start)
+      $fatal(1, "Gen3 rate change did not pulse phystatus");
+
+    lows = 0;
+    cyc = 0;
+    saw_window = 1'b0;
+    saw_start = 1'b0;
+    got0 = '0;
+    got1 = '0;
+    got2 = '0;
+    got3 = '0;
+    low_run = 0;
+    saw_unlock = 1'b0;
+    saw_relock = 1'b0;
+
+    for (t = 0; t < 140; t = t + 1) begin
+      pipe_txdata_valid = '0;
+      pipe_txstart_block = '0;
+      pipe_txsync_header = '0;
+      if (t < 64) begin
+        blk = t / 4;
+        wrd = t % 4;
+        base = 8'(blk * 16 + wrd * 4);
+        pipe_txdata[31:0] = {base + 8'd3, base + 8'd2, base + 8'd1, base};
+        pipe_txdata_valid = '1;
+        pipe_txstart_block = (wrd == 0);
+        pipe_txsync_header = (wrd == 0) ? 2'b10 : 2'b00;
+      end else if (t == 64) begin
+        pipe_txdata_valid = '0;
+      end else if (t < 97) begin
+        blk = (t - 65) / 4;
+        wrd = (t - 65) % 4;
+        base = 8'(blk * 16 + wrd * 4);
+        pipe_txdata[31:0] = {base + 8'd3, base + 8'd2, base + 8'd1, base};
+        pipe_txdata_valid = '1;
+        pipe_txstart_block = (wrd == 0);
+        pipe_txsync_header = (wrd == 0) ? 2'b10 : 2'b00;
+      end else if (t < 101) begin
+        pipe_txdata[31:0] = '0;
+        pipe_txdata_valid = '1;
+        pipe_txstart_block = (t == 97);
+        pipe_txsync_header = (t == 97) ? 2'b00 : 2'b00;
+      end else if (t < 109) begin
+        blk = (t - 101) / 4;
+        wrd = (t - 101) % 4;
+        base = 8'(8'hA0 + blk * 16 + wrd * 4);
+        pipe_txdata[31:0] = {base + 8'd3, base + 8'd2, base + 8'd1, base};
+        pipe_txdata_valid = '1;
+        pipe_txstart_block = (wrd == 0);
+        pipe_txsync_header = (wrd == 0) ? 2'b10 : 2'b00;
+      end
+      @(posedge clk);
+      if (!saw_start && pipe_rxdata_valid[0] && pipe_rxstart_block[1:0] == 2'b01) begin
+        saw_start = 1'b1;
+        cyc = 0;
+      end
+      if (saw_start && !saw_window) begin
+        if (!pipe_rxdata_valid[0])
+          lows = lows + 1;
+        if (cyc == 0) begin
+          got0 = pipe_rxdata[31:0];
+          if (pipe_rxsync_header[1:0] !== 2'b10)
+            $fatal(1, "gen3 header got %b", pipe_rxsync_header[1:0]);
+          if (pipe_rxdatak[1:0] !== 2'b00)
+            $fatal(1, "gen3 rxdatak must stay 0");
+        end else if (cyc == 1) begin
+          got1 = pipe_rxdata[31:0];
+        end else if (cyc == 2) begin
+          got2 = pipe_rxdata[31:0];
+        end else if (cyc == 3) begin
+          got3 = pipe_rxdata[31:0];
+        end
+        cyc = cyc + 1;
+        if (cyc == 65)
+          saw_window = 1'b1;
+      end else if (saw_window && !saw_unlock) begin
+        if (!pipe_rxdata_valid[0])
+          low_run = low_run + 1;
+        else
+          low_run = 0;
+        if (low_run >= 4)
+          saw_unlock = 1'b1;
+      end else if (saw_unlock && pipe_rxdata_valid[0] &&
+                   pipe_rxstart_block[1:0] == 2'b01 &&
+                   pipe_rxdata[31:0] == 32'hA3A2A1A0) begin
+        saw_relock = 1'b1;
+      end
+    end
+
+    if (!saw_window)
+      $fatal(1, "gen3 block lock did not open a 65-cycle window");
+    if (lows != 1)
+      $fatal(1, "gen3 idle count %0d", lows);
+    if (got0 !== 32'h03020100 || got1 !== 32'h07060504 ||
+        got2 !== 32'h0B0A0908 || got3 !== 32'h0F0E0D0C)
+      $fatal(1, "gen3 payload %h %h %h %h", got0, got1, got2, got3);
+    if (!saw_unlock)
+      $fatal(1, "bad header did not drop block lock");
+    if (!saw_relock)
+      $fatal(1, "block lock did not return after two good blocks");
+
+    $display("PASS: phy gen3");
     $finish;
   end
 `else
