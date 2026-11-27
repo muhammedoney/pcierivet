@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Soft PIPE PCS. No FPGA primitives in this file.
-// Gen1/Gen2 8b/10b, the elastic buffer, the command plane, and the
-// Gen3/Gen4 gearbox are filled in by the following tasks. This slice
-// completes reset: phystatus_rst stays high until the PMA reports done.
+// Gen1/Gen2 8b/10b and the elastic buffer are in. The command plane
+// and the Gen3/Gen4 gearbox follow. phystatus_rst stays high until
+// the PMA reports done.
 
 module rivet_phy_pcs
   import rivet_pkg::*;
@@ -71,7 +71,8 @@ module rivet_phy_pcs
   input  logic                             pma_rxelecidle,
   input  logic                             pma_rxdetected,
   input  logic                             pma_resetdone,
-  input  logic                             pma_pll_lock
+  input  logic                             pma_pll_lock,
+  input  logic [1:0]                       pma_wr_n
 );
 
   `include "rivet_phy_8b10b_enc.svh"
@@ -130,10 +131,34 @@ module rivet_phy_pcs
     st1 = ce1 ? RIVET_RXSTATUS_DECODE_ERR : de1 ? RIVET_RXSTATUS_DISPARITY : RIVET_RXSTATUS_OK;
   end
 
-  assign pipe_rxdata[PIPE_DATA_WIDTH-1:0] = {{(PIPE_DATA_WIDTH-16){1'b0}}, b1, b0};
-  assign pipe_rxdatak[1:0] = {k1, k0};
-  assign pipe_rxvalid[0] = gen12 & (locked_q | comma0) & pma_resetdone & preset_n;
-  assign pipe_rxstatus[2:0] = (st0 != RIVET_RXSTATUS_OK) ? st0 : st1;
+  wire        eb_en = gen12 & (locked_q | comma0) & pma_resetdone & preset_n;
+  logic [7:0] eb_b0, eb_b1;
+  logic       eb_k0, eb_k1, eb_valid;
+  logic [2:0] eb_status;
+
+  rivet_phy_eb u_eb (
+    .pclk       (pclk),
+    .preset_n   (preset_n),
+    .enable     (eb_en),
+    .sym0       (b0),
+    .sym1       (b1),
+    .k0         (k0),
+    .k1         (k1),
+    .st0        (st0),
+    .st1        (st1),
+    .wr_n       (pma_wr_n),
+    .out0       (eb_b0),
+    .out1       (eb_b1),
+    .out_k0     (eb_k0),
+    .out_k1     (eb_k1),
+    .out_valid  (eb_valid),
+    .out_status (eb_status)
+  );
+
+  assign pipe_rxdata[PIPE_DATA_WIDTH-1:0] = {{(PIPE_DATA_WIDTH-16){1'b0}}, eb_b1, eb_b0};
+  assign pipe_rxdatak[1:0] = {eb_k1, eb_k0};
+  assign pipe_rxvalid[0] = eb_valid;
+  assign pipe_rxstatus[2:0] = eb_status;
 
   always_ff @(posedge pclk or negedge preset_n) begin
     if (!preset_n) begin

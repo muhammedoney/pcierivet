@@ -185,9 +185,11 @@ module rivet_phy_pcs_tb;
     logic saw_valid_early;
     logic saw_dec;
     logic saw_disp;
+    logic saw_comma;
     saw_valid_early = 1'b0;
     saw_dec = 1'b0;
     saw_disp = 1'b0;
+    saw_comma = 1'b0;
     repeat (4) @(posedge clk);
     preset_n = 1'b1;
     pipe_powerdown = 2'b00;
@@ -206,7 +208,7 @@ module rivet_phy_pcs_tb;
     @(posedge clk);
     pipe_txdata[15:0] <= {8'h4A, rivet_pkg::RIVET_SYM_COM};
     pipe_txdatak[1:0] <= 2'b01;
-    repeat (12) begin
+    repeat (32) begin
       @(posedge clk);
       if (pipe_rxvalid[0] && pipe_rxdata[7:0] == rivet_pkg::RIVET_SYM_COM &&
           pipe_rxdatak[0] === 1'b1 && pipe_rxdata[15:8] == 8'h4A) begin
@@ -214,17 +216,19 @@ module rivet_phy_pcs_tb;
         pipe_txdatak[1:0] <= 2'b00;
         repeat (6) @(posedge clk);
         inject_code_err = 1'b1;
-        repeat (4) begin
+        repeat (16) begin
           @(posedge clk);
           if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_DECODE_ERR)
             saw_dec = 1'b1;
+          if (pipe_rxstatus[2:0] != rivet_pkg::RIVET_RXSTATUS_DECODE_ERR && saw_dec)
+            inject_code_err = 1'b0;
         end
         inject_code_err = 1'b0;
         if (!saw_dec)
           $fatal(1, "expected a decode error");
-        repeat (4) @(posedge clk);
+        repeat (8) @(posedge clk);
         inject_disp_err = 1'b1;
-        repeat (4) begin
+        repeat (16) begin
           @(posedge clk);
           if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_DISPARITY)
             saw_disp = 1'b1;
@@ -232,11 +236,119 @@ module rivet_phy_pcs_tb;
         inject_disp_err = 1'b0;
         if (!saw_disp)
           $fatal(1, "expected a disparity error");
+        saw_comma = 1'b1;
         $display("PASS: phy 8b10b");
         $finish;
       end
     end
-    $fatal(1, "comma was not returned");
+    if (!saw_comma)
+      $fatal(1, "comma was not returned");
+  end
+`elsif CASE_EB
+  initial begin
+    logic saw_add;
+    logic saw_rem;
+    logic saw_ovf;
+    integer si;
+    saw_add = 1'b0;
+    saw_rem = 1'b0;
+    saw_ovf = 1'b0;
+
+    repeat (4) @(posedge clk);
+    eb_delete_skp = 1'b1;
+    preset_n = 1'b1;
+    pipe_powerdown = 2'b00;
+    pipe_txelecidle = '0;
+    pipe_rate = 3'd1;
+    wait (pipe_phystatus_rst[0] === 1'b0);
+    for (si = 0; si < 64; si++) begin
+      @(posedge clk);
+      pipe_txdata[15:0] <= {rivet_pkg::RIVET_SYM_SKP, rivet_pkg::RIVET_SYM_COM};
+      pipe_txdatak[1:0] <= 2'b11;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_SKP_ADDED)
+        saw_add = 1'b1;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_EB_OVERFLOW)
+        saw_ovf = 1'b1;
+      @(posedge clk);
+      pipe_txdata[15:0] <= {rivet_pkg::RIVET_SYM_SKP, rivet_pkg::RIVET_SYM_SKP};
+      pipe_txdatak[1:0] <= 2'b11;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_SKP_ADDED)
+        saw_add = 1'b1;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_EB_OVERFLOW)
+        saw_ovf = 1'b1;
+    end
+    repeat (16) begin
+      @(posedge clk);
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_SKP_ADDED)
+        saw_add = 1'b1;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_EB_OVERFLOW)
+        saw_ovf = 1'b1;
+    end
+    if (!saw_add)
+      $fatal(1, "expected SKP_ADDED while the model deletes SKP");
+    if (saw_ovf)
+      $fatal(1, "delete run overflowed the elastic buffer");
+
+    saw_rem = 1'b0;
+    saw_ovf = 1'b0;
+    preset_n = 1'b0;
+    eb_delete_skp = 1'b0;
+    eb_insert_skp = 1'b1;
+    repeat (4) @(posedge clk);
+    preset_n = 1'b1;
+    wait (pipe_phystatus_rst[0] === 1'b0);
+    for (si = 0; si < 64; si++) begin
+      @(posedge clk);
+      pipe_txdata[15:0] <= {rivet_pkg::RIVET_SYM_SKP, rivet_pkg::RIVET_SYM_COM};
+      pipe_txdatak[1:0] <= 2'b11;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_SKP_REMOVED)
+        saw_rem = 1'b1;
+      @(posedge clk);
+      pipe_txdata[15:0] <= {rivet_pkg::RIVET_SYM_SKP, rivet_pkg::RIVET_SYM_SKP};
+      pipe_txdatak[1:0] <= 2'b11;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_SKP_REMOVED)
+        saw_rem = 1'b1;
+    end
+    repeat (16) begin
+      @(posedge clk);
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_SKP_REMOVED)
+        saw_rem = 1'b1;
+    end
+    if (!saw_rem)
+      $fatal(1, "expected SKP_REMOVED while the model inserts SKP");
+
+    saw_ovf = 1'b0;
+    preset_n = 1'b0;
+    eb_insert_skp = 1'b0;
+    eb_flood = 1'b0;
+    repeat (4) @(posedge clk);
+    preset_n = 1'b1;
+    wait (pipe_phystatus_rst[0] === 1'b0);
+    for (si = 0; si < 16; si++) begin
+      @(posedge clk);
+      pipe_txdata[15:0] <= {rivet_pkg::RIVET_SYM_SKP, rivet_pkg::RIVET_SYM_COM};
+      pipe_txdatak[1:0] <= 2'b11;
+      @(posedge clk);
+      pipe_txdata[15:0] <= {rivet_pkg::RIVET_SYM_SKP, rivet_pkg::RIVET_SYM_SKP};
+      pipe_txdatak[1:0] <= 2'b11;
+    end
+    eb_flood = 1'b1;
+    repeat (40) begin
+      @(posedge clk);
+      pipe_txdata[15:0] <= 16'h0000;
+      pipe_txdatak[1:0] <= 2'b00;
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_EB_OVERFLOW)
+        saw_ovf = 1'b1;
+    end
+    repeat (8) begin
+      @(posedge clk);
+      if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_EB_OVERFLOW)
+        saw_ovf = 1'b1;
+    end
+    if (!saw_ovf)
+      $fatal(1, "expected EB_OVERFLOW while the model floods symbols");
+    $display("PASS: phy elastic buffer");
+    $finish;
   end
 `else
   initial begin

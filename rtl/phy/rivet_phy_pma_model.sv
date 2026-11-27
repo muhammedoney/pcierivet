@@ -28,6 +28,7 @@ module rivet_phy_pma_model #(
   output logic                            pma_rxdetected,
   output logic                            pma_resetdone,
   output logic                            pma_pll_lock,
+  output logic [1:0]                      pma_wr_n,
 
   input  logic                            inject_code_err,
   input  logic                            inject_disp_err,
@@ -46,6 +47,11 @@ module rivet_phy_pma_model #(
   logic [2:0]  rate_q;
   logic        lock_drop_q;
   logic [3:0]  lock_cnt_q;
+  logic [2:0]  skp_set_q;
+
+  function automatic logic is_com10(input logic [9:0] code);
+    return (code == 10'b0011111010) || (code == 10'b1100000101);
+  endfunction
 
   assign pma_rxelecidle = pma_txelecidle;
   assign pma_pll_lock   = pma_resetdone & ~lock_drop_q;
@@ -63,6 +69,7 @@ module rivet_phy_pma_model #(
       rate_q         <= 3'd1;
       lock_drop_q    <= 1'b0;
       lock_cnt_q     <= '0;
+      skp_set_q      <= '0;
     end else begin
       if (!pma_resetdone) begin
         rst_cnt_q <= rst_cnt_q + 4'd1;
@@ -72,6 +79,13 @@ module rivet_phy_pma_model #(
 
       tx_d1_q <= pma_txdata;
       tx_d2_q <= tx_d1_q;
+
+      if ((eb_delete_skp || eb_insert_skp) && is_com10(tx_d2_q[9:0])) begin
+        if (skp_set_q == 3'd7)
+          skp_set_q <= '0;
+        else
+          skp_set_q <= skp_set_q + 3'd1;
+      end
 
       if (pma_rxslide)
         slip_q <= slip_q + 5'd1;
@@ -119,13 +133,18 @@ module rivet_phy_pma_model #(
     word[19:0] = slipped;
     if (cdr_hold)
       word = tx_d2_q;
-    if (eb_flood)
-      word = {word[62:0], 1'b1};
     pma_rxdata = word;
   end
 
+  // One-clock stand-in for ppm. 1 = drop a symbol, 3 = insert a symbol.
+  // Every 8th COM while the matching stretch input is high.
+  wire eighth_skp = is_com10(pma_rxdata[9:0]) && (skp_set_q == 3'd7);
+  assign pma_wr_n = eb_flood ? 2'd3 :
+                    (eb_insert_skp && eighth_skp) ? 2'd3 :
+                    (eb_delete_skp && eighth_skp) ? 2'd1 : 2'd2;
+
   wire _unused = (|pma_txwidth) ^ pma_txpolarity ^ (|pma_txdiffctrl) ^
                  (|pma_txprecursor) ^ (|pma_txmaincursor) ^ (|pma_txpostcursor) ^
-                 eb_delete_skp ^ eb_insert_skp ^ (|LANES);
+                 (|LANES);
 
 endmodule : rivet_phy_pma_model

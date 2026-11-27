@@ -87,6 +87,7 @@ module rivet_pcie_phy_soft
   logic        pma_rxdetected;
   logic        pma_resetdone;
   logic        pma_pll_lock;
+  logic [1:0]  pma_wr_n;
 
   // Simulation clock is the bench refclk. Synthesis replaces both
   // clocks with BUFG_GT outputs of the GTY TXOUTCLK (Task 8).
@@ -154,7 +155,8 @@ module rivet_pcie_phy_soft
     .pma_rxelecidle       (pma_rxelecidle),
     .pma_rxdetected       (pma_rxdetected),
     .pma_resetdone        (pma_resetdone),
-    .pma_pll_lock         (pma_pll_lock)
+    .pma_pll_lock         (pma_pll_lock),
+    .pma_wr_n             (pma_wr_n)
   );
 
 `ifndef SYNTHESIS
@@ -183,6 +185,7 @@ module rivet_pcie_phy_soft
     .pma_rxdetected    (pma_rxdetected),
     .pma_resetdone     (pma_resetdone),
     .pma_pll_lock      (pma_pll_lock),
+    .pma_wr_n          (pma_wr_n),
     .inject_code_err   (inject_code_err),
     .inject_disp_err   (inject_disp_err),
     .eb_delete_skp     (eb_delete_skp),
@@ -193,6 +196,7 @@ module rivet_pcie_phy_soft
 
   wire _unused_sim = phy_gtrefclk ^ (|pci_exp_rxp) ^ (|pci_exp_rxn);
 `else
+  assign pma_wr_n = 2'd2;
   rivet_phy_gty_usplus #(
     .LANES (LANES)
   ) u_gty (
