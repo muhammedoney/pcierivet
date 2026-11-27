@@ -35,7 +35,8 @@ module rivet_phy_pma_model #(
   input  logic                            eb_delete_skp,
   input  logic                            eb_insert_skp,
   input  logic                            eb_flood,
-  input  logic                            cdr_hold
+  input  logic                            cdr_hold,
+  input  logic                            mac_in_detect
 );
 
   logic [3:0]  rst_cnt_q;
@@ -48,6 +49,7 @@ module rivet_phy_pma_model #(
   logic        lock_drop_q;
   logic [3:0]  lock_cnt_q;
   logic [2:0]  skp_set_q;
+  logic [63:0] hold_word_q;
 
   function automatic logic is_com10(input logic [9:0] code);
     return (code == 10'b0011111010) || (code == 10'b1100000101);
@@ -70,6 +72,7 @@ module rivet_phy_pma_model #(
       lock_drop_q    <= 1'b0;
       lock_cnt_q     <= '0;
       skp_set_q      <= '0;
+      hold_word_q    <= '0;
     end else begin
       if (!pma_resetdone) begin
         rst_cnt_q <= rst_cnt_q + 4'd1;
@@ -79,6 +82,8 @@ module rivet_phy_pma_model #(
 
       tx_d1_q <= pma_txdata;
       tx_d2_q <= tx_d1_q;
+      if (!cdr_hold)
+        hold_word_q <= tx_d2_q;
 
       if ((eb_delete_skp || eb_insert_skp) && is_com10(tx_d2_q[9:0])) begin
         if (skp_set_q == 3'd7)
@@ -132,7 +137,7 @@ module rivet_phy_pma_model #(
     end
     word[19:0] = slipped;
     if (cdr_hold)
-      word = tx_d2_q;
+      word = hold_word_q;
     pma_rxdata = word;
   end
 
@@ -145,6 +150,6 @@ module rivet_phy_pma_model #(
 
   wire _unused = (|pma_txwidth) ^ pma_txpolarity ^ (|pma_txdiffctrl) ^
                  (|pma_txprecursor) ^ (|pma_txmaincursor) ^ (|pma_txpostcursor) ^
-                 (|LANES);
+                 (|LANES) ^ mac_in_detect;
 
 endmodule : rivet_phy_pma_model

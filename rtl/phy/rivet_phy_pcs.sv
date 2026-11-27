@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Soft PIPE PCS. No FPGA primitives in this file.
-// Gen1/Gen2 8b/10b and the elastic buffer are in. The command plane
-// and the Gen3/Gen4 gearbox follow. phystatus_rst stays high until
-// the PMA reports done.
+// Gen1/Gen2 8b/10b, the elastic buffer, and the command plane are in.
+// The Gen3/Gen4 gearbox follows. phystatus_rst stays high until the
+// PMA reports done. phystatus pulses when a rate or detect command finishes.
 
 module rivet_phy_pcs
   import rivet_pkg::*;
@@ -55,6 +55,7 @@ module rivet_phy_pcs
   output logic [LANES-1:0]                 pipe_rxeq_done,
   input  logic                             pipe_as_mac_in_detect,
   input  logic                             pipe_as_cdr_hold_req,
+  output logic                             pclk_gen1,
 
   output logic [63:0]                      pma_txdata,
   output logic [5:0]                       pma_txwidth,
@@ -67,6 +68,7 @@ module rivet_phy_pcs
   output logic [4:0]                       pma_txpostcursor,
   output logic                             pma_rxslide,
   output logic [2:0]                       pma_rate,
+  output logic                             pma_rx_term,
   input  logic [63:0]                      pma_rxdata,
   input  logic                             pma_rxelecidle,
   input  logic                             pma_rxdetected,
@@ -87,7 +89,6 @@ module rivet_phy_pcs
 `endif
 
   assign pipe_phystatus_rst = {LANES{~preset_n | ~pma_resetdone}};
-  assign pipe_phystatus     = pipe_phystatus_rst;
   assign pipe_rxdata_valid  = '0;
   assign pipe_rxstart_block = '0;
   assign pipe_rxsync_header = '0;
@@ -111,7 +112,34 @@ module rivet_phy_pcs
   logic       comma0;
   logic [2:0] st0, st1;
 
-  wire gen12 = (pipe_rate == RIVET_PIPE_RATE_GEN1) || (pipe_rate == RIVET_PIPE_RATE_GEN2);
+  logic       comp_d1;
+  logic       comp_d2;
+  logic       cmd_phystatus;
+  logic       cmd_detected;
+  logic [9:0] rx_c0, rx_c1;
+
+  wire gen12 = (pma_rate == RIVET_PIPE_RATE_GEN1) || (pma_rate == RIVET_PIPE_RATE_GEN2);
+
+  rivet_phy_cmd u_cmd (
+    .pclk             (pclk),
+    .preset_n         (preset_n),
+    .powerdown        (pipe_powerdown),
+    .txdetectrx       (pipe_txdetectrx),
+    .txelecidle       (pipe_txelecidle[0]),
+    .rate             (pipe_rate),
+    .as_mac_in_detect (pipe_as_mac_in_detect),
+    .pma_rxdetected   (pma_rxdetected),
+    .pma_pll_lock     (pma_pll_lock),
+    .phystatus        (cmd_phystatus),
+    .rx_detected      (cmd_detected),
+    .pma_txelecidle   (pma_txelecidle),
+    .pma_txdetectrx   (pma_txdetectrx),
+    .pma_rate         (pma_rate),
+    .pclk_gen1        (pclk_gen1),
+    .rx_term          (pma_rx_term)
+  );
+
+  assign pipe_phystatus = pipe_phystatus_rst | {LANES{cmd_phystatus}};
 
   always_comb begin
     c0 = rivet_phy_enc10(pipe_txdata[7:0], pipe_txdatak[0],
@@ -121,13 +149,16 @@ module rivet_phy_pcs
   assign pma_txdata  = gen12 ? {{44{1'b0}}, c1, c0} : '0;
   assign pma_txwidth = rivet_phy_pma_width(pipe_rate);
 
-  assign comma0 = (pma_rxdata[9:0] == 10'b0011111010) ||
-                   (pma_rxdata[9:0] == 10'b1100000101);
+  assign comma0 = (rx_c0 == 10'b0011111010) || (rx_c0 == 10'b1100000101);
+
+  assign rx_c0 = pipe_rxpolarity[0] ? ~pma_rxdata[9:0] : pma_rxdata[9:0];
+  assign rx_c1 = pipe_rxpolarity[0] ? ~pma_rxdata[19:10] : pma_rxdata[19:10];
 
   always_comb begin
-    rivet_phy_dec10(pma_rxdata[9:0], rd_rx_q, b0, k0, rd_a, ce0, de0);
-    rivet_phy_dec10(pma_rxdata[19:10], ce0 ? rd_rx_q : rd_a, b1, k1, rd_b, ce1, de1);
-    st0 = ce0 ? RIVET_RXSTATUS_DECODE_ERR : de0 ? RIVET_RXSTATUS_DISPARITY : RIVET_RXSTATUS_OK;
+    rivet_phy_dec10(rx_c0, rd_rx_q, b0, k0, rd_a, ce0, de0);
+    rivet_phy_dec10(rx_c1, ce0 ? rd_rx_q : rd_a, b1, k1, rd_b, ce1, de1);
+    st0 = ce0 ? RIVET_RXSTATUS_DECODE_ERR :
+          (de0 & ~comp_d2) ? RIVET_RXSTATUS_DISPARITY : RIVET_RXSTATUS_OK;
     st1 = ce1 ? RIVET_RXSTATUS_DECODE_ERR : de1 ? RIVET_RXSTATUS_DISPARITY : RIVET_RXSTATUS_OK;
   end
 
@@ -158,19 +189,25 @@ module rivet_phy_pcs
   assign pipe_rxdata[PIPE_DATA_WIDTH-1:0] = {{(PIPE_DATA_WIDTH-16){1'b0}}, eb_b1, eb_b0};
   assign pipe_rxdatak[1:0] = {eb_k1, eb_k0};
   assign pipe_rxvalid[0] = eb_valid;
-  assign pipe_rxstatus[2:0] = eb_status;
+  assign pipe_rxstatus[2:0] = cmd_detected ? RIVET_RXSTATUS_RX_DETECTED : eb_status;
 
   always_ff @(posedge pclk or negedge preset_n) begin
     if (!preset_n) begin
       rd_tx_q  <= 1'b1;
       rd_rx_q  <= 1'b1;
       locked_q <= 1'b0;
-    end else if (gen12 && !pipe_txelecidle[0]) begin
-      rd_tx_q <= rd1;
-      if (comma0 || locked_q) begin
-        locked_q <= 1'b1;
-        if (!ce0 && !de0)
-          rd_rx_q <= (ce1 || de1) ? rd_a : rd_b;
+      comp_d1  <= 1'b0;
+      comp_d2  <= 1'b0;
+    end else begin
+      comp_d1 <= pipe_txcompliance[0];
+      comp_d2 <= comp_d1;
+      if (gen12 && !pipe_txelecidle[0]) begin
+        rd_tx_q <= rd1;
+        if (comma0 || locked_q) begin
+          locked_q <= 1'b1;
+          if (!ce0 && !(de0 & ~comp_d2))
+            rd_rx_q <= (ce1 || de1) ? rd_a : rd_b;
+        end
       end
     end
   end
@@ -181,18 +218,14 @@ module rivet_phy_pcs
     assign pipe_rxvalid[LANES-1:1] = '0;
     assign pipe_rxstatus[3*LANES-1:3] = '0;
   end
-  assign pma_txelecidle   = pipe_txelecidle[0];
-  assign pma_txdetectrx   = pipe_txdetectrx;
   assign pma_txpolarity   = 1'b0;
   assign pma_txdiffctrl   = {2'b00, pipe_txmargin};
   assign pma_txprecursor  = '0;
   assign pma_txmaincursor = 7'd24;
   assign pma_txpostcursor = '0;
   assign pma_rxslide      = 1'b0;
-  assign pma_rate         = pipe_rate;
 
-  wire _unused = pma_pll_lock ^ pma_rxdetected ^ pipe_txswing ^ pipe_txdeemph ^
-                 pipe_as_mac_in_detect ^ pipe_as_cdr_hold_req ^
+  wire _unused = pipe_txswing ^ pipe_txdeemph ^
                  (|pipe_txdata) ^ (|pipe_txdatak) ^ (|pipe_txdata_valid) ^
                  (|pipe_txstart_block) ^ (|pipe_txsync_header) ^
                  (|pipe_txcompliance) ^ (|pipe_rxpolarity) ^ (|pipe_powerdown) ^

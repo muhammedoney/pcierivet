@@ -63,6 +63,7 @@ module rivet_pcie_phy_soft
   output logic [LANES-1:0]                 pipe_rxeq_done,
   input  logic                             pipe_as_mac_in_detect,
   input  logic                             pipe_as_cdr_hold_req,
+  output logic                             pclk_gen1,
 
   input  logic                             inject_code_err,
   input  logic                             inject_disp_err,
@@ -88,6 +89,7 @@ module rivet_pcie_phy_soft
   logic        pma_resetdone;
   logic        pma_pll_lock;
   logic [1:0]  pma_wr_n;
+  logic        pma_rx_term;
 
   // Simulation clock is the bench refclk. Synthesis replaces both
   // clocks with BUFG_GT outputs of the GTY TXOUTCLK (Task 8).
@@ -140,6 +142,7 @@ module rivet_pcie_phy_soft
     .pipe_rxeq_done       (pipe_rxeq_done),
     .pipe_as_mac_in_detect (pipe_as_mac_in_detect),
     .pipe_as_cdr_hold_req  (pipe_as_cdr_hold_req),
+    .pclk_gen1            (pclk_gen1),
     .pma_txdata           (pma_txdata),
     .pma_txwidth          (pma_txwidth),
     .pma_txelecidle       (pma_txelecidle),
@@ -151,6 +154,7 @@ module rivet_pcie_phy_soft
     .pma_txpostcursor     (pma_txpostcursor),
     .pma_rxslide          (pma_rxslide),
     .pma_rate             (pma_rate),
+    .pma_rx_term          (pma_rx_term),
     .pma_rxdata           (pma_rxdata),
     .pma_rxelecidle       (pma_rxelecidle),
     .pma_rxdetected       (pma_rxdetected),
@@ -191,7 +195,8 @@ module rivet_pcie_phy_soft
     .eb_delete_skp     (eb_delete_skp),
     .eb_insert_skp     (eb_insert_skp),
     .eb_flood          (eb_flood),
-    .cdr_hold          (pipe_as_cdr_hold_req)
+    .cdr_hold          (pipe_as_cdr_hold_req),
+    .mac_in_detect     (pma_rx_term)
   );
 
   wire _unused_sim = phy_gtrefclk ^ (|pci_exp_rxp) ^ (|pci_exp_rxn);
