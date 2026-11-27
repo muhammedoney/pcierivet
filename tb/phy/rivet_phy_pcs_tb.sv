@@ -655,6 +655,94 @@ module rivet_phy_pcs_tb;
     $display("PASS: phy gen3");
     $finish;
   end
+`elsif CASE_GEN4
+  initial begin
+    integer t;
+    integer blk;
+    integer wrd;
+    integer lows;
+    integer cyc;
+    logic saw_rate;
+    logic saw_start;
+    logic [63:0] got0, got1;
+    logic [7:0] base;
+
+    repeat (4) @(posedge clk);
+    preset_n = 1'b1;
+    pipe_powerdown = 2'b00;
+    pipe_txdetectrx = 1'b0;
+    pipe_txelecidle = '0;
+    pipe_rate = 3'd3;
+
+    saw_rate = 1'b0;
+    repeat (64) begin
+      @(posedge clk);
+      if (!pipe_phystatus_rst[0] && pipe_phystatus[0])
+        saw_rate = 1'b1;
+    end
+    if (!saw_rate)
+      $fatal(1, "Gen4 rate change did not pulse phystatus");
+
+    lows = 0;
+    cyc = 0;
+    saw_start = 1'b0;
+    got0 = '0;
+    got1 = '0;
+
+    for (t = 0; t < 96; t = t + 1) begin
+      pipe_txdata_valid = '0;
+      pipe_txstart_block = '0;
+      pipe_txsync_header = '0;
+      if (t < 64) begin
+        blk = t / 2;
+        wrd = t % 2;
+        base = 8'(blk * 16 + wrd * 8);
+        pipe_txdata[63:0] = {base + 8'd7, base + 8'd6, base + 8'd5, base + 8'd4,
+                             base + 8'd3, base + 8'd2, base + 8'd1, base};
+        pipe_txdata_valid = '1;
+        pipe_txstart_block = (wrd == 0);
+        pipe_txsync_header = (wrd == 0) ? 2'b10 : 2'b00;
+      end else if (t == 64) begin
+        pipe_txdata_valid = '0;
+      end else if (t < 81) begin
+        blk = (t - 65) / 2;
+        wrd = (t - 65) % 2;
+        base = 8'(blk * 16 + wrd * 8);
+        pipe_txdata[63:0] = {base + 8'd7, base + 8'd6, base + 8'd5, base + 8'd4,
+                             base + 8'd3, base + 8'd2, base + 8'd1, base};
+        pipe_txdata_valid = '1;
+        pipe_txstart_block = (wrd == 0);
+        pipe_txsync_header = (wrd == 0) ? 2'b10 : 2'b00;
+      end
+      @(posedge clk);
+      if (!saw_start && pipe_rxdata_valid[0] && pipe_rxstart_block[1:0] == 2'b01) begin
+        saw_start = 1'b1;
+        cyc = 0;
+      end
+      if (saw_start && (cyc < 65)) begin
+        if (!pipe_rxdata_valid[0])
+          lows = lows + 1;
+        if (cyc == 0) begin
+          got0 = pipe_rxdata[63:0];
+          if (pipe_rxsync_header[1:0] !== 2'b10)
+            $fatal(1, "gen4 header got %b", pipe_rxsync_header[1:0]);
+        end else if (cyc == 1) begin
+          got1 = pipe_rxdata[63:0];
+        end
+        cyc = cyc + 1;
+      end
+    end
+
+    if (cyc != 65)
+      $fatal(1, "gen4 window ended at %0d", cyc);
+    if (lows != 1)
+      $fatal(1, "gen4 idle count %0d", lows);
+    if (got0 !== 64'h0706_0504_0302_0100 || got1 !== 64'h0F0E_0D0C_0B0A_0908)
+      $fatal(1, "gen4 payload %h %h", got0, got1);
+
+    $display("PASS: phy gen4");
+    $finish;
+  end
 `else
   initial begin
     $fatal(1, "rivet_phy_pcs_tb: no CASE define");
