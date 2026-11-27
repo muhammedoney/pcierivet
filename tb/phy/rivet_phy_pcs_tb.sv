@@ -743,6 +743,201 @@ module rivet_phy_pcs_tb;
     $display("PASS: phy gen4");
     $finish;
   end
+`elsif CASE_EQ
+  initial begin
+    integer pulses;
+    integer i;
+    logic saw_rate;
+    logic [6:0] main_before;
+
+    repeat (4) @(posedge clk);
+    preset_n = 1'b1;
+    pipe_powerdown = 2'b00;
+    pipe_txdetectrx = 1'b0;
+    pipe_txelecidle = '1;
+    pipe_txswing = 1'b0;
+    pipe_txdeemph = 1'b1;
+    pipe_rate = 3'd2;
+
+    saw_rate = 1'b0;
+    repeat (64) begin
+      @(posedge clk);
+      if (!pipe_phystatus_rst[0] && pipe_phystatus[0])
+        saw_rate = 1'b1;
+    end
+    if (!saw_rate)
+      $fatal(1, "Gen3 rate change did not pulse phystatus");
+    if (pipe_txeq_fs !== 6'd24 || pipe_txeq_lf !== 6'd8)
+      $fatal(1, "FS/LF %0d/%0d", pipe_txeq_fs, pipe_txeq_lf);
+
+    pipe_txeq_ctrl = 2'b01;
+    pipe_txeq_preset = 4'h1;
+    pulses = 0;
+    repeat (3) begin
+      @(posedge clk);
+      if (pipe_txeq_done[0]) begin
+        pulses = pulses + 1;
+        if (pipe_txeq_new_coeff[11:6] !== 6'd20 || pipe_txeq_new_coeff[5:0] !== 6'd4)
+          $fatal(1, "preset coeff %h", pipe_txeq_new_coeff[17:0]);
+        if (u_phy.pma_txmaincursor !== 7'd20 || u_phy.pma_txpostcursor !== 5'd4)
+          $fatal(1, "preset cursor main %0d post %0d",
+                 u_phy.pma_txmaincursor, u_phy.pma_txpostcursor);
+      end
+    end
+    if (pulses != 1)
+      $fatal(1, "preset done pulses %0d", pulses);
+    pipe_txeq_ctrl = 2'b00;
+    @(posedge clk);
+
+    pipe_txeq_ctrl = 2'b10;
+    pipe_txeq_coeff = 6'd0;
+    @(posedge clk);
+    if (pipe_txeq_done[0])
+      $fatal(1, "coefficient done arrived early");
+    pipe_txeq_coeff = 6'd18;
+    @(posedge clk);
+    if (pipe_txeq_done[0])
+      $fatal(1, "coefficient done arrived on main");
+    pipe_txeq_coeff = 6'd4;
+    @(posedge clk);
+    if (!pipe_txeq_done[0])
+      $fatal(1, "coefficient done missing on post");
+    if (u_phy.pma_txmaincursor !== 7'd18)
+      $fatal(1, "coefficient main %0d", u_phy.pma_txmaincursor);
+    main_before = u_phy.pma_txmaincursor;
+
+    pipe_txeq_ctrl = 2'b11;
+    @(posedge clk);
+    if (!pipe_txeq_done[0])
+      $fatal(1, "query did not pulse done");
+    if (pipe_txeq_new_coeff[17:0] !== {6'd0, 6'd18, 6'd4})
+      $fatal(1, "query coeff %h", pipe_txeq_new_coeff[17:0]);
+    if (u_phy.pma_txmaincursor !== main_before)
+      $fatal(1, "query changed the PMA cursor");
+    pipe_txeq_ctrl = 2'b00;
+    @(posedge clk);
+
+    pipe_rxeq_ctrl = 2'b10;
+    @(posedge clk);
+    if (!pipe_rxeq_done[0] || !pipe_rxeq_adapt_done[0])
+      $fatal(1, "RX EQ did not finish");
+    if (pipe_rxeq_new_txcoeff[11:6] == 6'd0)
+      $fatal(1, "RX EQ main cursor is zero");
+    pipe_rxeq_ctrl = 2'b00;
+    @(posedge clk);
+    pipe_rxeq_ctrl = 2'b01;
+    for (i = 0; i < 4; i = i + 1) begin
+      @(posedge clk);
+      if (pipe_rxeq_done[0] || pipe_rxeq_adapt_done[0])
+        $fatal(1, "reserved RX EQ pulsed done");
+    end
+    pipe_rxeq_ctrl = 2'b00;
+
+    pipe_txdeemph = 1'b1;
+    pipe_rate = 3'd1;
+    saw_rate = 1'b0;
+    repeat (32) begin
+      @(posedge clk);
+      if (!pipe_phystatus_rst[0] && pipe_phystatus[0])
+        saw_rate = 1'b1;
+    end
+    if (!saw_rate)
+      $fatal(1, "Gen2 rate change did not pulse phystatus");
+    if (u_phy.pma_txmaincursor !== 7'd20 || u_phy.pma_txpostcursor !== 5'd4)
+      $fatal(1, "deemph -3.5 dB main %0d post %0d",
+             u_phy.pma_txmaincursor, u_phy.pma_txpostcursor);
+    pipe_txdeemph = 1'b0;
+    @(posedge clk);
+    if (u_phy.pma_txmaincursor !== 7'd18 || u_phy.pma_txpostcursor !== 5'd6)
+      $fatal(1, "deemph -6.0 dB main %0d post %0d",
+             u_phy.pma_txmaincursor, u_phy.pma_txpostcursor);
+    if (pipe_txswing !== 1'b0)
+      $fatal(1, "swing was not full");
+    pipe_txmargin = 3'b101;
+    #1;
+    if (u_phy.pma_txdiffctrl !== 5'b00101)
+      $fatal(1, "txdiffctrl %b", u_phy.pma_txdiffctrl);
+    if (pipe_txeq_fs !== 6'd24 || pipe_txeq_lf !== 6'd8)
+      $fatal(1, "FS/LF changed");
+
+    $display("PASS: phy eq");
+    $finish;
+  end
+`elsif CASE_X4
+  initial begin
+    integer li;
+    integer wrd;
+    integer t;
+    logic [3:0] saw_comma;
+    logic [3:0] saw_block;
+    logic saw_rate;
+    logic [7:0] tag;
+    logic [31:0] want;
+
+    repeat (4) @(posedge clk);
+    preset_n = 1'b1;
+    pipe_powerdown = 2'b00;
+    pipe_txdetectrx = 1'b0;
+    pipe_txelecidle = '0;
+    pipe_rate = 3'd1;
+    repeat (24) @(posedge clk);
+    if (pipe_phystatus_rst[0])
+      $fatal(1, "reset did not finish");
+
+    for (li = 0; li < 4; li = li + 1) begin
+      pipe_txdata[PIPE_DATA_WIDTH*li +: 16] = {8'(8'h10 + li), rivet_pkg::RIVET_SYM_COM};
+      pipe_txdatak[2*li +: 2] = 2'b01;
+    end
+    saw_comma = '0;
+    repeat (48) begin
+      @(posedge clk);
+      for (li = 0; li < 4; li = li + 1) begin
+        if (pipe_rxvalid[li] &&
+            pipe_rxdata[PIPE_DATA_WIDTH*li +: 8] == rivet_pkg::RIVET_SYM_COM &&
+            pipe_rxdata[(PIPE_DATA_WIDTH*li)+8 +: 8] == 8'(8'h10 + li))
+          saw_comma[li] = 1'b1;
+      end
+    end
+    if (saw_comma != 4'b1111)
+      $fatal(1, "gen2 comma missing on lanes %b", saw_comma);
+
+    pipe_txdatak = '0;
+    pipe_rate = 3'd2;
+    saw_rate = 1'b0;
+    repeat (40) begin
+      @(posedge clk);
+      if (!pipe_phystatus_rst[0] && pipe_phystatus[0])
+        saw_rate = 1'b1;
+    end
+    if (!saw_rate)
+      $fatal(1, "Gen3 rate change did not pulse phystatus");
+
+    // Block lock needs two headers. Two blocks are sent, and the first
+    // word of each lane must come back with that lane's own bytes.
+    saw_block = '0;
+    for (t = 0; t < 32; t = t + 1) begin
+      wrd = t % 4;
+      for (li = 0; li < 4; li = li + 1) begin
+        tag = 8'(8'hA0 + li*16 + wrd*4);
+        pipe_txdata[PIPE_DATA_WIDTH*li +: 32] = {tag + 8'd3, tag + 8'd2, tag + 8'd1, tag};
+        pipe_txdata_valid[li] = 1'b1;
+        pipe_txstart_block[li] = (wrd == 0);
+        pipe_txsync_header[2*li +: 2] = (wrd == 0) ? 2'b10 : 2'b00;
+      end
+      @(posedge clk);
+      for (li = 0; li < 4; li = li + 1) begin
+        want = {8'(8'hA3 + li*16), 8'(8'hA2 + li*16), 8'(8'hA1 + li*16), 8'(8'hA0 + li*16)};
+        if (pipe_rxdata_valid[li] && pipe_rxstart_block[2*li +: 2] == 2'b01 &&
+            pipe_rxdata[PIPE_DATA_WIDTH*li +: 32] == want)
+          saw_block[li] = 1'b1;
+      end
+    end
+    if (saw_block != 4'b1111)
+      $fatal(1, "gen3 block missing on lanes %b", saw_block);
+
+    $display("PASS: phy x4");
+    $finish;
+  end
 `else
   initial begin
     $fatal(1, "rivet_phy_pcs_tb: no CASE define");

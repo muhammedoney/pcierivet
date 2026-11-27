@@ -72,7 +72,7 @@ module rivet_pcie_phy_soft
   input  logic                             eb_flood
 );
 
-  logic [63:0] pma_txdata;
+  logic [64*LANES-1:0] pma_txdata;
   logic [5:0]  pma_txwidth;
   logic        pma_txelecidle;
   logic        pma_txdetectrx;
@@ -83,7 +83,7 @@ module rivet_pcie_phy_soft
   logic [4:0]  pma_txpostcursor;
   logic        pma_rxslide;
   logic [2:0]  pma_rate;
-  logic [63:0] pma_rxdata;
+  logic [64*LANES-1:0] pma_rxdata;
   logic        pma_rxelecidle;
   logic        pma_rxdetected;
   logic        pma_resetdone;

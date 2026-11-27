@@ -11,7 +11,7 @@ module rivet_phy_pma_model #(
   input  logic                            pclk,
   input  logic                            preset_n,
 
-  input  logic [63:0]                     pma_txdata,
+  input  logic [64*LANES-1:0]            pma_txdata,
   input  logic [5:0]                      pma_txwidth,
   input  logic                            pma_txelecidle,
   input  logic                            pma_txdetectrx,
@@ -23,7 +23,7 @@ module rivet_phy_pma_model #(
   input  logic                            pma_rxslide,
   input  logic [2:0]                      pma_rate,
 
-  output logic [63:0]                     pma_rxdata,
+  output logic [64*LANES-1:0]            pma_rxdata,
   output logic                            pma_rxelecidle,
   output logic                            pma_rxdetected,
   output logic                            pma_resetdone,
@@ -80,7 +80,7 @@ module rivet_phy_pma_model #(
           pma_resetdone <= 1'b1;
       end
 
-      tx_d1_q <= pma_txdata;
+      tx_d1_q <= pma_txdata[63:0];
       tx_d2_q <= tx_d1_q;
       if (!cdr_hold)
         hold_word_q <= tx_d2_q;
@@ -138,8 +138,11 @@ module rivet_phy_pma_model #(
     word[19:0] = slipped;
     if (cdr_hold)
       word = hold_word_q;
-    pma_rxdata = word;
+    lane0_rx = word;
   end
+
+  logic [63:0] lane0_rx;
+  assign pma_rxdata[63:0] = lane0_rx;
 
   // One-clock stand-in for ppm. 1 = drop a symbol, 3 = insert a symbol.
   // Every 8th COM while the matching stretch input is high.
@@ -150,6 +153,23 @@ module rivet_phy_pma_model #(
 
   wire _unused = (|pma_txwidth) ^ pma_txpolarity ^ (|pma_txdiffctrl) ^
                  (|pma_txprecursor) ^ (|pma_txmaincursor) ^ (|pma_txpostcursor) ^
-                 (|LANES) ^ mac_in_detect;
+                 mac_in_detect;
+
+  // Lanes above 0 are a plain two-cycle loopback. Lane 0 keeps the
+  // slip, inject, and hold behavior the Gen1/Gen2 benches use.
+  for (genvar li = 1; li < LANES; li++) begin : g_lane
+    logic [63:0] d1_q;
+    logic [63:0] d2_q;
+    always_ff @(posedge pclk or negedge preset_n) begin
+      if (!preset_n) begin
+        d1_q <= '0;
+        d2_q <= '0;
+      end else begin
+        d1_q <= pma_txdata[64*li +: 64];
+        d2_q <= d1_q;
+      end
+    end
+    assign pma_rxdata[64*li +: 64] = d2_q;
+  end
 
 endmodule : rivet_phy_pma_model
