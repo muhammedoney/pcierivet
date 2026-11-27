@@ -46,7 +46,7 @@ PERF tag=rq64_dw1024 bytes=32768 cycles=4120 rq_stall=0 rq_tlast=8 mb_s=1988.350
 
 ## Requester reads versus payload size
 
-`perf_rq_memrd_gen2_x4` was re-run on 27 Nov 2026. It sends 8 MemRd32 TLPs at each size from 1 DW through 1024 DW, then the same sizes as MemRd64. The monitor counts CplD payload bytes on RC and stays armed until `rc_tlast=8`. The peer returns one completion per request and advertises infinite credits. Every size printed `rq_stall=0`, `credit_stall=0`, `rc_tlast=8`, and `tfc_nph_min=15`. The scoreboard printed `UVM_ERROR : 4` and `UVM_FATAL : 0`. All four errors were `RC completion unmatched tag=0x00 req=0x004a`, two during 8-byte MemRd32 and two during 8-byte MemRd64.
+`perf_rq_memrd_gen2_x4` was re-run on 27 Nov 2026. It sends 8 MemRd32 TLPs at each size from 1 DW through 1024 DW, then the same sizes as MemRd64. The monitor counts CplD payload bytes on RC and stays armed until `rc_tlast=8`. The peer returns one completion per request and advertises infinite credits. Every size printed `rq_stall=0`, `credit_stall=0`, `rc_tlast=8`, and `tfc_nph_min=15`. A later run the same day, after the Gen2 DLL stopped replaying an accepted beat, printed no `UVM_ERROR` through the last `PERF` line. The 8-byte points then had `rc_accept=32`. `mb_s` did not change. The ready-hold was stopped before the report banner.
 
 MemRd64:
 
