@@ -1,11 +1,10 @@
 // Copyright 2026 Rivet contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// VCU118 Endpoint shell: Rivet Gen2 controller + rivet_pcie_phy_wrap (PG239).
-// Config completions stay inside the controller. BAR0 Mem32 uses rivet_tl_pio_app.
+// VCU118 Endpoint shell: Rivet controller + rivet_pcie_phy_soft.
+// The PMA is GTYE4 on quad 227. Config completions stay inside the
+// controller. BAR0 Mem32 uses rivet_tl_pio_app.
 // Requester (RQ/RC) is idle until a later host-memory step.
-//
-// pcie_phy_0 is created by fpga/vcu118/create_project.tcl (not checked in).
 
 module rivet_vcu118_ep #(
   parameter int unsigned GEN        = 2,
@@ -111,11 +110,11 @@ module rivet_vcu118_ep #(
     .O       (sys_clk_bufg)
   );
 
-  rivet_pcie_phy_wrap #(
-    .BOARD           (rivet_pkg::RIVET_BOARD_VCU118),
+  logic pclk_gen1;
+
+  rivet_pcie_phy_soft #(
     .LANES           (LANES),
-    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH),
-    .PHY_RATE_W      (PHY_RATE_W)
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH)
   ) u_phy (
     .phy_refclk         (sys_clk_bufg),
     .phy_gtrefclk       (sys_clk_gt),
@@ -167,9 +166,14 @@ module rivet_vcu118_ep #(
     .pipe_rxeq_done     (phy_rxeq_done),
     .pipe_as_mac_in_detect (as_mac_in_detect),
     .pipe_as_cdr_hold_req  (as_cdr_hold_req),
-    .pcie_ltssm_state      (cfg_ltssm_state),
-    .pcie_link_reach_target (link_up)
+    .pclk_gen1             (pclk_gen1),
+    .inject_code_err       (1'b0),
+    .inject_disp_err       (1'b0),
+    .eb_delete_skp         (1'b0),
+    .eb_insert_skp         (1'b0),
+    .eb_flood              (1'b0)
   );
+  wire _pclk_gen1_unused = pclk_gen1;
 
   // Synchronize active-low reset release into user_clk for the PIO app so a
   // combinational LUT on pipe_clk phy_ready never drives async reset pins.

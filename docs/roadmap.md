@@ -115,9 +115,9 @@ When a **VCU118** is available (not on the sim critical path):
 
 The Gen4 EP x4 project scripts exist for VCU118 and VMK180 (`fpga/build_gen4_ep.ps1`, `create_project.cmd 4 ep`). Gen3 and the other port roles remain later work. This phase is not closed.
 
-1. Generate PG239 for **XCVU9P** Gen2 ×4; integrate `rivet_pcie` + constraints ([boards.md](boards.md), [hardware.md](hardware.md))
+1. Program the VCU118 Gen2 image. The PHY is `rivet_pcie_phy_soft` on GTYE4, not PG239 ([boards.md](boards.md), [hardware.md](hardware.md))
 2. Board gates: `link_up`, BAR0 PIO, optional DMA/RQ
-3. Until then: PHY stub + pad; BFM Stage-2 is the serial stand-in
+3. Until the board is on the bench: the PCS loopback model is the PHY gate. Versal stays on PG345.
 
 ## Other backlog
 

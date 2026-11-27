@@ -1,6 +1,8 @@
 # VCU118 PCIe edge, lanes 0-3 (quad 227). Part xcvu9p-flga2104-2L-e.
-# Lane 0 of the slot is GTYE4_CHANNEL_X1Y35. create_project.tcl places
-# pcie_phy_0 lane0 on that site so these pins and the IP LOC agree.
+# Lane 0 of the slot is GTYE4_CHANNEL_X1Y35, then Y34, Y33, Y32.
+# The soft PHY instantiates GTYE4_CHANNEL. A LOC attribute cannot index
+# the generate, so the sites are applied here. The common is
+# GTYE4_COMMON_X1Y8, set on the instance in rivet_phy_gty_usplus.
 # Pins from the VCU118 edge map (MGTY*227 / MGTREFCLK0_227 / PERST AM17).
 
 # 100 MHz PCIe reference clock (MGTREFCLK0P/N_227)
@@ -38,6 +40,12 @@ set_property PACKAGE_PIN AD2 [get_ports {pci_exp_rxp[3]}]
 set_property PACKAGE_PIN AD1 [get_ports {pci_exp_rxn[3]}]
 set_property PACKAGE_PIN AF7 [get_ports {pci_exp_txp[3]}]
 set_property PACKAGE_PIN AF6 [get_ports {pci_exp_txn[3]}]
+
+# Channel sites. Braces keep the generate index literal.
+set_property LOC GTYE4_CHANNEL_X1Y35 [get_cells {u_phy/u_gty/g_lane[0].u_ch}]
+set_property LOC GTYE4_CHANNEL_X1Y34 [get_cells {u_phy/u_gty/g_lane[1].u_ch}]
+set_property LOC GTYE4_CHANNEL_X1Y33 [get_cells {u_phy/u_gty/g_lane[2].u_ch}]
+set_property LOC GTYE4_CHANNEL_X1Y32 [get_cells {u_phy/u_gty/g_lane[3].u_ch}]
 
 # GPIO LEDs DS37..DS30 (UG1224)
 set_property PACKAGE_PIN AT32 [get_ports {led[0]}]

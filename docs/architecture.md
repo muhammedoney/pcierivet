@@ -5,7 +5,7 @@
 | Name | Module(s) | Role |
 |------|-----------|------|
 | **Controller** | `rivet_pcie_ctrl` | Soft PCIe controller. Parameter `MODE` selects EP, RC (root port), USP, or DSP. Ends at **PIPE**. No vendor cells. |
-| **PHY** | `rivet_pcie_phy_*` | Family wrapper around Xilinx **PG239** (US/US+) or **PG345** (Versal). PIPE ↔ serial lanes. |
+| **PHY** | `rivet_pcie_phy_soft` on VCU118; `rivet_pcie_phy_versal` on VMK180 | VCU118 PMA is `GTYE4_CHANNEL` / `GTYE4_COMMON`. Versal stays **PG345**. PIPE ↔ serial lanes. |
 | **PCIe IP (full)** | `rivet_pcie` | Integrator-facing soft IP = **controller + PHY**. |
 
 User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`cfg_mgmt_*`** naming conventions in the style of Xilinx **PG213**. That is the *user* boundary — not the PHY. There is **no AXI-Lite** user port.
@@ -21,7 +21,7 @@ User application interface on the controller uses **AXI-ST CQ/CC/RQ/RC** and **`
             | PIPE
             v
   +--------------------+
-  | rivet_pcie_phy_*   |   PG239 (US/US+), PG345 (Versal)
+  | rivet_pcie_phy_soft|   VCU118 GTYE4. Versal stays PG345.
   +---------+----------+
             | serial
 ```
@@ -44,7 +44,7 @@ Generation roadmap: **Gen2 (default elaboration)** → Gen3 x4 in simulation →
 | Item | Choice |
 |------|--------|
 | Board | **VCU118** (US+ primary), **VMK180** (Versal primary) |
-| FPGA | **XCVU9P** (PG239 GTY), **XCVM1802** (PG345 GTY) |
+| FPGA | **XCVU9P** (soft PHY, GTYE4), **XCVM1802** (PG345 GTY) |
 
 Default elaboration stays **Gen2**. Gen3 and Gen4 x4 (EP, RC, USP, DSP) are in simulation; Gen5 is not started. Deltas: [gen-evolution.md](gen-evolution.md).
 

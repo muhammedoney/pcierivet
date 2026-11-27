@@ -24,7 +24,7 @@ VPK180 is the later Premium / GTYP / Gen5 kit. The no-argument project is still 
 | Kit | AMD Virtex UltraScale+ FPGA **VCU118** Evaluation Kit (EK-U1-VCU118-G) |
 | FPGA | **XCVU9P** (UltraScale+, GTY) |
 | Example Vivado part | `xcvu9p-flga2104-2L-e` (Rev 2.0+, VCCINT 0.85 V) |
-| PG239 generate part | **VU9P** (official GTY target) |
+| PHY | `rivet_pcie_phy_soft` on GTYE4 quad 227. PG239 is not the VCU118 PHY. |
 | Board GTs | 52 GTY (16 on PCIe ×16 edge) |
 
 Full rationale, PG239 device list, and PHY mapping: [boards.md](boards.md). The project for this kit is `fpga/vcu118/`.
@@ -37,6 +37,6 @@ The kit we need first is a **VMK180** (EK-VMK180-G, **XCVM1802**), on loan or as
 
 **FPGA lab is backlogged** until a board is available. Sim gates (UVM + PG213/PG239 BFM) do not wait on hardware. When the kit arrives:
 
-1. On a VMK180, generate PG345 for XCVM1802 and use `fpga/vmk180`. On a VCU118, generate PG239 for XCVU9P and use `fpga/vcu118`.
+1. On a VMK180, generate PG345 for XCVM1802 and use `fpga/vmk180`. On a VCU118, use `fpga/vcu118` with `rivet_pcie_phy_soft` (GTYE4). PG239 is not generated for that project.
 2. Board gates: `link_up`, BAR0 PIO, optional DMA/RQ.
 3. Keep behavioral PHY stub + pad for CI; board project stays out of the soft-IP MVP tag.

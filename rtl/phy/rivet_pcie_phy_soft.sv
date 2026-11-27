@@ -91,10 +91,12 @@ module rivet_pcie_phy_soft
   logic [1:0]  pma_wr_n;
   logic        pma_rx_term;
 
-  // Simulation clock is the bench refclk. Synthesis replaces both
-  // clocks with BUFG_GT outputs of the GTY TXOUTCLK (Task 8).
-  assign pclk      = phy_refclk;
-  assign user_clk  = phy_refclk;
+  // Simulation uses the bench refclk for both clocks. Synthesis
+  // drives each from its own BUFG_GT of TXOUTCLK.
+`ifndef SYNTHESIS
+  assign pclk     = phy_refclk;
+  assign user_clk = phy_refclk;
+`endif
   assign phy_ready = pma_resetdone;
 
   rivet_phy_pcs #(
@@ -203,8 +205,11 @@ module rivet_pcie_phy_soft
 `else
   assign pma_wr_n = 2'd2;
   rivet_phy_gty_usplus #(
-    .LANES (LANES)
+    .LANES           (LANES),
+    .PIPE_DATA_WIDTH (PIPE_DATA_WIDTH),
+    .SOFT_8B10B      (1)
   ) u_gty (
+    .phy_refclk        (phy_refclk),
     .phy_gtrefclk      (phy_gtrefclk),
     .phy_rst_n         (phy_rst_n),
     .pclk              (pclk),

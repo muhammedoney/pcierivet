@@ -9,7 +9,7 @@
 #   fpga\vcu118\create_project.cmd
 #   fpga\vcu118\create_project.cmd synth
 #
-# Requires a Vivado install that can generate PG239 (pcie_phy) for XCVU9P GTY.
+# The PMA is rivet_pcie_phy_soft on GTYE4 primitives. PG239 is not generated.
 # Board files for xilinx.com:vcu118 are optional; the part is set either way.
 
 set script_dir [file normalize [file dirname [info script]]]
@@ -127,8 +127,8 @@ if {[catch {set_property board_part $board [current_project]} err]} {
 set regs_svh [file normalize [file join $script_dir include common_cells registers.svh]]
 rivet_add_filelist $repo_root [file join $repo_root rtl filelist_core.f] $build_dir $regs_svh
 add_files -norecurse [file normalize [file join $script_dir rtl rivet_vcu118_ep.sv]]
-add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pipe_pg239_pad.sv]]
-add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_pcie_phy_wrap.sv]]
+rivet_add_filelist $repo_root [file join $repo_root rtl phy filelist_phy.f] $build_dir $regs_svh
+add_files -norecurse [file normalize [file join $repo_root rtl phy rivet_phy_gty_usplus.sv]]
 add_files -norecurse [file normalize [file join $repo_root fpga common rivet_fpga_pio256.sv]]
 
 foreach f [get_files -of_objects [current_fileset]] {
@@ -149,57 +149,15 @@ set_property include_dirs [list \
   [file normalize [file join $build_dir src]] \
   [file normalize [file join $script_dir include]] \
   [file normalize [file join $repo_root rtl pcie_ctrl]] \
+  [file normalize [file join $repo_root rtl phy]] \
 ] [current_fileset]
 
 set xdc [file join $script_dir constraints vcu118_pcie.xdc]
 add_files -fileset constrs_1 -norecurse $xdc
 
-create_ip -name pcie_phy -vendor xilinx.com -library ip -module_name pcie_phy_0
-set ip [get_ips pcie_phy_0]
-rivet_try_ip_config $ip gt_type          GTY
-rivet_try_ip_config $ip phy_lane         X4
-if {$gen4} {
-  set phy_speed 16.0_GT/s
-} else {
-  set phy_speed 5.0_GT/s
-}
-if {![rivet_try_ip_config $ip phy_max_speed $phy_speed] && $gen4} {
-  error "PG239 phy_max_speed $phy_speed rejected"
-}
-rivet_try_ip_config $ip phy_refclk_freq  100_MHz
-rivet_try_ip_config $ip phy_userclk_freq 250_MHz
-rivet_try_ip_config $ip phy_async_en     true
-rivet_try_ip_config $ip pll_type         QPLL1
-rivet_try_ip_config $ip tx_preset        4
-rivet_try_ip_config $ip ins_loss_profile Add-in_Card
-rivet_try_ip_config $ip aspm             No_ASPM
-# Location is legal only after the quad is selected. Quad 227 defaults to
-# X1Y32; the edge connector's lane 0 is X1Y35, so set that second.
-set bank_ok [rivet_try_ip_config $ip lane0_gt_bank     $lane0_bank]
-set loc_ok  [rivet_try_ip_config $ip lane0_gt_location $lane0_loc]
-set clk_ok  [rivet_try_ip_config $ip refclk1_location  $refclk_loc]
-if {!$bank_ok || !$loc_ok || !$clk_ok} {
-  error "PG239 GT placement rejected (bank $lane0_bank loc $lane0_loc refclk $refclk_loc)"
-}
-generate_target {instantiation_template synthesis} $ip
-
-set stub [file join $build_dir rivet_vcu118.gen sources_1 ip pcie_phy_0 synth pcie_phy_0.v]
-set txw [rivet_file_range $stub phy_txdata]
-if {$txw ne "63:0" && $txw ne "255:0"} {
-  error "phy_txdata width is \[$txw\], expected \[63:0\] or \[255:0\]"
-}
-set ratew [rivet_file_range $stub phy_rate]
-
 set_property top rivet_vcu118_ep [current_fileset]
 if {$gen4} {
-  if {$ratew eq "2:0"} {
-    set_property generic {GEN=4 PHY_RATE_W=3} [current_fileset]
-  } elseif {$ratew eq "1:0"} {
-    puts "PG239 phy_rate is \[1:0\] at 16.0 GT/s; PHY_RATE_W=2"
-    set_property generic {GEN=4 PHY_RATE_W=2} [current_fileset]
-  } else {
-    error "phy_rate width is \[$ratew\], expected \[2:0\] or \[1:0\]"
-  }
+  set_property generic {GEN=4} [current_fileset]
 }
 update_compile_order -fileset sources_1
 
