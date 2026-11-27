@@ -345,6 +345,11 @@ module rivet_mac_os_rx #(
   logic [LANES-1:0] inverted_q;
   logic             deskew_q;
   logic             ts_all_lanes;
+  // Local copies of rate and lane enable. The TS counters above read
+  // lane_en_rx_q, so the registers are declared here. They still update
+  // with Stage IN and break the u_ltssm path into that stage.
+  (* equivalent_register_removal = "no" *) logic             gf_gen3_rx_q;
+  (* equivalent_register_removal = "no" *) logic [LANES-1:0] lane_en_rx_q;
 
   assign ts_all_lanes = ((hit_any_ts | ~lane_en_rx_q) == {LANES{1'b1}}) && (lane_en_rx_q != '0);
 
@@ -595,9 +600,7 @@ module rivet_mac_os_rx #(
   logic [8*NSYM-1:0] gf_data_pack;
 
   // Stage IN registers (dense raw stream + pre-decoded high-byte-zero hints).
-  // Local copies of rate/lane_en break the cross-chip u_ltssm -> Stage IN path.
-  (* equivalent_register_removal = "no" *) logic             gf_gen3_rx_q;
-  (* equivalent_register_removal = "no" *) logic [LANES-1:0] lane_en_rx_q;
+  // gf_gen3_rx_q and lane_en_rx_q are declared with the TS counters.
   logic              in_gen3_q;
   logic              in_ok_q;
   logic [5:0]        in_cnt_q;
