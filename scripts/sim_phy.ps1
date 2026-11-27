@@ -40,11 +40,11 @@ function Invoke-PhyCase([string]$Name, [int]$W) {
   if ($Mdir -match '^([A-Za-z]):\\(.*)$') {
     $Mdir = "/mnt/$($Matches[1].ToLower())/$($Matches[2] -replace '\\','/')"
   }
-  $Inc = "+incdir+rtl/pcie_ctrl"
+  $Inc = "+incdir+rtl/pcie_ctrl +incdir+rtl/phy"
   $Cmd = "cd '$WslRoot' && verilator --binary --timing $Warn +define+$Define $WidthDef $Inc -f rtl/phy/filelist_phy.f rtl/pcie_ctrl/rivet_pkg.sv tb/phy/rivet_phy_pcs_tb.sv --top-module rivet_phy_pcs_tb --Mdir '$Mdir' && '$Mdir/Vrivet_phy_pcs_tb'"
 
   if (Get-Command verilator -ErrorAction SilentlyContinue) {
-    & verilator --binary --timing $Warn.Split(" ") "+define+$Define" "+incdir+rtl/pcie_ctrl" $(if ($W -gt 0) { "+define+PHY_WIDTH=$W" }) `
+    & verilator --binary --timing $Warn.Split(" ") "+define+$Define" "+incdir+rtl/pcie_ctrl" "+incdir+rtl/phy" $(if ($W -gt 0) { "+define+PHY_WIDTH=$W" }) `
       -f rtl/phy/filelist_phy.f rtl/pcie_ctrl/rivet_pkg.sv tb/phy/rivet_phy_pcs_tb.sv `
       --top-module rivet_phy_pcs_tb --Mdir $Out
     if ($LASTEXITCODE -ne 0) { throw "FAIL: build $Name" }

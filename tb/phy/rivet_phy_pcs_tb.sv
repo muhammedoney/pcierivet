@@ -180,6 +180,64 @@ module rivet_phy_pcs_tb;
     $display("PASS: phy reset");
     $finish;
   end
+`elsif CASE_8B10B
+  initial begin
+    logic saw_valid_early;
+    logic saw_dec;
+    logic saw_disp;
+    saw_valid_early = 1'b0;
+    saw_dec = 1'b0;
+    saw_disp = 1'b0;
+    repeat (4) @(posedge clk);
+    preset_n = 1'b1;
+    pipe_powerdown = 2'b00;
+    pipe_txelecidle = '0;
+    pipe_rate = 3'd1;
+    wait (pipe_phystatus_rst[0] === 1'b0);
+    repeat (32) begin
+      @(posedge clk);
+      pipe_txdata[15:0] <= 16'h0000;
+      pipe_txdatak[1:0] <= 2'b00;
+      if (pipe_rxvalid[0])
+        saw_valid_early = 1'b1;
+    end
+    if (saw_valid_early)
+      $fatal(1, "rxvalid rose before the comma");
+    @(posedge clk);
+    pipe_txdata[15:0] <= {8'h4A, rivet_pkg::RIVET_SYM_COM};
+    pipe_txdatak[1:0] <= 2'b01;
+    repeat (12) begin
+      @(posedge clk);
+      if (pipe_rxvalid[0] && pipe_rxdata[7:0] == rivet_pkg::RIVET_SYM_COM &&
+          pipe_rxdatak[0] === 1'b1 && pipe_rxdata[15:8] == 8'h4A) begin
+        pipe_txdata[15:0] <= 16'h0000;
+        pipe_txdatak[1:0] <= 2'b00;
+        repeat (6) @(posedge clk);
+        inject_code_err = 1'b1;
+        repeat (4) begin
+          @(posedge clk);
+          if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_DECODE_ERR)
+            saw_dec = 1'b1;
+        end
+        inject_code_err = 1'b0;
+        if (!saw_dec)
+          $fatal(1, "expected a decode error");
+        repeat (4) @(posedge clk);
+        inject_disp_err = 1'b1;
+        repeat (4) begin
+          @(posedge clk);
+          if (pipe_rxstatus[2:0] == rivet_pkg::RIVET_RXSTATUS_DISPARITY)
+            saw_disp = 1'b1;
+        end
+        inject_disp_err = 1'b0;
+        if (!saw_disp)
+          $fatal(1, "expected a disparity error");
+        $display("PASS: phy 8b10b");
+        $finish;
+      end
+    end
+    $fatal(1, "comma was not returned");
+  end
 `else
   initial begin
     $fatal(1, "rivet_phy_pcs_tb: no CASE define");

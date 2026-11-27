@@ -104,13 +104,19 @@ module rivet_phy_pma_model #(
 
   always_comb begin
     logic [63:0] word;
+    logic [19:0] slipped;
     word = tx_d2_q;
+    // Bit 2 of a D0.0 code is not another legal symbol. Bit 0 is.
     if (inject_code_err)
-      word[0] = ~word[0];
+      word[2] = ~word[2];
     if (inject_disp_err)
       word[9:0] = ~word[9:0];
-    if (pma_rxslide || (slip_q != 5'd0))
-      word[19:0] = {word[18:0], word[19]};
+    slipped = word[19:0];
+    for (int i = 0; i < 20; i++) begin
+      if (i < (slip_q % 5'd20))
+        slipped = {slipped[18:0], slipped[19]};
+    end
+    word[19:0] = slipped;
     if (cdr_hold)
       word = tx_d2_q;
     if (eb_flood)
