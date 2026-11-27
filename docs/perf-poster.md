@@ -1,6 +1,6 @@
 # Rivet x4 — measured results
 
-Endpoint `rivet_pcie_ctrl` at PIPE, 4 lanes. The chart below is the plotted set: Gen2, Gen3, and Gen4. Each `mb_s` in that chart was printed by a sweep that finished with no UVM error. The tables under it are the same points, then the earlier Gen2 runs that are not those curves. `user_clk` on the payload sweeps is 4.0 ns. The read-latency, inbound, and credit-stall rows still print `user_clk_ns=8.0`.
+Endpoint `rivet_pcie_ctrl` at PIPE, 4 lanes. The chart is the 27 Nov 2026 rerun of MemWr64 and MemRd64 at Gen2, Gen3, and Gen4. `user_clk` on those sweeps is 4.0 ns. The tables under the chart are those points, then the earlier MemWr32 and read runs that are not the curves. The read-latency, inbound, and credit-stall rows still print `user_clk_ns=8.0` and were not re-run.
 
 ![Rivet x4 throughput versus payload. Gen4 is in front; Gen3 and Gen2 are lighter on the same scale.](perf-rq-sweep.svg)
 
@@ -14,57 +14,61 @@ A full beat every 4 ns user clock is 2000 MB/s on the Gen2 64-bit port, 4000 MB/
 
 ## Plotted sweeps
 
-Eight TLPs per size. Gen4 RQ/RC is 256 bits and the DLL beat is 32 bytes. Both Gen4 sweeps printed every size through 4096 bytes.
+Eight TLPs per size, Questa 2024.1, 27 Nov 2026. The chart is MemWr64 and MemRd64. Gen4 RQ/RC is 256 bits and the DLL beat is 32 bytes. Every sweep printed every size through 4096 bytes.
 
-| Bytes | Gen2 MemWr64 | Gen2 read | Gen3 MemWr64 | Gen3 MemRd64 | Gen4 MemWr64 | Gen4 MemRd64 |
+| Bytes | Gen2 MemWr64 | Gen2 MemRd64 | Gen3 MemWr64 | Gen3 MemRd64 | Gen4 MemWr64 | Gen4 MemRd64 |
 |---:|---:|---:|---:|---:|---:|---:|
-| 4 | 250.000 | 79.208 | 333.333 | 108.108 | 888.889 | 117.647 |
-| 8 | 500.000 | 146.789 | 666.667 | 192.771 | 1777.778 | 231.884 |
-| 16 | 800.000 | 285.714 | 1333.333 | 390.244 | 3555.556 | 450.704 |
-| 32 | 1142.857 | 450.704 | 2000.000 | 711.111 | 4923.077 | 876.712 |
-| 64 | 1438.202 | 723.164 | 2666.667 | 1185.185 | 6095.238 | 1542.169 |
-| 128 | 1651.613 | 1019.920 | 3200.000 | 1630.573 | 6918.919 | 2612.245 |
-| 256 | 1790.210 | 1292.929 | 3506.849 | 2226.087 | 7420.290 | 3580.420 |
-| 512 | 1889.299 | 1497.076 | 3737.226 | 2752.688 | 7699.248 | 4970.874 |
-| 1024 | 1943.074 | 1625.397 | 3820.896 | 3103.030 | 7846.743 | 6150.150 |
-| 2048 | 1970.178 | 1698.176 | 3908.397 | 3313.916 | 7922.631 | 6965.986 |
-| 4096 | 1983.055 | 1737.065 | 3953.668 | 3430.486 | 7961.127 | 7447.273 |
+| 4 | 250.000 | 88.889 | 333.333 | 87.912 | 888.889 | 101.266 |
+| 8 | 500.000 | 158.416 | 666.667 | 172.043 | 1777.778 | 205.128 |
+| 16 | 800.000 | 285.714 | 1333.333 | 320.000 | 3555.556 | 359.551 |
+| 32 | 1142.857 | 444.444 | 2000.000 | 576.577 | 4923.077 | 703.297 |
+| 64 | 1454.545 | 711.111 | 2666.667 | 914.286 | 6095.238 | 1280.000 |
+| 128 | 1684.211 | 1007.874 | 3200.000 | 1462.857 | 6918.919 | 2015.748 |
+| 256 | 1828.571 | 1286.432 | 3555.556 | 2081.301 | 7420.290 | 3200.000 |
+| 512 | 1910.448 | 1492.711 | 3764.706 | 2639.175 | 7699.248 | 4612.613 |
+| 1024 | 1954.198 | 1622.821 | 3878.788 | 3029.586 | 7846.743 | 5851.429 |
+| 2048 | 1976.834 | 1696.769 | 3938.462 | 3271.565 | 7846.743 | 6759.076 |
+| 4096 | 1988.350 | 1736.329 | 3968.992 | 3407.654 | 7922.631 | 7327.370 |
 
-Gen4 MemWr64 (`perf_rq_memwr64_gen4_x4`, 25 Nov 2026, 8 TLPs after Gen4 L0) printed `rq_stall=0` and `credit_stall=0`. From 32 bytes up, each TLP ends 16 bytes into a beat and the burst packs the next descriptor into that half. `UVM_ERROR : 0`, `UVM_FATAL : 0`.
+Gen4 MemWr64 (`perf_rq_memwr64_gen4_x4`, 8 TLPs after Gen4 L0) printed `credit_stall=0` and `tfc_nph_min=15`. `rq_stall` was 0 through 1024 bytes and 5 at 2048 and 4096 bytes. The 2048-byte point printed the same `mb_s` as 1024 bytes because the window grew from 261 cycles to 522. From 32 bytes up, each TLP ends 16 bytes into a beat and the burst packs the next descriptor into that half.
+
+| Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | RQ stalls | MB/s |
+|---:|---:|---:|---:|---:|---:|
+| 1 DW | 4 | 32 | 9 | 0 | 888.889 |
+| 2 DW | 8 | 64 | 9 | 0 | 1777.778 |
+| 4 DW | 16 | 128 | 9 | 0 | 3555.556 |
+| 8 DW | 32 | 256 | 13 | 0 | 4923.077 |
+| 16 DW | 64 | 512 | 21 | 0 | 6095.238 |
+| 32 DW | 128 | 1024 | 37 | 0 | 6918.919 |
+| 64 DW | 256 | 2048 | 69 | 0 | 7420.290 |
+| 128 DW | 512 | 4096 | 133 | 0 | 7699.248 |
+| 256 DW | 1024 | 8192 | 261 | 0 | 7846.743 |
+| 512 DW | 2048 | 16384 | 522 | 5 | 7846.743 |
+| 1024 DW | 4096 | 32768 | 1034 | 5 | 7922.631 |
+
+Gen4 MemRd64 (`perf_rq_memrd_gen4_x4`) counts CplD payload on RC. Every size printed `rq_stall=0`, `credit_stall=0`, `rc_tlast=8`. `UVM_ERROR : 0`, `UVM_FATAL : 0`. MemRd32 matched MemRd64 from 512 bytes up. Below that, MemRd32 printed 102.564, 205.128, 359.551, 703.297, 1254.902, 2000.000, and 3180.124.
 
 | Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | MB/s |
 |---:|---:|---:|---:|---:|
-| 1 DW | 4 | 32 | 9 | 888.889 |
-| 2 DW | 8 | 64 | 9 | 1777.778 |
-| 4 DW | 16 | 128 | 9 | 3555.556 |
-| 8 DW | 32 | 256 | 13 | 4923.077 |
-| 16 DW | 64 | 512 | 21 | 6095.238 |
-| 32 DW | 128 | 1024 | 37 | 6918.919 |
-| 64 DW | 256 | 2048 | 69 | 7420.290 |
-| 128 DW | 512 | 4096 | 133 | 7699.248 |
-| 256 DW | 1024 | 8192 | 261 | 7846.743 |
-| 512 DW | 2048 | 16384 | 517 | 7922.631 |
-| 1024 DW | 4096 | 32768 | 1029 | 7961.127 |
+| 1 DW | 4 | 32 | 79 | 101.266 |
+| 2 DW | 8 | 64 | 78 | 205.128 |
+| 4 DW | 16 | 128 | 89 | 359.551 |
+| 8 DW | 32 | 256 | 91 | 703.297 |
+| 16 DW | 64 | 512 | 100 | 1280.000 |
+| 32 DW | 128 | 1024 | 127 | 2015.748 |
+| 64 DW | 256 | 2048 | 160 | 3200.000 |
+| 128 DW | 512 | 4096 | 222 | 4612.613 |
+| 256 DW | 1024 | 8192 | 350 | 5851.429 |
+| 512 DW | 2048 | 16384 | 606 | 6759.076 |
+| 1024 DW | 4096 | 32768 | 1118 | 7327.370 |
 
-Gen4 MemRd64 (`perf_rq_memrd_gen4_x4`, same bench) counts CplD payload on RC. MemRd32 printed the same `mb_s` from 64 bytes up. Every size printed `rq_stall=0`, `credit_stall=0`, `rc_tlast=8`. `UVM_ERROR : 0`, `UVM_FATAL : 0`.
+Gen2 MemWr64 printed `rq_stall=0`, `credit_stall=0`, and `tfc_nph_min=15` at every size. The 4096-byte point is 1988.350 MB/s in 4120 user cycles. Gen3 MemWr64 printed the same three fields, and 3968.992 MB/s at 4096 bytes in 2064 cycles. Those MemWr64 logs contained no `UVM_ERROR` through the last `PERF` line. The ready-hold after the sweep is two million cycles, so the runs were stopped there and have no report banner.
 
-| Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | MB/s |
-|---:|---:|---:|---:|---:|
-| 1 DW | 4 | 32 | 68 | 117.647 |
-| 2 DW | 8 | 64 | 69 | 231.884 |
-| 4 DW | 16 | 128 | 71 | 450.704 |
-| 8 DW | 32 | 256 | 73 | 876.712 |
-| 16 DW | 64 | 512 | 83 | 1542.169 |
-| 32 DW | 128 | 1024 | 98 | 2612.245 |
-| 64 DW | 256 | 2048 | 143 | 3580.420 |
-| 128 DW | 512 | 4096 | 206 | 4970.874 |
-| 256 DW | 1024 | 8192 | 333 | 6150.150 |
-| 512 DW | 2048 | 16384 | 588 | 6965.986 |
-| 1024 DW | 4096 | 32768 | 1100 | 7447.273 |
+Gen2 MemRd64 printed `rq_stall=0`, `credit_stall=0`, `rc_tlast=8`, and `tfc_nph_min=15` at every size. The 4-byte point was `lat_min=50`, `lat_avg=53`, `lat_max=58`. The 4096-byte point was `lat_min=1074`, `lat_avg=2880`, `lat_max=4686` and 1736.329 MB/s. MemRd32 matched MemRd64 except at 4 bytes (87.912, 91 cycles) and 16 bytes (290.909, 110 cycles). The scoreboard printed four errors, two during 8-byte MemRd32 and two during 8-byte MemRd64: `RC completion unmatched tag=0x00 req=0x004a`. `UVM_FATAL : 0`. Gen3 MemRd64 printed `UVM_ERROR : 0` and `UVM_FATAL : 0`. MemRd32 matched it except at 4 bytes (85.106) and 128 bytes (1430.168). The 4096-byte Gen3 read is 3407.654 MB/s in 2404 cycles, `lat_min=561`, `lat_avg=1474`, `lat_max=2388`.
 
 ## Gen2 posted write, 22 Nov 2026
 
-`perf_rq_sweep_gen2_x4`, 8 MemWr32 TLPs per size, 0 UVM errors. This is not the green MemWr64 curve above. Each size waits 8000 `pclk` cycles so the previous burst's replay is finished. `mb_s` is payload bytes on the 4 ns user bus (`bytes * 250 / cycles`). Every size printed `credit_stall=0` and `tfc_nph_min=15`.
+`perf_rq_sweep_gen2_x4`, 8 MemWr32 TLPs per size, 0 UVM errors. This is not the plotted Gen2 MemWr64 column. Each size waits 8000 `pclk` cycles so the previous burst's replay is finished. `mb_s` is payload bytes on the 4 ns user bus (`bytes * 250 / cycles`). Every size printed `credit_stall=0` and `tfc_nph_min=15`.
 
 | Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | RQ stalls | MB/s | % of 2000 MB/s |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -82,13 +86,13 @@ Gen4 MemRd64 (`perf_rq_memrd_gen4_x4`, same bench) counts CplD payload on RC. Me
 
 1024 DW is 4096 bytes on each TLP. The wire length field is 0 for that size. The "Bytes, 8 TLPs" column is the `bytes=` field from the PERF line.
 
-`perf_rq_memwr64_gen2_x4` on that same bench is MemWr64 (`addr[63:32]=1`, TLP type 0x60). UVM reported 0 errors. Ten sizes printed the same cycles, stalls, and `mb_s` as the MemWr32 table. The 64-byte point printed `cycles=95`, `rq_stall=7`, `mb_s=1347.368`, `pct_gen2x4=67.368`. The 4096-byte point is again 1979.700 MB/s. The plotted Gen2 MemWr64 column above is a later printed curve and ends at 1983.055 MB/s.
+`perf_rq_memwr64_gen2_x4` on that 22 Nov bench is MemWr64 (`addr[63:32]=1`, TLP type 0x60). UVM reported 0 errors. Ten sizes printed the same cycles, stalls, and `mb_s` as the MemWr32 table. The 64-byte point printed `cycles=95`, `rq_stall=7`, `mb_s=1347.368`, `pct_gen2x4=67.368`. The 4096-byte point is again 1979.700 MB/s. The plotted Gen2 MemWr64 column is the 27 Nov rerun and ends at 1988.350 MB/s, with `rq_stall=0` at every size.
 
 An earlier 16× 1DW run with a finite-credit peer and a one-cycle bubble between beats printed 83.333 MB/s. That number is not either posted-write curve.
 
 ## Gen3 posted write, 24 Nov 2026
 
-`perf_rq_sweep_gen3_x4`, 8 MemWr32 TLPs after L0 at 8 GT/s, 0 UVM errors. `pct_gen2x4` is still the fraction of 2000 MB/s, not of the 3938 MB/s Gen3 line. This MemWr32 sweep is not the teal MemWr64 curve.
+`perf_rq_sweep_gen3_x4`, 8 MemWr32 TLPs after L0 at 8 GT/s, 0 UVM errors. `pct_gen2x4` is still the fraction of 2000 MB/s, not of the 3938 MB/s Gen3 line. This MemWr32 sweep is not the plotted Gen3 MemWr64 column.
 
 | Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | RQ stalls | MB/s | % of 2000 MB/s |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -106,7 +110,7 @@ An earlier 16× 1DW run with a finite-credit peer and a one-cycle bubble between
 
 ## Gen2 requester read, 23 Nov 2026
 
-`perf_rq_memrd_gen2_x4` sends eight MemRd32 at each size, then the same sizes as MemRd64. The byte count is CplD payload on RC. The peer returns one completion per request and advertises infinite credits. UVM reported 0 errors and 0 fatals. MemRd64 printed the same `cycles`, `mb_s`, and latency as MemRd32 at every size. Every size printed `rq_stall=0`, `credit_stall=0`, `tfc_zero=0`, and `tfc_nph_min=15`. This table is not the red Gen2 read curve on the chart. That curve ends at 1737.065 MB/s.
+`perf_rq_memrd_gen2_x4` on 23 Nov 2026 sent eight MemRd32 at each size, then the same sizes as MemRd64. The byte count is CplD payload on RC. The peer returns one completion per request and advertises infinite credits. That run reported 0 errors and 0 fatals. MemRd64 printed the same `cycles`, `mb_s`, and latency as MemRd32 at every size. Every size printed `rq_stall=0`, `credit_stall=0`, `tfc_zero=0`, and `tfc_nph_min=15`. This table is the 23 Nov run. The dashed Gen2 curve on the chart is the 27 Nov MemRd64 rerun and ends at 1736.329 MB/s.
 
 | Payload | Bytes / TLP | Bytes, 8 TLPs | user cycles | MB/s | % of 2000 MB/s | lat min / avg / max |
 |---:|---:|---:|---:|---:|---:|---:|

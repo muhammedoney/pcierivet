@@ -20,7 +20,7 @@ Gen2, Gen3, and Gen4 x4, eight TLPs per size, 4 ns user clock. The full table is
 
 ![Rivet x4 throughput versus payload. Gen4 is in front; Gen3 and Gen2 are lighter on the same scale.](docs/perf-rq-sweep.svg)
 
-Gen4 x4 on 25 Nov 2026 (`UVM_ERROR : 0`, `UVM_FATAL : 0`): MemWr64 printed 888.889 MB/s at 4 bytes, 4923.077 MB/s at 32 bytes, 6095.238 MB/s at 64 bytes, and 7961.127 MB/s at 4096 bytes. MemRd64 printed 7447.273 MB/s at 4096 bytes.
+Gen4 x4 on 27 Nov 2026: MemWr64 printed 888.889 MB/s at 4 bytes, 4923.077 MB/s at 32 bytes, 6095.238 MB/s at 64 bytes, and 7922.631 MB/s at 4096 bytes. MemRd64 printed 7327.370 MB/s at 4096 bytes (`UVM_ERROR : 0`, `UVM_FATAL : 0`).
 
 ## Repository layout
 

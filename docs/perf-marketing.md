@@ -1,6 +1,6 @@
 # Rivet performance note
 
-Rivet is a soft PCIe controller. The numbers below are the Gen2 x4 measurements from 21–23 Nov 2026. Gen3 and Gen4 x4 sweeps are in [perf-poster.md](perf-poster.md). Nothing else is quoted as a measurement.
+Rivet is a soft PCIe controller. The MemWr32 block below is the Gen2 x4 measurement from 22 Nov 2026. MemWr64 and MemRd were re-run on 27 Nov 2026. Gen3 and Gen4 x4 sweeps are in [perf-poster.md](perf-poster.md). Nothing else is quoted as a measurement.
 
 ## Link under test
 
@@ -26,37 +26,45 @@ PERF tag=rq_dw1024 bytes=32768 cycles=4138 rq_stall=18 rq_tlast=8 mb_s=1979.700 
 
 UVM reported 0 errors and 0 fatals. 1024 DW is 4096 bytes per TLP; `bytes=32768` is 8 of those packets. That point is 1979.700 MB/s, the printed 98.985% of the 2000 MB/s Gen2 x4 symbol rate. Every size printed `credit_stall=0` and `tfc_nph_min=15`. From 64 DW through 256 DW the window printed `rq_stall=17`. 512 DW and 1024 DW printed `rq_stall=18`.
 
-`perf_rq_memwr64_gen2_x4` repeats the sweep as MemWr64 (`addr[63:32]=1`). UVM reported 0 errors. The 4-byte through 32-byte points, and every point from 128 bytes up, printed the same `cycles`, `rq_stall`, and `mb_s` as MemWr32. The 64-byte point differed:
+`perf_rq_memwr64_gen2_x4` was re-run on 27 Nov 2026 as MemWr64 (`addr[63:32]=1`). Every size printed `rq_stall=0`, `credit_stall=0`, `rq_tlast=8`, and `tfc_nph_min=15`. The 4-byte, 8-byte, 16-byte, and 32-byte points printed the same `mb_s` as the 22 Nov MemWr32 block. From 64 bytes up the rerun is higher, and the 4096-byte point is 1988.350 MB/s.
 
 ```
-PERF tag=rq64_dw16 bytes=512 cycles=95 rq_stall=7 rq_tlast=8 mb_s=1347.368 pct_gen2x4=67.368 user_clk_ns=4.0
+PERF tag=rq64_dw1    bytes=32    cycles=32   rq_stall=0 rq_tlast=8 mb_s=250.000 pct_gen2x4=12.500 user_clk_ns=4.0
+PERF tag=rq64_dw2    bytes=64    cycles=32   rq_stall=0 rq_tlast=8 mb_s=500.000 pct_gen2x4=25.000 user_clk_ns=4.0
+PERF tag=rq64_dw4    bytes=128   cycles=40   rq_stall=0 rq_tlast=8 mb_s=800.000 pct_gen2x4=40.000 user_clk_ns=4.0
+PERF tag=rq64_dw8    bytes=256   cycles=56   rq_stall=0 rq_tlast=8 mb_s=1142.857 pct_gen2x4=57.143 user_clk_ns=4.0
+PERF tag=rq64_dw16   bytes=512   cycles=88   rq_stall=0 rq_tlast=8 mb_s=1454.545 pct_gen2x4=72.727 user_clk_ns=4.0
+PERF tag=rq64_dw32   bytes=1024  cycles=152  rq_stall=0 rq_tlast=8 mb_s=1684.211 pct_gen2x4=84.211 user_clk_ns=4.0
+PERF tag=rq64_dw64   bytes=2048  cycles=280  rq_stall=0 rq_tlast=8 mb_s=1828.571 pct_gen2x4=91.429 user_clk_ns=4.0
+PERF tag=rq64_dw128  bytes=4096  cycles=536  rq_stall=0 rq_tlast=8 mb_s=1910.448 pct_gen2x4=95.522 user_clk_ns=4.0
+PERF tag=rq64_dw256  bytes=8192  cycles=1048 rq_stall=0 rq_tlast=8 mb_s=1954.198 pct_gen2x4=97.710 user_clk_ns=4.0
+PERF tag=rq64_dw512  bytes=16384 cycles=2072 rq_stall=0 rq_tlast=8 mb_s=1976.834 pct_gen2x4=98.842 user_clk_ns=4.0
+PERF tag=rq64_dw1024 bytes=32768 cycles=4120 rq_stall=0 rq_tlast=8 mb_s=1988.350 pct_gen2x4=99.417 user_clk_ns=4.0
 ```
 
-The 4096-byte MemWr64 point printed 1979.700 MB/s again.
-
-`perf_rq_sweep_gen3_x4` repeats the MemWr32 sweep after L0 at 8 GT/s. UVM reported 0 errors. Printed `mb_s` from 4 bytes through 4096 bytes: 250.000, 500.000, 800.000, 1084.746, 1280.000, 1488.372, 1651.613, 1815.603, 1896.296, 1943.074, 1967.339. The 4096-byte point printed `cycles=4164`, `rq_stall=44`, `pct_gen2x4=98.367`.
-
-Re-run cpld to confirm the scrambler reseed didn't break the completion, then commit. The work lib is gen3 so incremental is fine.
+`perf_rq_sweep_gen3_x4` repeats the MemWr32 sweep after L0 at 8 GT/s. That 24 Nov run reported 0 errors. Printed `mb_s` from 4 bytes through 4096 bytes: 250.000, 500.000, 800.000, 1084.746, 1280.000, 1488.372, 1651.613, 1815.603, 1896.296, 1943.074, 1967.339. The 4096-byte point printed `cycles=4164`, `rq_stall=44`, `pct_gen2x4=98.367`. It was not re-run on 27 Nov. The Gen3 MemWr64 column in the poster is a different sweep.
 
 ## Requester reads versus payload size
 
-`perf_rq_memrd_gen2_x4` sends 8 MemRd32 TLPs at each size from 1 DW through 1024 DW, then the same sizes as MemRd64. The monitor counts CplD payload bytes on RC and stays armed until `rc_tlast=8`. The peer returns one completion per request and advertises infinite credits. UVM reported 0 errors and 0 fatals. MemRd64 printed the same cycles and `mb_s` as MemRd32 at every size. Every size printed `rq_stall=0`, `credit_stall=0`, and `tfc_nph_min=15`.
+`perf_rq_memrd_gen2_x4` was re-run on 27 Nov 2026. It sends 8 MemRd32 TLPs at each size from 1 DW through 1024 DW, then the same sizes as MemRd64. The monitor counts CplD payload bytes on RC and stays armed until `rc_tlast=8`. The peer returns one completion per request and advertises infinite credits. Every size printed `rq_stall=0`, `credit_stall=0`, `rc_tlast=8`, and `tfc_nph_min=15`. The scoreboard printed `UVM_ERROR : 4` and `UVM_FATAL : 0`. All four errors were `RC completion unmatched tag=0x00 req=0x004a`, two during 8-byte MemRd32 and two during 8-byte MemRd64.
+
+MemRd64:
 
 ```
-PERF tag=rd_dw1    bytes=32    cycles=103  rc_tlast=8 mb_s=77.670  pct_gen2x4=3.883  user_clk_ns=4.0
-PERF tag=rd_dw2    bytes=64    cycles=109  rc_tlast=8 mb_s=146.789 pct_gen2x4=7.339  user_clk_ns=4.0
-PERF tag=rd_dw4    bytes=128   cycles=116  rc_tlast=8 mb_s=275.862 pct_gen2x4=13.793 user_clk_ns=4.0
-PERF tag=rd_dw8    bytes=256   cycles=144  rc_tlast=8 mb_s=444.444 pct_gen2x4=22.222 user_clk_ns=4.0
-PERF tag=rd_dw16   bytes=512   cycles=184  rc_tlast=8 mb_s=695.652 pct_gen2x4=34.783 user_clk_ns=4.0
-PERF tag=rd_dw32   bytes=1024  cycles=263  rc_tlast=8 mb_s=973.384 pct_gen2x4=48.669 user_clk_ns=4.0
-PERF tag=rd_dw64   bytes=2048  cycles=424  rc_tlast=8 mb_s=1207.547 pct_gen2x4=60.377 user_clk_ns=4.0
-PERF tag=rd_dw128  bytes=4096  cycles=743  rc_tlast=8 mb_s=1378.197 pct_gen2x4=68.910 user_clk_ns=4.0
-PERF tag=rd_dw256  bytes=8192  cycles=1383 rc_tlast=8 mb_s=1480.839 pct_gen2x4=74.042 user_clk_ns=4.0
-PERF tag=rd_dw512  bytes=16384 cycles=2663 rc_tlast=8 mb_s=1538.115 pct_gen2x4=76.906 user_clk_ns=4.0
-PERF tag=rd_dw1024 bytes=32768 cycles=5223 rc_tlast=8 mb_s=1568.447 pct_gen2x4=78.422 user_clk_ns=4.0
+PERF tag=rd64_dw1    bytes=32    cycles=90   rc_tlast=8 mb_s=88.889  pct_gen2x4=4.444  user_clk_ns=4.0
+PERF tag=rd64_dw2    bytes=64    cycles=101  rc_tlast=8 mb_s=158.416 pct_gen2x4=7.921  user_clk_ns=4.0
+PERF tag=rd64_dw4    bytes=128   cycles=112  rc_tlast=8 mb_s=285.714 pct_gen2x4=14.286 user_clk_ns=4.0
+PERF tag=rd64_dw8    bytes=256   cycles=144  rc_tlast=8 mb_s=444.444 pct_gen2x4=22.222 user_clk_ns=4.0
+PERF tag=rd64_dw16   bytes=512   cycles=180  rc_tlast=8 mb_s=711.111 pct_gen2x4=35.556 user_clk_ns=4.0
+PERF tag=rd64_dw32   bytes=1024  cycles=254  rc_tlast=8 mb_s=1007.874 pct_gen2x4=50.394 user_clk_ns=4.0
+PERF tag=rd64_dw64   bytes=2048  cycles=398  rc_tlast=8 mb_s=1286.432 pct_gen2x4=64.322 user_clk_ns=4.0
+PERF tag=rd64_dw128  bytes=4096  cycles=686  rc_tlast=8 mb_s=1492.711 pct_gen2x4=74.636 user_clk_ns=4.0
+PERF tag=rd64_dw256  bytes=8192  cycles=1262 rc_tlast=8 mb_s=1622.821 pct_gen2x4=81.141 user_clk_ns=4.0
+PERF tag=rd64_dw512  bytes=16384 cycles=2414 rc_tlast=8 mb_s=1696.769 pct_gen2x4=84.838 user_clk_ns=4.0
+PERF tag=rd64_dw1024 bytes=32768 cycles=4718 rc_tlast=8 mb_s=1736.329 pct_gen2x4=86.816 user_clk_ns=4.0
 ```
 
-The 4096-byte point is 1568.447 MB/s. `rd64_dw1` through `rd64_dw1024` printed those same eleven rates. Latency on the 4-byte point was `lat_min=51`, `lat_avg=61`, `lat_max=71`. On the 4096-byte point it was `lat_min=1586`, `lat_avg=3388`, `lat_max=5191`. The seven gaps after the first 4096-byte completion are 515 cycles each. The printed rate includes the first round trip.
+The 4096-byte point is 1736.329 MB/s. MemRd32 printed the same `mb_s` from 32 bytes up. It differed at 4 bytes (87.912, 91 cycles) and 16 bytes (290.909, 110 cycles). Latency on the 4-byte MemRd64 point was `lat_min=50`, `lat_avg=53`, `lat_max=58`. On the 4096-byte point it was `lat_min=1074`, `lat_avg=2880`, `lat_max=4686`. The printed rate includes the first round trip.
 
 An earlier `perf_rq_memwr_gen2_x4` run (16× 1DW, finite credits, one idle user clock between beats) printed 83.333 MB/s. That run is not the payload curve.
 
