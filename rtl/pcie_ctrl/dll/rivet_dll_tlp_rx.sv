@@ -433,7 +433,9 @@ module rivet_dll_tlp_rx #(
           n_t   = n_t - 5'(emit_n);
           if ((left_t == 14'd0) && (n_t == 5'd0) && !play_open_q)
             finish = 1'b1;
-        end else if (!play_stall && tl_v_q && tl_ready_i) begin
+        end else if (tl_v_q && tl_ready_i) begin
+          // hold_tail stalls the next word, but the beat already presented
+          // has been accepted. Leaving tvalid set makes the skid take it again.
           tl_v_q <= 1'b0;
         end
         acc_q      <= acc_t;
